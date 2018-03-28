@@ -1,0 +1,13 @@
+*.gz
+
+*.sra
+*.{fa,fasta}
+*.{fq,fastq}
+
+*.sam
+*.bam
+*.bam.bai
+
+*.vcf
+
+*.log

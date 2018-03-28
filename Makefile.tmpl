@@ -1,0 +1,94 @@
+### TODO: accept gzip input
+
+### This is placed at data/$(ACC)/ by master Makefile at top-level.
+### Makefile records only the types (type-theoretic) of procedures (at least for blackbox processes).
+all: aligned_sam aligned_fastq
+
+## Check reads are present
+reads: reads/$(ACC)_1.fastq reads/$(ACC)_2.fastq
+
+reads/$(ACC)_1.fastq:
+	echo "You need $(ACC)_1.fastq"; exit 1
+reads/$(ACC)_2.fastq:
+	echo "You need $(ACC)_2.fastq"; exit 1
+
+## Join paired-end reads
+join: reads/$(ACC).join.fq reads/$(ACC).un1.fq reads/$(ACC).un2.fq
+
+reads/$(ACC).un1.fq: reads/$(ACC).join.fq
+	if [[ ! -e reads/$(ACC).un1.fq ]]; then echo "$(ACC).un1.fq not found"; exit 1; fi
+reads/$(ACC).un2.fq: reads/$(ACC).join.fq
+	if [[ ! -e reads/$(ACC).un2.fq ]]; then echo "$(ACC).un2.fq not found"; exit 1; fi
+reads/$(ACC).join.fq: reads/$(ACC)_1.fastq reads/$(ACC)_2.fastq
+	cd reads; fastq-join -v ' ' $(ACC)_1.fastq $(ACC)_2.fastq -r $(ACC).join.log -o $(ACC).%.fq
+
+## Alignment using whole set of monomers & reads
+align: alignments/$(ACC).join.single.sam alignments/$(ACC).un1.single.sam alignments/$(ACC).un2.single.sam
+
+alignments/$(ACC).join.single.sam: reads/$(ACC).join.fq
+	bwa mem ../monomers/single_mon.fa reads/$(ACC).join.fq > alignments/$(ACC).join.single.sam 2> $(ACC).join.single.log
+alignments/$(ACC).un1.single.sam: reads/$(ACC).un1.fq
+	bwa mem ../monomers/single_mon.fa reads/$(ACC).un1.fq > alignments/$(ACC).un1.single.sam 2> $(ACC).un1.single.log
+alignments/$(ACC).un2.single.sam: reads/$(ACC).un2.fq
+	bwa mem ../monomers/single_mon.fa reads/$(ACC).un2.fq > alignments/$(ACC).un2.single.sam 2> $(ACC).un2.single.log
+
+## Get Sorted SAM/BAM for Aligned Reads
+aligned_sam: alignments/$(ACC).join.aligned.sort.sam alignments/$(ACC).un.aligned.sort.sam
+
+alignments/$(ACC).join.aligned.sort.sam: alignments/$(ACC).join.single.sam
+	cd alignments; samtools view -@ 12 -b -F 4 $(ACC).join.single.sam > $(ACC).join.aligned.bam && \
+	samtools sort -@ 12 -o $(ACC).join.aligned.sort.bam $(ACC).join.aligned.bam && \
+	rm $(ACC).join.aligned.bam && \
+	samtools index $(ACC).join.aligned.sort.bam && \
+	samtools view $(ACC).join.aligned.sort.bam > $(ACC).join.aligned.sort.sam
+
+alignments/$(ACC).un.aligned.sort.sam: alignments/$(ACC).un1.single.sam alignments/$(ACC).un2.single.sam
+	cd alignments; samtools view -@ 12 -b -F 4 $(ACC).un1.single.sam > $(ACC).un1.aligned.bam && \
+	samtools view -@ 12 -b -F 4 $(ACC).un2.single.sam > $(ACC).un2.aligned.bam && \
+	samtools cat -o $(ACC).un.aligned.bam $(ACC).un1.aligned.bam $(ACC).un2.aligned.bam && \
+	rm $(ACC).un{1,2}.aligned.bam && \
+	samtools sort -@ 12 -o $(ACC).un.aligned.sort.bam $(ACC).un.aligned.bam && \
+	rm $(ACC).un.aligned.bam && \
+	samtools index $(ACC).un.aligned.sort.bam && \
+	samtools view $(ACC).un.aligned.sort.bam > $(ACC).un.aligned.sort.sam
+
+## Get Fastq for Aligned Reads
+aligned_fastq: reads/$(ACC).join.aligned.fq reads/$(ACC).un1.aligned.fq reads/$(ACC).un2.aligned.fq
+
+reads/$(ACC).join.aligned.fq: alignments/$(ACC).join.single.sam
+	samtools fastq -@ 12 -F 4 -0 reads/$(ACC).join.aligned.fq reads/$(ACC).join.single.sam
+reads/$(ACC).un1.aligned.fq: alignments/$(ACC).un1.single.sam
+	samtools fastq -@ 12 -F 4 -0 $(ACC).un1.aligned.fq $(ACC).un1.single.sam
+reads/$(ACC).un2.aligned.fq: alignments/$(ACC).un2.single.sam
+	samtools fastq -@ 12 -F 4 -0 $(ACC).un2.aligned.fq $(ACC).un2.single.sam
+
+## Alignment using subset of monomers & aligned reads
+subalign: aligned_fastq alignments/$(ACC).join.d0.sam alignments/$(ACC).un1.d0.sam alignments/$(ACC).un2.d0.sam
+
+alignments/$(ACC).join.d0.sam: reads/$(ACC).join.aligned.fq
+	bwa mem ../monomers/d0.fa reads/$(ACC).join.aligned.fq > alignments/$(ACC).join.d0.sam 2> $(ACC).join.d0.log
+alignments/$(ACC).un1.d0.sam: reads/$(ACC).un1.aligned.fq
+	bwa mem ../monomers/d0.fa reads/$(ACC).un1.aligned.fq > alignments/$(ACC).un1.d0.sam 2> $(ACC).un1.d0.log
+alignments/$(ACC).un2.d0.sam: reads/$(ACC).un2.aligned.fq
+	bwa mem ../monomers/d0.fa reads/$(ACC).un2.aligned.fq > alignments/$(ACC).un2.d0.sam 2> $(ACC).un2.d0.log
+
+## Other data for subaligned results; include unaligned.
+sub_bam: alignments/$(ACC).join.d0.sort.bam alignments/$(ACC).un.d0.sort.bam
+
+alignments/$(ACC).join.d0.sort.bam: alignments/$(ACC).join.d0.sam
+	cd alignments; samtools view -@ 12 -b $(ACC).join.d0.sam > $(ACC).join.d0.bam && \
+	samtools sort -@ 12 -o $(ACC).join.d0.sort.bam $(ACC).join.d0.bam && \
+	rm $(ACC).join.d0.bam && \
+	samtools index $(ACC).join.d0.sort.bam
+
+alignments/$(ACC).un.d0.sort.bam: alignments/$(ACC).un1.d0.sam alignments/$(ACC).un2.d0.sam
+	cd alignments && \
+	samtools view -@ 12 -b $(ACC).un1.d0.sam > $(ACC).un1.d0.bam && \
+	samtools view -@ 12 -b $(ACC).un2.d0.sam > $(ACC).un2.d0.bam && \
+	samtools cat -o $(ACC).un.d0.bam $(ACC).un1.d0.bam $(ACC).un2.d0.bam && \
+	rm $(ACC).un{1,2}.d0.bam && \
+	samtools sort -@ 12 -o $(ACC).un.d0.sort.bam $(ACC).un.d0.bam && \
+	rm $(ACC).un.d0.bam && \
+	samtools index $(ACC).un.d0.sort.bam
+
+.PHONY: all join aligned_sam aligned_fastq subalign sub_bam
