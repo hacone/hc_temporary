@@ -9,5 +9,8 @@
 *.bam.bai
 
 *.vcf
-
 *.log
+*.dat
+
+data/
+venv/

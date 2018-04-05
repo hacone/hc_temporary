@@ -5,7 +5,12 @@
 all: aligned_sam aligned_fastq
 
 ## Check reads are present
-reads: reads/$(ACC)_1.fastq reads/$(ACC)_2.fastq
+reads: reads/$(ACC)_1.fastq.gz reads/$(ACC)_2.fastq.gz
+
+reads/$(ACC)_1.fastq.gz: reads/$(ACC)_1.fastq
+	cd reads; gzip $(ACC)_1.fastq 
+reads/$(ACC)_2.fastq.gz: reads/$(ACC)_2.fastq
+	cd reads; gzip $(ACC)_2.fastq 
 
 reads/$(ACC)_1.fastq:
 	echo "You need $(ACC)_1.fastq"; exit 1
@@ -13,7 +18,12 @@ reads/$(ACC)_2.fastq:
 	echo "You need $(ACC)_2.fastq"; exit 1
 
 ## Join paired-end reads
-join: reads/$(ACC).join.fq reads/$(ACC).un1.fq reads/$(ACC).un2.fq
+join: reads/$(ACC).join.fq.gz reads/$(ACC).un1.fq.gz reads/$(ACC).un2.fq.gz
+
+reads/$(ACC).join.fq.gz:
+TODO
+reads/$(ACC).un1.fq.gz:
+reads/$(ACC).un2.fq.gz:
 
 reads/$(ACC).un1.fq: reads/$(ACC).join.fq
 	if [[ ! -e reads/$(ACC).un1.fq ]]; then echo "$(ACC).un1.fq not found"; exit 1; fi
