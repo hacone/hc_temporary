@@ -1,10 +1,15 @@
 READS_FQ=m160526_170733_42274_c101014002550000001823231410211647_s1_p0.filtered.subreads.fastq
 
 SQUEAKR_DIR=../squeakr/
-K=10
+K=6
 S=20
 
-MONS_CQF=../d0.fq.ser
+${SQUEAKR_DIR}/squeakr-count -f -k $K -s $S -t 1 -o ./ ../data/monomers/d0.fq \
+&& mv d0.fq.ser d0.fq.K$K.S$S.ser
+
+MONS_CQF=./d0.fq.K$K.S$S.ser
+
+if [[ -e CQF_IP.K$K.S$S.dat ]]; then echo "Warning: overwriting CQF_IP.K$K.S$S.dat. Aborting."; fi
 
 cat ${READS_FQ} | head -n 40000 | while read line; do
 
@@ -20,9 +25,6 @@ cat ${READS_FQ} | head -n 40000 | while read line; do
 	IP_NORM=$( echo "scale=4; $IP_RAW / $READLEN" | bc -l )
 
 	echo -e "$NAME\t$READLEN\t$IP_RAW\t$IP_NORM" >> CQF_IP.K$K.S$S.dat
-
 done
 
 rm a_read.fq a_read.fq.ser
-
-# ${SQUEAKR_DIR}/squeakr-count -f -k $K -s $S -t 1 -o ./ data/monomers/d0.fq

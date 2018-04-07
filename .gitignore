@@ -1,14 +1,21 @@
 *.gz
+*.tgz
 
+*.fa
+*.fasta
+*.fq
+*.fastq
 *.sra
-*.{fa,fasta}
-*.{fq,fastq}
-
+*.h5
 *.sam
 *.bam
 *.bam.bai
-
+*.bam.pbi
 *.vcf
+
+*.npy
+*.ser
+*.svg
 *.log
 *.dat
 
