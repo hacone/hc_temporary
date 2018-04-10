@@ -1,0 +1,10 @@
+### General
+Here are code fragments for processing short/long reads in centromeric reads.
+
+### Data Source
+
+# Monomer database (edit distance matrix is in local)
+https://raw.githubusercontent.com/volkansevim/alpha-CENTAURI/nhmmscan/example/MigaKH.HigherOrderRptMon.fa
+
+# squeakr by splatlab for k-mer counting, which I extended in read_squeakr/
+https://github.com/splatlab/squeakr
