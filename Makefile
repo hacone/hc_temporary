@@ -6,7 +6,7 @@ all: aligned_sam aligned_fastq
 ## delegate tasks for each dataset to Makefiles in their dirs 
 makefile: data/$(ACC)/Makefile
 
-data/$(ACC)/Makefile:
+data/$(ACC)/Makefile: Makefile.tmpl
 	echo "ACC=$(ACC)" > data/$(ACC)/Makefile
 	cat Makefile.tmpl >> data/$(ACC)/Makefile
 

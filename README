@@ -1,6 +1,11 @@
 ### General
 Here are code fragments for processing short/long reads in centromeric reads.
 
+
+### TODO
+1868 is too redundant even for original alignment. use 1197 distinct ones.
+
+
 ### Data Source
 
 # Monomer database (edit distance matrix is in local)
@@ -8,3 +13,19 @@ https://raw.githubusercontent.com/volkansevim/alpha-CENTAURI/nhmmscan/example/Mi
 
 # squeakr by splatlab for k-mer counting, which I extended in read_squeakr/
 https://github.com/splatlab/squeakr
+
+### Requirements
+# venv is not maintained by git. Below should be the output from pip3 freeze.
+
+biopython==1.70
+cycler==0.10.0
+kiwisolver==1.0.1
+matplotlib==2.2.2
+numpy==1.14.2
+pyparsing==2.2.0
+pysam==0.14
+python-dateutil==2.7.2
+pytz==2018.3
+scikit-learn==0.19.1
+scipy==1.0.1
+six==1.11.0
