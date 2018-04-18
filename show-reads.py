@@ -40,11 +40,12 @@ def hash_color(data):
 
 def get_projection():
     d = {}
-    with open("./d10.cluster.def") as f:
+    with open("./d12.cluster.def") as f:
         for line in f:
 #            print( line.split() )
             s = line.split()
-            d[s[0]] = s[1]
+            #d[s[0]] = s[1]
+            d[s[0]] = s[0]
     return d
 
 import svgwrite
