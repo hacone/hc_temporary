@@ -69,24 +69,27 @@ alignments/$(ACC).un.aligned.sort.sam: alignments/$(ACC).un1.single.sam alignmen
 	samtools view $(ACC).un.aligned.sort.bam > $(ACC).un.aligned.sort.sam
 
 ## Get Fastq for Aligned Reads
-aligned_fastq: reads/$(ACC).join.aligned.fq reads/$(ACC).un1.aligned.fq reads/$(ACC).un2.aligned.fq
+aligned_fastq: reads/$(ACC).join.aligned.fq.gz reads/$(ACC).un1.aligned.fq.gz reads/$(ACC).un2.aligned.fq.gz
 
-reads/$(ACC).join.aligned.fq: alignments/$(ACC).join.single.sam
-	samtools fastq -@ 12 -F 4 -0 reads/$(ACC).join.aligned.fq reads/$(ACC).join.single.sam
-reads/$(ACC).un1.aligned.fq: alignments/$(ACC).un1.single.sam
-	samtools fastq -@ 12 -F 4 -0 $(ACC).un1.aligned.fq $(ACC).un1.single.sam
-reads/$(ACC).un2.aligned.fq: alignments/$(ACC).un2.single.sam
-	samtools fastq -@ 12 -F 4 -0 $(ACC).un2.aligned.fq $(ACC).un2.single.sam
+reads/$(ACC).join.aligned.fq.gz: alignments/$(ACC).join.single.sam
+	samtools fastq -@ 12 -F 4 -0 reads/$(ACC).join.aligned.fq alignments/$(ACC).join.single.sam
+	gzip reads/$(ACC).join.aligned.fq
+reads/$(ACC).un1.aligned.fq.gz: alignments/$(ACC).un1.single.sam
+	samtools fastq -@ 12 -F 4 -0 reads/$(ACC).un1.aligned.fq alignments/$(ACC).un1.single.sam
+	gzip reads/$(ACC).un1.aligned.fq
+reads/$(ACC).un2.aligned.fq.gz: alignments/$(ACC).un2.single.sam
+	samtools fastq -@ 12 -F 4 -0 reads/$(ACC).un2.aligned.fq alignments/$(ACC).un2.single.sam
+	gzip reads/$(ACC).un2.aligned.fq
 
 ## Alignment using subset of monomers & aligned reads
 subalign: aligned_fastq alignments/$(ACC).join.d0.sam alignments/$(ACC).un1.d0.sam alignments/$(ACC).un2.d0.sam
 
-alignments/$(ACC).join.d0.sam: reads/$(ACC).join.aligned.fq
-	bwa mem ../monomers/d0.fa reads/$(ACC).join.aligned.fq > alignments/$(ACC).join.d0.sam 2> $(ACC).join.d0.log
-alignments/$(ACC).un1.d0.sam: reads/$(ACC).un1.aligned.fq
-	bwa mem ../monomers/d0.fa reads/$(ACC).un1.aligned.fq > alignments/$(ACC).un1.d0.sam 2> $(ACC).un1.d0.log
-alignments/$(ACC).un2.d0.sam: reads/$(ACC).un2.aligned.fq
-	bwa mem ../monomers/d0.fa reads/$(ACC).un2.aligned.fq > alignments/$(ACC).un2.d0.sam 2> $(ACC).un2.d0.log
+alignments/$(ACC).join.d0.sam: reads/$(ACC).join.aligned.fq.gz
+	bwa mem ../monomers/d0.fa <(zcat reads/$(ACC).join.aligned.fq.gz) > alignments/$(ACC).join.d0.sam 2> $(ACC).join.d0.log
+alignments/$(ACC).un1.d0.sam: reads/$(ACC).un1.aligned.fq.gz
+	bwa mem ../monomers/d0.fa <(zcat reads/$(ACC).un1.aligned.fq.gz) > alignments/$(ACC).un1.d0.sam 2> $(ACC).un1.d0.log
+alignments/$(ACC).un2.d0.sam: reads/$(ACC).un2.aligned.fq.gz
+	bwa mem ../monomers/d0.fa <(zcat reads/$(ACC).un2.aligned.fq.gz) > alignments/$(ACC).un2.d0.sam 2> $(ACC).un2.d0.log
 
 ## Other data for subaligned results; include unaligned.
 sub_bam: alignments/$(ACC).join.d0.sort.bam alignments/$(ACC).un.d0.sort.bam

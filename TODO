@@ -1,0 +1,16 @@
+# conceptual
+monomer assignment by minialign
+visualization of encoded reads; overlaps
+
+# technical
+check other read QV threshold > .75 for bam2fq
+skip too frequent mons in freq of freq plot
+use of distinct monomers instead of 1868
+
+
+monomers.fa.var: monomers.fa short_reads_to_mons.sam
+
+>m1
+ACGTACGTACGT
+[aggregate abs freq, e.g. 12000]
+42,A:354,C:11500;101,C:6500,T:5000

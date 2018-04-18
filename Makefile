@@ -30,4 +30,10 @@ aligned_sam: makefile
 aligned_fastq: makefile
 	cd data/$(ACC); make aligned_fastq
 
-.PHONY: all makefile reads join aligned_sam aligned_fastq
+subalign: makefile
+	cd data/$(ACC); make subalign
+
+sub_bam: makefile
+	cd data/$(ACC); make sub_bam
+
+.PHONY: all makefile reads join aligned_sam aligned_fastq subalign sub_bam

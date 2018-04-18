@@ -4,6 +4,7 @@ import re
 from collections import Counter
 from itertools import takewhile
 
+
 # p = read.get_aligned_pairs returns the following tuple - p: (query_pos, ref_pos)
 # with with_seq, p: (query_pos, ref_pos, ref_base)
 
@@ -92,15 +93,18 @@ def detect_variant_sites():
         print(variants)
         sys.stdout.flush()
 
+# TODO: rel freq is important as well to feel the error rate of short reads.
 def absolute_frequency_distribution():
 
     counter, max_cov = Counter(), 0
 
-    for i in range(len(bam.references))[:2]: # just test in subset
+    for i in range(len(bam.references)): # just test in subset
         ref, rlen = bam.references[i], bam.lengths[i]
         reads = list(bam.fetch(contig=ref)) # TODO: do i need to listify this ?
         nc = count_coverage(reads, rlen, normalized = False)
 
+        print(f"{ref}\t{i}\t{len(bam.references)}")
+        sys.stdout.flush()
         ## again it's not pythonic
         for pos in range(rlen):
             for base in range(4):

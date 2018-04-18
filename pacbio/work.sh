@@ -11,21 +11,21 @@ down_dec_bam() {
 
 	## Download hdf5.tgz
 	url="http://sra-download.ncbi.nlm.nih.gov/srapub_files/${1}_${1}_hdf5.tgz"
-	echo "Downloading $url"
-	wget -c -P HDFTGZ $url
+	#echo "Downloading $url"
+	#wget -c -P HDFTGZ $url
 
-	## Extract from tar.gz
+	## 22:27
+
 	MOVIE=$( tar tzf HDFTGZ/${1}_${1}_hdf5.tgz | head -1 ); MOVIE=${MOVIE%%\.*}
 	echo "Found Movie: $MOVIE"
-	tar xf -C HDFTGZ HDFTGZ/${1}_${1}_hdf5.tgz && rm HDFTGZ/${MOVIE}.bas.h5 HDFTGZ/${MOVIE}.metadata.xml 
-
-	## Extract subreads
 	echo "Generating ${MOVIE}.subreads.bam"
 	if [[ -e BAM/${MOVIE}.subreads.bam ]]; then
 		echo "BAM/$MOVIE.subreads.bam is in"
 	else
+	## Extract from tar.gz and extract subreads
+		# cd HDFTGZ && tar xf ${1}_${1}_hdf5.tgz && rm ${MOVIE}.bas.h5 ${MOVIE}.metadata.xml \
 		cd HDFTGZ/ && $SMRTTOOLS/smrtcmds/bin/bax2bam ${MOVIE}.1.bax.h5 ${MOVIE}.2.bax.h5 ${MOVIE}.3.bax.h5 \
-		&& mv ${MOVIE}.subreads.bam ../BAM/ \
+		&& mv ${MOVIE}.subreads.{bam,bam.pbi} ../BAM/ \
 		&& rm ${MOVIE}.scraps.bam ${MOVIE}.scraps.bam.pbi ${MOVIE}.1.bax.h5 ${MOVIE}.2.bax.h5 ${MOVIE}.3.bax.h5
 	fi
 
@@ -37,9 +37,9 @@ bam2fastq() {
 	MOVIE=$1
 	echo "processing $MOVIE"
 
-	#$SMRTTOOLS/smrtcmds/bin/bamtools filter -length ">1000" -tag "rq:>0.85" -in BAM/${MOVIE}.subreads.bam \
-	#| $SMRTTOOLS/smrtcmds/bin/bamtools convert -format fastq -out Fastq/${MOVIE}.filtered.subreads.fastq \
-	#&& gzip Fastq/${MOVIE}.filtered.subreads.fastq
+	$SMRTTOOLS/smrtcmds/bin/bamtools filter -length ">1000" -tag "rq:>0.75" -in BAM/${MOVIE}.subreads.bam \
+	| $SMRTTOOLS/smrtcmds/bin/bamtools convert -format fastq -out Fastq/${MOVIE}.filtered.subreads.fastq \
+	&& gzip Fastq/${MOVIE}.filtered.subreads.fastq
 
 	gzip Fastq/${MOVIE}.filtered.subreads.fastq
 }; export -f bam2fastq
@@ -50,11 +50,11 @@ bam2fastq() {
 # 4/12
 ACCESSION_LIST=SRX2010823.Runs.txt
 
-cat $ACCESSION_LIST | xargs -P 10 -I % bash -c "down_dec_bam %"
+#cat $ACCESSION_LIST | xargs -P 10 -I % bash -c "down_dec_bam %"
 
 # Movie id list
-#ls BAM/ | sed -e "s/.subreads.*//" | sort | uniq \
-#| xargs -P 10 -I % bash -c "bam2fastq %"
+ls BAM/ | sed -e "s/.subreads.*//" | sort | uniq \
+| xargs -P 10 -I % bash -c "bam2fastq %"
 
 # Then you call filter_centromeric.sh
 
