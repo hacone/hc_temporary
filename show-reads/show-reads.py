@@ -1,6 +1,7 @@
 import pysam
 import itertools
 import math
+import re
 
 #sam = pysam.AlignmentFile("./minaln_k8_80cells.sam")
 
@@ -51,9 +52,8 @@ def get_projection():
             d[s[0]] = s[0]
     return d
 
-import svgwrite
-dwg = svgwrite.drawing.Drawing()
 
+# may this one take a dict
 def name_to_color(name):
     # for raw lab as rgb
     den = 100
@@ -65,10 +65,41 @@ def name_to_color(name):
     b = round(float(color_dict[name][2]) * 255 / den)
     return "{:02X}{:02X}{:02X}".format(r, g, b)
 
-def show_svg(sam, offset):
+
+def add_read(dwg, name, monomers, y_offset, thickness = 10):
+    """
+    monomers: [(name, begin, end)]
+    """
+    read = dwg.g(id=name)
+    for n, b, e in monomers:
+        print(n)
+        nn = re.sub("[^.]*$", "", n)[:-1]
+        print(nn)
+        read.add(dwg.rect(insert=(b, y_offset), size=(e-b, thickness), fill=f"#{name_to_color(nn)}"))
+    return dwg.add(read)
+
+## TODO: obviously temporal implementation
+def pickle_to_svg(dwg):
+
+    import pickle
+    import itertools
+    f = open("/glusterfs/yoshimura/monomer_list.pickle", "rb")
+    me = pickle.load(f)
+    print(f"got {len(me)} reads")
+
+    y_offset = 15
+    for r, mons in itertools.islice(me.items(), 200):
+        dwg.add(dwg.text(r, insert=(0, y_offset - 12), fill='black', font_size = "10"))
+        add_read(dwg, r, [(n, int(b), int(b)+171) for (b, e, n) in mons], y_offset)
+        # [(n, b, e) for (b, e, n) in mons]
+        y_offset += 30
+
+
+def show_svg(sam, offset, dwg):
     """
     visualize monomer-encoded long reads in svg
     input sam file must be sorted by long reads
+    add one reads into dwg; 
     """
     import svgwrite
     import hashlib
@@ -120,15 +151,21 @@ def show_txt(sam):
 
     # if __name__ == "__main__":
 
-import re
+import svgwrite
+dwg = svgwrite.drawing.Drawing("200_reads.svg")
+
 with open("../MigaKH.HigherOrderRptMon.fa.colors.lab", "r") as colors:
     for l in colors.readlines():
         ll = l.strip("\n").split("\t")
-        rname = re.sub(" .*", "", ll[0])
+        # rname = re.sub(" .*", "", ll[0])
+        ## most concise one
+        rname = re.sub("[^.]*$", "", ll[0])[:-1]
         color_dict[rname] = (ll[1], ll[2], ll[3])
 
-show_svg(sam_8k,10)
-show_svg(sam_8km,25)
-show_svg(sam_7km,40)
+# show_svg(sam_8k,10)
+# show_svg(sam_8km,25)
+# show_svg(sam_7km,40)
+
+pickle_to_svg(dwg)
 
 dwg.save()

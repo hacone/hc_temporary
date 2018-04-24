@@ -1,6 +1,6 @@
 ## Calculate sequence-based grouping for 1868 monomers; these basic data will be used to subset monomers.
 import numpy as np
-
+import re
 
 def openFasta(path):
     """ open fasta as simple dict """
@@ -9,15 +9,16 @@ def openFasta(path):
     with open(path) as handle:
         return dict(FastaIO.SimpleFastaParser(handle))
 
-def save_pairwise_edit_distance():
-    """ pairwise edit distance is saved in monomers.dist.npy """
+def save_pairwise_edit_distance(monfile, outfile):
+    """ pairwise edit distance is saved in the specified file """
 
-    from Bio import pairwise2
-    monomers_list = list(openFasta("./MigaKH.HigherOrderRptMon.fa").values())
+    monomers_list = list(openFasta(monfile).values())
     dim =  len(monomers_list)
     d = np.zeros((dim, dim), dtype=np.int)
 
+    from Bio import pairwise2
     for i in range(dim):
+        print(f"{i}/{dim}")
         for j in range(dim):
             if i == j:
                 d[i,j] = 0 # put 0
@@ -28,7 +29,7 @@ def save_pairwise_edit_distance():
                         0, -1, -1, -1, score_only = True) # calc d[i][j]
                 d[i,j] = -score
 
-    np.save("monomers.dist.npy", d)
+    np.save(outfile, d)
 
 def save_tsne_embedding():
 
@@ -38,7 +39,6 @@ def save_tsne_embedding():
     np.save("monomers.tsne.npy", d_embedded)
 
     
-import re
 def print_close_pairs():
 
     monomers_dict = openFasta("./MigaKH.HigherOrderRptMon.fa")
@@ -69,7 +69,7 @@ def print_close_pairs():
 
     return skips
 
-print_close_pairs()
+#print_close_pairs()
 
 def plot_embedding():
 
@@ -85,3 +85,22 @@ def plot_embedding():
     plt.savefig(f"t-SNE_d30.svg")
 
 #plot_embedding()
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description='Interact with monomer databases.')
+    parser.add_argument('action', metavar='action', type=str, help='action to perform: distmat, ...')
+    parser.add_argument('--mons', dest='monfile', help='path to monomers.fa')
+    parser.add_argument('--out', dest='outfile', help='path to output')
+    args = parser.parse_args()
+
+    print(args.action)
+
+    if args.action == "distmat":
+        assert args.monfile, "monomers database is not specified. aborting."
+        if args.outfile:
+            save_pairwise_edit_distance(args.monfile, args.outfile)
+        else:
+            save_pairwise_edit_distance(args.monfile)
+    else:
+        print(f"unknown action. {args.action}")
