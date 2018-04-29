@@ -20,5 +20,8 @@ DIR_FA_GZ=$(pwd)/pacbio/Centro_Fasta_143Cells
 #time ./minialign/minialign -TMD -xpacbio.clr -t8 -k8 -s25 -m0.15 ${REF} <(zcat ${DIR_FA_GZ}/*.fasta.gz) > md_k8_s25_m015_143cells.sam
 #time ./minialign/minialign -TMD -xpacbio.clr -t8 -k7 -s25 -m0.15 ${REF} <(zcat ${DIR_FA_GZ}/*.fasta.gz) > md_k7_s25_m015_143cells.sam
 #time ./minialign/minialign -TMD -xpacbio.clr -t8 -k6 -s25 -m0.15 ${REF} <(zcat ${DIR_FA_GZ}/*.fasta.gz) > md_k6_s25_m015_143cells.sam
-time ./minialign/minialign -TMD -xpacbio.clr -t8 -k7 -s10 -m0.10 ${REF} <(zcat ${DIR_FA_GZ}/*.fasta.gz) > ./data/pac_mon_aligned/md_k7_s10_m010_143cells.sam
+#time ./minialign/minialign -TMD -xpacbio.clr -t8 -k7 -s10 -m0.10 ${REF} <(zcat ${DIR_FA_GZ}/*.fasta.gz) > ./data/pac_mon_aligned/md_k7_s10_m010_143cells.sam
 
+#for K in 8 7 6 5 4
+mkdir test_minialign
+#time ./minialign/minialign -TMD -xpacbio.clr -t8 -k8 -s1 -m0.01 ${REF} <(zcat ${READS_GZ}) > 

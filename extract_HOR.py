@@ -154,3 +154,23 @@ for r, ms_gap in x:
     #print(f"self_off_diag for {r}")
     #self_off_diag(ms_gap)
 
+## TODO: write menu
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description='Interact with monomer databases.')
+    parser.add_argument('action', metavar='action', type=str, help='action to perform: distmat, ...')
+    parser.add_argument('--mons', dest='monfile', help='path to monomers.fa')
+    parser.add_argument('--out', dest='outfile', help='path to output')
+    args = parser.parse_args()
+
+    print(args.action)
+
+    if args.action == "distmat":
+        assert args.monfile, "monomers database is not specified. aborting."
+        if args.outfile:
+            save_pairwise_edit_distance(args.monfile, args.outfile)
+        else:
+            save_pairwise_edit_distance(args.monfile)
+    else:
+        print(f"unknown action. {args.action}")
+
