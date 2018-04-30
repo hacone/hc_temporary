@@ -1,17 +1,14 @@
-import sys
-import pysam
-import re
 from collections import Counter
 from itertools import takewhile
-
+import pysam
+import re
+import sys
 
 # p = read.get_aligned_pairs returns the following tuple - p: (query_pos, ref_pos)
 # with with_seq, p: (query_pos, ref_pos, ref_base)
 
 b2i = {"A":0, "C":1, "G":2, "T":3}
 i2b = {0:"A", 1:"C", 2:"G", 3:"T"}
-
-bam = pysam.AlignmentFile("data/SRR1997411/alignments/SRR1997411.join.aligned.sort.bam")
 
 def normalize(l):
     s = sum(l)
@@ -67,9 +64,12 @@ def openFasta(path):
 ## two possible implementations; 2nd is more extensive concept (eg, 97, 2, .5, .5)
 ## 1. fix varsite as maxfreq<.9 then find varbase as freq>.01
 ## 2. find varsite as site with 2 bases freq>.01
-def detect_variant_sites():
+
+## 3. rel.freq must be > error rate = 0.1? (estimate?); abs.freq must be > seq depth (30?)
+def detect_variant_sites(bamfile, reffile):
     # TODO: use distinct monomers set later
-    ref_dict = openFasta("data/monomers/MigaKH.HigherOrderRptMon.fa")
+    #ref_dict = openFasta("data/monomers/MigaKH.HigherOrderRptMon.fa")
+    ref_dict = openFasta(reffile)
 
     for i in range(len(bam.references))[:20]:
         ref, rlen = bam.references[i], bam.lengths[i]
@@ -94,32 +94,79 @@ def detect_variant_sites():
         sys.stdout.flush()
 
 # TODO: rel freq is important as well to feel the error rate of short reads.
-def absolute_frequency_distribution():
+def absolute_frequency_distribution(bamfile):
 
-    counter, max_cov = Counter(), 0
+    bam = pysam.AlignmentFile(bamfile)
+    # read depth of each monomer
+    mon_depth = {}
+    # counters for each monomer, each rank (1-4).
+    counters = [ { j : Counter() for j in range(4) } for i in range(len(bam.references)) ]
+    max_freq = [ { j : 0 for j in range(4) } for i in range(len(bam.references)) ]
 
-    for i in range(len(bam.references)): # just test in subset
-        ref, rlen = bam.references[i], bam.lengths[i]
-        reads = list(bam.fetch(contig=ref)) # TODO: do i need to listify this ?
-        nc = count_coverage(reads, rlen, normalized = False)
+    for i in range(len(bam.references)):
+    #for i in range(5):
+        name = bam.references[i]
+        reads = list(bam.fetch(contig=name)) # TODO: do i need to listify this ?
+        mon_depth[i] = len(reads)
+        counts = count_coverage(reads, bam.lengths[i], normalized = False)
 
-        print(f"{ref}\t{i}\t{len(bam.references)}")
+        for idx in range(bam.lengths[i]):
+            f = sorted(counts[idx])
+            for r in range(4):
+                counters[i][r][f[r]] += 1
+                max_freq[i][r] = max(max_freq[i][r], f[r]) 
+
+        print(f"{i}\t{name}\t{len(reads)}\t{max_freq[i]}")
         sys.stdout.flush()
-        ## again it's not pythonic
-        for pos in range(rlen):
-            for base in range(4):
-                if max_cov < nc[pos][base]:
-                    max_cov = nc[pos][base]
-                counter[nc[pos][base]] += 1
 
     # report !
-    for c in range(max_cov + 1):
-        print(f"{c}\t{counter[c]}")
+    # for each depth range, <1000, <2000, <3000, ...
+    thresholds = list(range(0, 20000, 1000)) + list(range(20000, 40000, 2000)) + list(range(40000, 100000, 10000))
+
+    for t in range(len(thresholds) - 1):
+        f = open(f"abs_freq_dist.{thresholds[t+1]}.dat", "w")
+        counts_bin = [ sum( [ counters[i][r] for i in range(len(bam.references))
+        #counts_bin = [ sum( [ counters[i][r] for i in range(5)
+            if thresholds[t] <= mon_depth[i] & mon_depth[i] < thresholds[t+1] ],
+            Counter()) for r in range(4) ]
+        #max_bin = [ max( [0] + [ max_freq[i][r] for i in range(5)
+        max_bin = [ max( [0] + [ max_freq[i][r] for i in range(len(bam.references))
+                     if thresholds[t] <= mon_depth[i] & mon_depth[i] < thresholds[t+1] ]) for r in range(4) ]
+
+        # for each rank (least frequent to most frequent)
+        for r in range(4):
+            for c in range(max_bin[r] + 1):
+                if counts_bin[r][c] > 0:
+                    f.write(f"{r}\t{c}\t{counts_bin[r][c]}\n")
+            f.write("\n")
+
+        # all ranks aggregated
+        all_c = sum(counts_bin, Counter())
+        for c in range(max(max_bin) + 1):
+            if all_c[c] > 0:
+                f.write(f"ALL\t{c}\t{all_c[c]}\n")
+        f.close()
 
 
 if __name__ == '__main__':
 
-    #detect_variant_sites()
+    # TODO: write menu
+    import argparse
+    parser = argparse.ArgumentParser(description='Define SNVs from short-read alignments.')
+    parser.add_argument('action', metavar='action', type=str, help='action to perform: define-vars, freq-vars, ...')
+    parser.add_argument('--bam', dest='bamfile', help='path to BAM format file')
+    parser.add_argument('--ref-fa', dest='reffile', help='path to reference .fa file')
+    args = parser.parse_args()
 
-    absolute_frequency_distribution()
+    #bamfile = "data/SRR1997411/alignments/SRR1997411.join.aligned.sort.bam"
+    #reffile = "data/monomers/MigaKH.HigherOrderRptMon.fa"
+
+    if args.action == "define-vars":
+        assert args.bamfile & args.reffile, "bam or ref file is missing"
+        detect_variant_sites(args.bamfile, args.reffile)
+    elif args.action == "freq-vars":
+        assert args.bamfile, "bam file is missing"
+        absolute_frequency_distribution(args.bamfile)
+
+    # absolute_frequency_distribution()
 
