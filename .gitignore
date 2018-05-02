@@ -1,6 +1,5 @@
+*.dat
 *.gz
-*.tgz
-
 *.fa
 *.fasta
 *.fq
@@ -13,13 +12,26 @@
 *.bam.bai
 *.bam.pbi
 *.vcf
-
 *.npy
 *.ser
 *.svg
-*.log
 *.tmp
-*.dat
+*.swp
+*.tgz
+*.pickle
+*.stats
+*log*
 
 data/
 venv/
+*hd1khd
+
+__pycache__/
+minialign/
+minialign_centromere/
+squeakr/
+read_squeakr/
+pacbio/bbmap/
+pacbio/fasta_to_fastq.pl
+pacbio/seqkit
+pacbio/st

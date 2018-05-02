@@ -62,42 +62,110 @@ def parse_sam_records(aln, mons):
         epos_last_monomer = re_full
 
 
-def readname2len(s):
-    a = re.sub(".*/", "", s).split("_")
-    return int(a[1]) - int(a[0])
+def encodeSAM(samfile):
+    """ Encode PacBio reads in SAM format (reads as query, monomers as reference)
+        The result is written out in `out`.
+    """
 
-def fromSAM(sam):
-    aln = pysam.AlignmentFile(sam)
+    def readname2len(s):
+        a = re.sub(".*/", "", s).split("_")
+        return int(a[1]) - int(a[0])
+
+    aln = pysam.AlignmentFile(samfile)
     return [ EncodedRead(name = read, mons = list(parse_sam_records(aln, mons)), length = readname2len(read))
             for read, mons in groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name) ]
 
-if __name__ == "__main__":
+def correct(reads, variants):
 
-    if len(sys.argv) > 1:
-        ERs = fromSAM(sys.argv[1])
-    else:
-        ERs = fromSAM()
+    def correct_read(read, variants):
+        return EncodedRead(
+               name = read.name,
+               length = read.length,
+               mons = [ AssignedMonomer(
+                   begin = m.begin,
+                   end = m.end,
+                   monomer = Monomer(
+                       name = m.monomer.name,
+                       snvs = [ snv for snv in m.monomer.snvs if variants[m.monomer.name][(snv.pos, snv.base)] > 0 ]))
+                   for m in read.mons ]) 
 
-    print("readname\t%covered\t%errors")
+    return [ correct_read(read, variants) for read in reads ]
 
+
+def encoding_stats(ers, variants = None):
+    """ print out some statistics of encoded reads set to see the quality of encoding. """
+
+    print(f"name\tcoverage\tsnv_rate(on read)\tsnv_rate(on SNV sites)\tnSNV\tnsites\tmonomer_length(after recover)")
     c_total, s_total, l_total, nread= 0, 0, 0, 0
-    for ER in ERs:
-        c, s = 0, 0
+    v_total = 0
+    for ER in ers:
+        c, s, v = 0, 0, 0
         for m in ER.mons:
             #print(f"{m.begin}-{m.end} : {m.monomer.name} ({len(m.monomer.snvs)} SNVs)")
             if m.monomer.name != "GAP":
                 c += m.end - m.begin
+                if variants:
+                    # v += len(list(groupby(m.monomer.snvs, lambda x: x.pos)))
+                    v += len(list(groupby([ k[0] for k, v in variants[m.monomer.name].items() if v > 0 ])))
             s += len(m.monomer.snvs)
-
         if c > 0:
-            print(f"{ER.name}\t{100*c/ER.length:.3f} %\t{100*s/c:.3f} %")
+            if variants:
+                print(f"{ER.name}\t{100*c/ER.length:.3f} %\t{100*s/c:.3f} %\t{100*s/v:.3f} %\t{s}\t{v}\t{c}")
+            else:
+                print(f"{ER.name}\t{100*c/ER.length:.3f} %\t{100*s/c:.3f} %\tNA\t{s}\tNA\t{c}")
         else:
             print(f"{ER.name}\t0 %\t0 %")
-
         c_total += c
         s_total += s
         l_total += ER.length
         nread += 1
+        v_total += v
 
-    print(f"TOTAL\t{100*c_total/l_total:.3f} %\t{100*s_total/c_total:.3f} %\t{nread} reads")
+    if variants:
+        print(f"TOTAL\t{100*c_total/l_total:.3f} %\t{100*s_total/c_total:.3f} %\t{100*s_total/v_total:.3f}\t{s_total}\t{v_total}\t{c_total}")
+    else:
+        print(f"TOTAL\t{100*c_total/l_total:.3f} %\t{100*s_total/c_total:.3f} %\tNA\t{s_total}\tNA\t{c_total}")
+
+    print(f"statistics of {nread} reads.")
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description='Monomer-encoding of reads.')
+    parser.add_argument('action', metavar='action', type=str, help='action to perform: encode, correct, ...')
+    parser.add_argument('--sam', dest='samfile', help='SAM format alignments to be encoded')
+    parser.add_argument('--read', dest='readfile', help='pickled encoded reads')
+    parser.add_argument('--vars', dest='varsfile', help='pickled admissible variants')
+    parser.add_argument('--out', dest='outfile', help='the output to which pickled encoded reads are written out.' +
+            ' For correction task, corrected reads are written out to the path')
+    args = parser.parse_args()
+
+    print(args.action)
+
+    import pickle
+    if args.action == "encode":
+        assert args.samfile, "SAM file is not specified. aborting."
+        assert args.outfile, "output file is not specified. aborting."
+        with open(args.outfile, "wb") as f:
+            ers = encodeSAM(args.samfile)
+            # encoding_stats(ers)
+            pickle.dump(ers, f)
+
+    elif args.action == "correct":
+        assert args.readfile, "file of encoded reads is not specified. aborting."
+        with open(args.readfile, "rb") as f:
+            ers = pickle.load(f)
+
+        assert args.varsfile, "file of variants is not specified. aborting."
+        with open(args.varsfile, "rb") as f:
+            variants = pickle.load(f)
+
+        encoding_stats(ers)
+        corrected = correct(ers, variants)
+        encoding_stats(corrected, variants)
+        
+        with open(args.outfile, "wb") as f:
+            pickle.dump(corrected, f)
+    else:
+        print(f"unknown action. {args.action}")
 

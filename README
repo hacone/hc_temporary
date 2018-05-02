@@ -1,6 +1,15 @@
 ### General
 Here are code fragments for processing short/long reads in centromeric reads.
 
+format of pickled data
+
+EncodedRead = namedtuple("EncodedRead", ("name", "mons", "length")) # string, list(AssignedMonomer), Int 
+	AssignedMonomer = namedtuple("AssignedMonomer", ("begin", "end", "monomer")) # Int, Int, Monomer
+	Monomer = namedtuple("Monomer", ("name", "snvs")) # string, list(SNV) or id: Int, list(SNV)
+	SNV = namedtuple("SNV", ("pos", "base")) # Int, char
+
+variant_sites = { "MonomerName" : { "Monomer" : freq_as_mon, (pos, base) : freq } }
+
 
 ### TODO
 1868 is too redundant even for original alignment. use 1197 distinct ones.

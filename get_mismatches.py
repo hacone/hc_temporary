@@ -1,4 +1,4 @@
-from collections import Counter
+from collections import Counter, defaultdict
 from itertools import takewhile
 import pysam
 import re
@@ -40,19 +40,12 @@ def count_coverage(reads, rlen, normalized = False):
     else:
         return cc
 
-def TODO_FUNC():
-    # wont need this
-    qaseq = reads[0].query_alignment_sequence 
-    qseq = reads[1].query_sequence
-    # pos_in_ref, base_in_ref(lowercase), base_in_read
-    mms = [ (p[1], p[2], qseq[p[0]]) for p in reads[1].get_aligned_pairs(matches_only=True, with_seq=True) if p[2].islower() ] 
-
-    ## determine significant ref poss; get mismatch list; count freq of each set; perform grad-asc algorithm
-    # algorithm; enumerate every possible state; their association to observations; initialize;
-    # calc likelihood factor; calc gradient; update estimate; loop..
-    # report final estimation
-    ## Or; count_coverage from list(read); split read; recur
-    # read list would have difining vars set; list may be overlapping
+## determine significant ref poss; get mismatch list; count freq of each set; perform grad-asc algorithm
+# algorithm; enumerate every possible state; their association to observations; initialize;
+# calc likelihood factor; calc gradient; update estimate; loop..
+# report final estimation
+## Or; count_coverage from list(read); split read; recur
+# read list would have difining vars set; list may be overlapping
 
 def openFasta(path):
     """ open fasta as simple dict (refname is trimmed after the first space)"""
@@ -64,37 +57,43 @@ def openFasta(path):
 ## two possible implementations; 2nd is more extensive concept (eg, 97, 2, .5, .5)
 ## 1. fix varsite as maxfreq<.9 then find varbase as freq>.01
 ## 2. find varsite as site with 2 bases freq>.01
-
 ## 3. rel.freq must be > error rate = 0.1? (estimate?); abs.freq must be > seq depth (30?)
 def detect_variant_sites(bamfile, reffile):
-    # TODO: use distinct monomers set later
-    #ref_dict = openFasta("data/monomers/MigaKH.HigherOrderRptMon.fa")
-    ref_dict = openFasta(reffile)
+    """ define variant sites from short read alignment data and write out as pickle. """
 
-    for i in range(len(bam.references))[:20]:
-        ref, rlen = bam.references[i], bam.lengths[i]
+    bam = pysam.AlignmentFile(bamfile)
+    ref = openFasta(reffile) # I don't need this ??
+    variant_sites = {} # {"Monomer1":{ "Monomer":freq_as_mon, (pos,base):freq }}
 
-        print(f"#####\tref = {ref}\t#####")
+    # SNVs with rel. freq. less than this value are supposed to be errors,
+    # or at least it's difficult to distinguish them with error.
+    t_err = 0.02
+    # SNVs with abs. freq. less than short read sequencing depth are supposed to be errors
+    t_abs = 50
 
-        reads = list(bam.fetch(contig=ref))
-        nc = count_coverage(reads, rlen, normalized = True)
+    for i in range(len(bam.references)):
+        name = bam.references[i]
+        reads = list(bam.fetch(contig=name)) # TODO: do i need to listify this ?
+        counts = count_coverage(reads, bam.lengths[i], normalized = False)
+        vs = defaultdict(int)
+        vs["Monomer"] = len(reads)
 
-        variant_pos = [i for i in range(rlen) if max(nc[i]) < .90]
-        
-        ## here is far from pythonic
-        variants = []
-        for vp in variant_pos:
-            varbase = []
-            for j in range(4):
-                if nc[vp][j] > .01:
-                    varbase += ((i2b[j], nc[vp][j]))
-            variants += ((vp,varbase))
+        for idx in range(bam.lengths[i]):
+            for r, c in sorted(enumerate(counts[idx]), key=lambda x:x[1])[:-1]:
+                if (c > max([t_abs, t_err * len(reads)])):
+                    vs[ (idx, i2b[r]) ] = c
+        variant_sites[name] = vs
 
-        print(variants)
+        print(f"{i}\t{name}\t{len(reads)}\t{len(list(vs))}")
         sys.stdout.flush()
+
+    import pickle
+    with open(f"variant_sites_{t_abs}_{t_err}.pickle", "wb") as f:
+        pickle.dump(variant_sites, f)
 
 # TODO: rel freq is important as well to feel the error rate of short reads.
 def absolute_frequency_distribution(bamfile):
+    """ absolute frequency distribution grouped by each range of overall monomer coverage"""
 
     bam = pysam.AlignmentFile(bamfile)
     # read depth of each monomer
@@ -104,7 +103,6 @@ def absolute_frequency_distribution(bamfile):
     max_freq = [ { j : 0 for j in range(4) } for i in range(len(bam.references)) ]
 
     for i in range(len(bam.references)):
-    #for i in range(5):
         name = bam.references[i]
         reads = list(bam.fetch(contig=name)) # TODO: do i need to listify this ?
         mon_depth[i] = len(reads)
@@ -119,17 +117,15 @@ def absolute_frequency_distribution(bamfile):
         print(f"{i}\t{name}\t{len(reads)}\t{max_freq[i]}")
         sys.stdout.flush()
 
-    # report !
-    # for each depth range, <1000, <2000, <3000, ...
+    
+    # report! for each depth range, <1000, <2000, <3000, ...
     thresholds = list(range(0, 20000, 1000)) + list(range(20000, 40000, 2000)) + list(range(40000, 100000, 10000))
 
     for t in range(len(thresholds) - 1):
         f = open(f"abs_freq_dist.{thresholds[t+1]}.dat", "w")
         counts_bin = [ sum( [ counters[i][r] for i in range(len(bam.references))
-        #counts_bin = [ sum( [ counters[i][r] for i in range(5)
             if thresholds[t] <= mon_depth[i] & mon_depth[i] < thresholds[t+1] ],
             Counter()) for r in range(4) ]
-        #max_bin = [ max( [0] + [ max_freq[i][r] for i in range(5)
         max_bin = [ max( [0] + [ max_freq[i][r] for i in range(len(bam.references))
                      if thresholds[t] <= mon_depth[i] & mon_depth[i] < thresholds[t+1] ]) for r in range(4) ]
 
@@ -138,7 +134,7 @@ def absolute_frequency_distribution(bamfile):
             for c in range(max_bin[r] + 1):
                 if counts_bin[r][c] > 0:
                     f.write(f"{r}\t{c}\t{counts_bin[r][c]}\n")
-            f.write("\n")
+            f.write("\n\n")
 
         # all ranks aggregated
         all_c = sum(counts_bin, Counter())
@@ -162,11 +158,10 @@ if __name__ == '__main__':
     #reffile = "data/monomers/MigaKH.HigherOrderRptMon.fa"
 
     if args.action == "define-vars":
-        assert args.bamfile & args.reffile, "bam or ref file is missing"
+        assert args.bamfile, "bam file is missing"
+        assert args.reffile, "ref file is missing"
         detect_variant_sites(args.bamfile, args.reffile)
     elif args.action == "freq-vars":
         assert args.bamfile, "bam file is missing"
         absolute_frequency_distribution(args.bamfile)
-
-    # absolute_frequency_distribution()
 
