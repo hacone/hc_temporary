@@ -77,7 +77,7 @@ def detect_variant_sites(bamfile, reffile):
         counts = count_coverage(reads, bam.lengths[i], normalized = False)
         vs = defaultdict(int)
         vs["Monomer"] = len(reads)
-
+        
         for idx in range(bam.lengths[i]):
             for r, c in sorted(enumerate(counts[idx]), key=lambda x:x[1])[:-1]:
                 if (c > max([t_abs, t_err * len(reads)])):
@@ -85,6 +85,7 @@ def detect_variant_sites(bamfile, reffile):
         variant_sites[name] = vs
 
         print(f"{i}\t{name}\t{len(reads)}\t{len(list(vs))}")
+        # TODO; i need frequency of variants
         sys.stdout.flush()
 
     import pickle
