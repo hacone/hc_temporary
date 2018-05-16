@@ -12,6 +12,23 @@ Monomer = namedtuple("Monomer", ("name", "snvs")) # string, list(SNV) or id: Int
 AssignedMonomer = namedtuple("AssignedMonomer", ("begin", "end", "monomer")) # Int, Int, Monomer
 EncodedRead = namedtuple("EncodedRead", ("name", "mons", "length")) # string, list(AssignedMonomer), Int
 
+# multiple alignment representation. that is a set of "cells"
+# pairwise alignment is just a malign with 2 reads
+MAlign = namedtuple("MAlign", ("reads", "alignments")) # list(str), list(tuple)
+
+def pairwise_encoded(er1, er2):
+    # banded (real coord) dp
+
+    l1, l2 = len(er1.mons), len(er2.mons)
+
+    s = np.zeros(l1*l2).reshape(l1, l2)
+
+    s[0,0]
+    # init 
+    # recur
+    # bt
+    return MAlign
+
 def get_read_range(aligned_segment):
     ## get read_start and read_end(aligned coordinates in an original read with hard clipped part)
 

@@ -69,7 +69,11 @@ def print_close_pairs():
 
     return skips
 
-#print_close_pairs()
+def cluster(mon, distmat, monfreq = defaultdict(1)):
+    skips = set()
+    for i in range(len(mon.items())) if not i in skips:
+
+
 
 def plot_embedding():
 
@@ -89,7 +93,7 @@ def plot_embedding():
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Interact with monomer databases.')
-    parser.add_argument('action', metavar='action', type=str, help='action to perform: distmat, ...')
+    parser.add_argument('action', metavar='action', type=str, help='action to perform: distmat, cluster, ...')
     parser.add_argument('--mons', dest='monfile', help='path to monomers.fa')
     parser.add_argument('--out', dest='outfile', help='path to output')
     args = parser.parse_args()
@@ -102,5 +106,7 @@ if __name__ == "__main__":
             save_pairwise_edit_distance(args.monfile, args.outfile)
         else:
             save_pairwise_edit_distance(args.monfile)
+    if args.action == "cluster":
+        assert args.monfile, "monomers database is not specified. aborting."
     else:
         print(f"unknown action. {args.action}")

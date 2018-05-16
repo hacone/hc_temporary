@@ -2,8 +2,8 @@ import collections
 import itertools
 import math
 import re
-
 import pysam
+import pickle
 import svgwrite
 #sam = pysam.AlignmentFile("./minaln_k8_80cells.sam")
 
@@ -45,7 +45,7 @@ def name_to_color(name, color_dict):
     # den = 256
 
     # TODO: adhoc failsafe for the name problem
-    name = re.sub("[^.]*$", "", name)[:-1]
+    #name = re.sub("[^.]*$", "", name)[:-1]
 
     r = round(float(color_dict[name][0]) * 255 / den)
     g = round(float(color_dict[name][1]) * 255 / den)
@@ -103,7 +103,6 @@ def show_svg(sam, dwg, offset = 0, color_dict = collections.defaultdict(lambda: 
 
         #read_shape = dwg.defs.add(dwg.g(id=readname))
         read_shape = dwg.add(dwg.g(id=readname))
-
         for a, reg in alns_n_regs:
             read_shape.add(dwg.text(label + " : " + readname, insert=(0, y-6), fill='black', font_size = "10"))
             read_shape.add(dwg.rect(insert=(reg[0]/5,y), size=((reg[1]-reg[0])/5, 8),
@@ -142,9 +141,10 @@ if __name__ == "__main__":
     # TODO: write menu
     import argparse
     parser = argparse.ArgumentParser(description='Visualize encoded reads in SAM or [aligned encoded reads file].')
-    #parser.add_argument('action', metavar='action', type=str, help='action to perform: distmat, ...')
+    parser.add_argument('action', metavar='action', type=str, help='action to perform: pileup, ...')
     parser.add_argument('--sam', dest='samfile', help='path to SAM format file')
     parser.add_argument('--svg', dest='svgfile', help='path to output svg file')
+    parser.add_argument('--pickle', dest='picklefile', help='pickled encoded reads in pileup with *coordinates being aligned*.')
     args = parser.parse_args()
 
     #dwg = svgwrite.drawing.Drawing("200_reads.svg")
@@ -152,17 +152,52 @@ if __name__ == "__main__":
     # if colors are specified as option, set it up
     color_dict = {} 
     color_file = "../MigaKH.HigherOrderRptMon.fa.colors.lab"
+
     with open(color_file, "r") as colors:
         for l in colors.readlines():
             ll = l.strip("\n").split("\t")
             ## most concise one; ignore all after the last dot
             rname = re.sub("[^.]*$", "", ll[0])[:-1]
             color_dict[rname] = (ll[1], ll[2], ll[3])
+            # TODO: random colors.
+            # color_dict[rname] = (random, random, random)
 
     #print(args.action)
 
-    #if args.action == "distmat":
-    if True:
+    if args.action == "pileup":
+        assert args.picklefile, "need pickled encoded reads file. aborting."
+        assert args.svgfile, "output file is not specified. aborting."
+
+        # coloring for SNVs
+        b2c = dict(A = "#F8766D", C = "#7CAE00", G = "#00BFC4", T = "#C77CFF")
+
+        with open(args.picklefile, "rb") as f:
+            ers = pickle.load(f)
+
+        dwg = svgwrite.drawing.Drawing(args.svgfile)
+        y = 15
+        for er in ers:
+            read_shape = dwg.add(dwg.g(id=er.name))
+            read_shape.add(dwg.text(er.name, insert=(0, y-6), fill='black', font_size = "10"))
+            for mon in er.mons:
+                read_shape.add(dwg.rect(
+                    insert = (1000+ mon.begin/5, y),
+                    size = ((mon.end - mon.begin)/5, 8),
+                    fill = f"#{name_to_color(mon.monomer.name, color_dict)}"))
+                for snv in mon.monomer.snvs:
+                    #print(snv)
+                    #read_shape.add(dwg.line(
+                    read_shape.add(dwg.circle(
+                        center = (1000+ (mon.begin + snv.pos)/5, y),
+                        r = 4,  fill = b2c[snv.base]))
+
+                    #    start = (1000+ (mon.begin + snv.pos)/5, y + 10),
+                    #    end = (1000+ (mon.begin + snv.pos)/5, y - 10),
+                    #    stroke_width = 4, fill = b2c[snv.base]))
+            y += 15
+        dwg.save()
+        
+    elif True:
         #assert args.samfile, "input sam file is not specified. aborting."
         #assert args.svgfile, "output file is not specified. aborting."
 
