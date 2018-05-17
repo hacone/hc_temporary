@@ -1,10 +1,11 @@
 ## Calculate sequence-based grouping for 1868 monomers; these basic data will be used to subset monomers.
+from collections import defaultdict
 import numpy as np
+import pysam
 import re
 
 def openFasta(path):
     """ open fasta as simple dict """
-
     from Bio.SeqIO import FastaIO
     with open(path) as handle:
         return dict(FastaIO.SimpleFastaParser(handle))
@@ -69,11 +70,62 @@ def print_close_pairs():
 
     return skips
 
-def cluster(mon, distmat, monfreq = defaultdict(1)):
+# MonomerClusters.pi[]
+# MonomerClusters.edops[(from, to)]
+
+def cluster(mon, d, sep_t = 10, monomer_freq = defaultdict(lambda: 0)):
+    """
+    perform clustering of monomers given, among which the distance matrix is precalculated and given as `d`.
+    each cluster must be separated at least by `sep_t`. the most frequent (in short reads) monomers are chosen as the representatives.
+    caution: results are written into standard output.
+    """
+
+    names = [re.sub("[^.]*$", "", n)[:-1] for n in mon.keys()]
+    dim = len(names)
     skips = set()
-    for i in range(len(mon.items())) if not i in skips:
 
+    def find_similars(s):
+        "collect elements close to a member of s"
+        similars = set()
+        for i in s:
+            similars |= { j for j in range(dim) if d[i,j] <= sep_t }
+        return similars
 
+    def report(cls):
+        "write out the formatted cluster information"
+        cluster = sorted( [ dict(name=names[j], freq=monomer_freq[names[j]], idx=j) for j in cls ],
+                key=lambda x: -(x["freq"]) )
+        rep = cluster[0] # representative must be the most frequent one
+        for c in cluster:
+            print(f"{c['name']}\t{rep['name']}\t{c['freq']}\t{d[c['idx'], rep['idx']]}")
+
+    def report_repseq(cls):
+        "write out a Fasta record for representative sequence."
+        cluster = sorted( [ dict(name=names[j], freq=monomer_freq[names[j]], idx=j) for j in cls ],
+                key=lambda x: -(x["freq"]) )
+        rep = cluster[0] # representative must be the most frequent one
+        for n, s in mon.items():
+            if re.sub("[^.]*$", "", n)[:-1] == rep["name"]:
+                print(">" + rep["name"])
+                print(s)
+
+    # declare the format
+    print("name\tcluster\tfreq\td_to_repr")
+
+    for i in range(dim):
+        if i in skips:
+            pass
+        else:
+            curr_clus, p_end = {i}, False
+            while not p_end:
+                next_clus = find_similars(curr_clus)
+                if len(next_clus) == len(curr_clus):
+                    skips |= curr_clus
+                    p_end = True
+                curr_clus = next_clus
+            # report current cluster for i
+            #report(curr_clus)
+            report_repseq(curr_clus)
 
 def plot_embedding():
 
@@ -96,6 +148,9 @@ if __name__ == "__main__":
     parser.add_argument('action', metavar='action', type=str, help='action to perform: distmat, cluster, ...')
     parser.add_argument('--mons', dest='monfile', help='path to monomers.fa')
     parser.add_argument('--out', dest='outfile', help='path to output')
+    parser.add_argument('--dist', dest='distmatfile', help='path to distance matrix numpy object')
+    parser.add_argument('--cluster-size', dest='cluster_size', help='the distance by which clusters must be separated each other')
+    parser.add_argument('--bam', dest='bamfile', help='bamfile where short reads are aligned to monomers, used in selecting representatives')
     args = parser.parse_args()
 
     print(args.action)
@@ -106,7 +161,19 @@ if __name__ == "__main__":
             save_pairwise_edit_distance(args.monfile, args.outfile)
         else:
             save_pairwise_edit_distance(args.monfile)
+
     if args.action == "cluster":
         assert args.monfile, "monomers database is not specified. aborting."
+        assert args.distmatfile, "distance matrix is not specified. aborting."
+        assert args.cluster_size, "cluster size is not specified. aborting."
+        mons = openFasta(args.monfile)
+        dm = np.load(args.distmatfile)
+        if args.bamfile:
+            bam = pysam.AlignmentFile(args.bamfile)
+            monomer_freq = { re.sub("[^.]*$", "", refname)[:-1] : len(list(bam.fetch(contig=refname))) for refname in bam.references }
+            cluster(mons, dm, int(args.cluster_size), monomer_freq)
+        else:
+            cluster(mons, dm, int(args.cluster_size))
+
     else:
         print(f"unknown action. {args.action}")
