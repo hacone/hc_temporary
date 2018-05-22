@@ -1,6 +1,8 @@
 ## This is the class representing a set of monomer-encoded PacBio reads.
+from collections import Counter
 from collections import namedtuple
 from itertools import groupby
+from itertools import islice
 import numpy as np
 import pysam
 import re
@@ -19,15 +21,84 @@ MAlign = namedtuple("MAlign", ("reads", "alignments")) # list(str), list(tuple)
 def pairwise_encoded(er1, er2):
     # banded (real coord) dp
 
+    def match(m1, m2):
+        """ (mis)match score for pair of monomers. """
+        if m1.name != m2.name:
+            return -10000
+        else:
+            s1, s2 = { s for s in m1.snvs }, { s for s in m2.snvs }
+            return len(s1 & s2) - len(s1 ^ s2)
+
+    def backtrace(s, bt, i, j):
+        r = []
+        while (i > 0) & (j > 0):
+            r = r + [(i, j)]
+            if bt[i,j] == 0:
+                i -= 1
+            elif bt[i,j] == 1:
+                j -= 1
+            else:
+                i -= 1
+                j -= 1
+        return sorted(r)
+
+
     l1, l2 = len(er1.mons), len(er2.mons)
 
-    s = np.zeros(l1*l2).reshape(l1, l2)
+    if len({ m.monomer.name for m in er1.mons } & { m.monomer.name for m in er2.mons }) < 4:
+        return None # not align
+        #return [] # not align
 
-    s[0,0]
-    # init 
-    # recur
-    # bt
-    return MAlign
+
+    # init # NOTE: I need dovetail alignments!
+    # TODO: need starting anchor !!!
+    # i_begin = 0, j_begin in range(l2)
+    i_begin = 1 # NOTE: always start with 1
+    # for j_begin in [ j for j in range(1,l2+1) if er1.mons[i_begin-1].monomer.name == er2.mons[j-1].monomer.name ]:
+    # TODO: maybe I won't need alignments starting with gap-gap
+    for j_begin in [ j for j in range(1,l2) if er1.mons[i_begin-1].monomer.name == er2.mons[j-1].monomer.name ]:
+        print(f"i_begin = {i_begin}")
+        print(f"j_begin = {j_begin}")
+        s = np.zeros((l1+1)*(l2+1)).reshape(l1+1, l2+1)
+        bt = np.zeros((l1+1)*(l2+1)).reshape(l1+1, l2+1)
+
+
+        for i in range(l1+1): 
+            s[i,0] = -10000
+        for j in range(l2+1):
+            s[0,j] = -10000
+        for i in range(l1+1):
+            s[i, j_begin-1] = -10000
+
+        # s[0,0] = 0
+        s[i_begin-1, j_begin-1] = 0
+
+        # recur
+        for i in range(1, l1+1):
+            ioffset = er1.mons[i_begin-1].end - er1.mons[i-1].end
+            for j in range(j_begin, l2+1):
+                joffset = er2.mons[j_begin-1].end - er2.mons[j-1].end
+                if abs(ioffset - joffset) > 800: # NOTE: won't allow displacement of ~5 monomers
+                    s[i,j] = -10000
+                else:
+                    ii = s[i-1,j] # ins in i
+                    ij = s[i,j-1] # ins in j
+                    # match
+                    m = s[i-1,j-1] + match(er1.mons[i-1].monomer, er2.mons[j-1].monomer)
+                    s[i,j], bt[i,j] = max([(ii, 0), (ij, 1), (m, 2)])
+
+        print(s)
+        #print(bt)
+        #print([ backtrace(s, bt, max_i, max_j)
+        #    for max_s, max_i, max_j in [ (s[l1, j], l1, j) for j in range(l2+1) ] + [ (s[i, l2], i, l2) for i in range(l1+1) ] if max_s > 0 ])
+
+
+    # bt TODO: No, I need all the alignments with positive scores.
+    #max_s, max_o, max_t = max([ (s[l1-1, j], j, 0) for j in range(l2) ] ++ [ (s[i, l2-1], i, 1) for i in range(l1) ])
+    return [ backtrace(s, bt, max_i, max_j)
+        for max_s, max_i, max_j in [ (s[l1, j], l1, j) for j in range(l2) ] + [ (s[i, l2], i, l2) for i in range(l1) ] + [(s[l1, l2], l1, l2)] if max_s > 0 ]
+
+    # next I need malign to clusters, or list of alignments to clusters.
 
 def get_read_range(aligned_segment):
     ## get read_start and read_end(aligned coordinates in an original read with hard clipped part)
@@ -60,13 +131,13 @@ def parse_sam_records(aln, mons):
         rs_full = rs - m.reference_start
         re_full = re + aln.lengths[m.reference_id] - m.reference_end
 
-        # Insert a GAP if there's (10) bp
+        # Insert a GAP if there's (10) bp # NOTE: some ad-hoc workaround
         if rs_full - epos_last_monomer > 10:
             yield AssignedMonomer(begin = epos_last_monomer, end = rs_full,
                     monomer = Monomer(name = "GAP", snvs = []))
 
         if epos_last_monomer - rs_full > 0.8 * aln.lengths[m.reference_id]:
-            # skip if there is 80% overlap with previous monomer; and epos_last_monomer need not changed
+            # skip if there is 80% overlap with previous monomer; and epos_last_monomer need not changed # NOTE: ad hoc, too
             re_full = epos_last_monomer
         else:
             qseq, rseq = m.query_alignment_sequence, m.get_reference_sequence()
@@ -89,8 +160,11 @@ def encodeSAM(samfile):
         return int(a[1]) - int(a[0])
 
     aln = pysam.AlignmentFile(samfile)
-    return [ EncodedRead(name = read, mons = list(parse_sam_records(aln, mons)), length = readname2len(read))
-            for read, mons in groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name) ]
+    #return [ EncodedRead(name = read, mons = list(parse_sam_records(aln, mons)), length = readname2len(read))
+    #        for read, mons in groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name) ]
+
+    for read, mons in groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name):
+        yield EncodedRead(name = read, mons = list(parse_sam_records(aln, mons)), length = readname2len(read))
 
 def correct(reads, variants):
 
@@ -145,12 +219,28 @@ def encoding_stats(ers, variants = None):
 
     print(f"statistics of {nread} reads.")
 
+def kmonomers_stats(ers):
+    """ Calculates k-monomer frequencies in given encoded read set. """
+
+    for k in [2, 3, 4, 5, 6]:
+        counter = Counter()
+        for er in ers:
+            # mons_array = [ m.monomer.name for m in er.mons if (m.monomer.name != "GAP") | ((m.monomer.end - m.monomer.begin) > 100) ]
+            mons_array = [ m.monomer.name for m in er.mons if m.monomer.name != "GAP" ]
+            for i in range(len(mons_array)-k+1):
+                counter[tuple(mons_array[i:i+k])] += 1
+
+        print(f"K={k}")
+        print(counter.most_common(1000))
+
+
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Monomer-encoding of reads.')
-    parser.add_argument('action', metavar='action', type=str, help='action to perform: encode, correct, ...')
+    parser.add_argument('action', metavar='action', type=str, help='action to perform: encode, correct, k-monomer, ...')
     parser.add_argument('--sam', dest='samfile', help='SAM format alignments to be encoded')
+    parser.add_argument('--split', dest='split', help='specify to split the encoded reads pickle (for larger sam file)')
     parser.add_argument('--read', dest='readfile', help='pickled encoded reads')
     parser.add_argument('--vars', dest='varsfile', help='pickled admissible variants')
     parser.add_argument('--out', dest='outfile', help='the output to which pickled encoded reads are written out.' +
@@ -163,10 +253,26 @@ if __name__ == "__main__":
     if args.action == "encode":
         assert args.samfile, "SAM file is not specified. aborting."
         assert args.outfile, "output file is not specified. aborting."
-        with open(args.outfile, "wb") as f:
+
+        if not args.split:
             ers = encodeSAM(args.samfile)
-            # encoding_stats(ers)
-            pickle.dump(ers, f)
+            with open(args.outfile, "wb") as f:
+                pickle.dump(list(ers), f)
+        else:
+            ers = encodeSAM(args.samfile)
+            nfile = 1
+            try:
+                # TODO: why I can't exit this loop?? please fix before next run.
+                while True:
+                    e = list(islice(ers, 10000))
+                    with open(args.outfile + f".{nfile}", "wb") as f:
+                        pickle.dump(e, f)
+                    nfile += 1
+                    print(f"written {nfile}")
+            except StopIteration:
+                print("done")
+
+        # encoding_stats(ers)
 
     elif args.action == "correct":
         assert args.readfile, "file of encoded reads is not specified. aborting."
@@ -183,6 +289,13 @@ if __name__ == "__main__":
         
         with open(args.outfile, "wb") as f:
             pickle.dump(corrected, f)
+
+    elif args.action == "k-monomer":
+        assert args.readfile, "file of encoded reads is not specified. aborting."
+        with open(args.readfile, "rb") as f:
+            ers = pickle.load(f)
+        kmonomers_stats(ers)
+
     else:
         print(f"unknown action. {args.action}")
 
