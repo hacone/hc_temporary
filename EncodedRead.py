@@ -3,7 +3,9 @@ from collections import Counter
 from collections import namedtuple
 from itertools import groupby
 from itertools import islice
+from itertools import zip_longest
 import numpy as np
+import pickle
 import pysam
 import re
 import sys
@@ -43,15 +45,15 @@ def pairwise_encoded(er1, er2):
         return sorted(r)
 
 
+    valid_alignments = []
     l1, l2 = len(er1.mons), len(er2.mons)
 
     if len({ m.monomer.name for m in er1.mons } & { m.monomer.name for m in er2.mons }) < 4:
-        return None # not align
-        #return [] # not align
+        return valid_alignments # not align
+        #return None # not align
 
 
     # init # NOTE: I need dovetail alignments!
-    # TODO: need starting anchor !!!
     # i_begin = 0, j_begin in range(l2)
     i_begin = 1 # NOTE: always start with 1
     # for j_begin in [ j for j in range(1,l2+1) if er1.mons[i_begin-1].monomer.name == er2.mons[j-1].monomer.name ]:
@@ -62,7 +64,6 @@ def pairwise_encoded(er1, er2):
         s = np.zeros((l1+1)*(l2+1)).reshape(l1+1, l2+1)
         bt = np.zeros((l1+1)*(l2+1)).reshape(l1+1, l2+1)
 
-
         for i in range(l1+1): 
             s[i,0] = -10000
         for j in range(l2+1):
@@ -70,8 +71,7 @@ def pairwise_encoded(er1, er2):
         for i in range(l1+1):
             s[i, j_begin-1] = -10000
 
-        # s[0,0] = 0
-        s[i_begin-1, j_begin-1] = 0
+        s[i_begin-1, j_begin-1] = 0 # This ensures the first monomer match
 
         # recur
         for i in range(1, l1+1):
@@ -81,22 +81,30 @@ def pairwise_encoded(er1, er2):
                 if abs(ioffset - joffset) > 800: # NOTE: won't allow displacement of ~5 monomers
                     s[i,j] = -10000
                 else:
-                    ii = s[i-1,j] # ins in i
-                    ij = s[i,j-1] # ins in j
+                    if er1.mons[i-1].monomer.name == "GAP":
+                        ii = s[i-1,j] # ins in i
+                    else:
+                        ii = s[i-1,j]-10 
+
+                    if er1.mons[j-1].monomer.name == "GAP":
+                        ij = s[i,j-1] # ins in j
+                    else:
+                        ij = s[i,j-1]-10 
+
                     # match
                     m = s[i-1,j-1] + match(er1.mons[i-1].monomer, er2.mons[j-1].monomer)
                     s[i,j], bt[i,j] = max([(ii, 0), (ij, 1), (m, 2)])
 
-        print(s)
+        #print(s)
         #print(bt)
-        #print([ backtrace(s, bt, max_i, max_j)
-        #    for max_s, max_i, max_j in [ (s[l1, j], l1, j) for j in range(l2+1) ] + [ (s[i, l2], i, l2) for i in range(l1+1) ] if max_s > 0 ])
-
+        edges = [ (s[l1, j], l1, j) for j in range(l2) ] + [ (s[i, l2], i, l2) for i in range(l1) ] + [(s[l1, l2], l1, l2)]
+        max_s, max_i, max_j = max(edges)
+        if max_s > 0:
+            valid_alignments += [backtrace(s, bt, max_i, max_j)]
 
     # bt TODO: No, I need all the alignments with positive scores.
     #max_s, max_o, max_t = max([ (s[l1-1, j], j, 0) for j in range(l2) ] ++ [ (s[i, l2-1], i, 1) for i in range(l1) ])
-    return [ backtrace(s, bt, max_i, max_j)
-        for max_s, max_i, max_j in [ (s[l1, j], l1, j) for j in range(l2) ] + [ (s[i, l2], i, l2) for i in range(l1) ] + [(s[l1, l2], l1, l2)] if max_s > 0 ]
+    print(valid_alignments)
 
     # next I need malign to clusters, or list of alignments to clusters.
 
@@ -249,7 +257,6 @@ if __name__ == "__main__":
 
     print(args.action)
 
-    import pickle
     if args.action == "encode":
         assert args.samfile, "SAM file is not specified. aborting."
         assert args.outfile, "output file is not specified. aborting."
@@ -261,16 +268,13 @@ if __name__ == "__main__":
         else:
             ers = encodeSAM(args.samfile)
             nfile = 1
-            try:
-                # TODO: why I can't exit this loop?? please fix before next run.
-                while True:
-                    e = list(islice(ers, 10000))
-                    with open(args.outfile + f".{nfile}", "wb") as f:
-                        pickle.dump(e, f)
-                    nfile += 1
-                    print(f"written {nfile}")
-            except StopIteration:
-                print("done")
+            grouper = [ers] * 10000
+            for e in zip_longest(*grouper, fillvalue=None):
+                with open(args.outfile + f".{nfile}", "wb") as f:
+                    pickle.dump(e, f)
+                print(f"written {nfile}")
+                nfile += 1
+            print("done")
 
         # encoding_stats(ers)
 
