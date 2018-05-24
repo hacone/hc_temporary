@@ -230,7 +230,7 @@ def encoding_stats(ers, variants = None):
 def kmonomers_stats(ers):
     """ Calculates k-monomer frequencies in given encoded read set. """
 
-    for k in [2, 3, 4, 5, 6]:
+    for k in [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]:
         counter = Counter()
         for er in ers:
             # mons_array = [ m.monomer.name for m in er.mons if (m.monomer.name != "GAP") | ((m.monomer.end - m.monomer.begin) > 100) ]
@@ -238,8 +238,9 @@ def kmonomers_stats(ers):
             for i in range(len(mons_array)-k+1):
                 counter[tuple(mons_array[i:i+k])] += 1
 
-        print(f"K={k}")
-        print(counter.most_common(1000))
+        print(f"***** K = {k} *****")
+        res = [ c for c in counter.most_common(500) if c[1] > 0 ]
+        print(*res, sep="\n")
 
 
 
