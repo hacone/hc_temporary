@@ -1,6 +1,7 @@
 ## This is the class representing a set of monomer-encoded PacBio reads.
 from collections import Counter
 from collections import namedtuple
+from itertools import chain
 from itertools import groupby
 from itertools import islice
 from itertools import zip_longest
@@ -158,6 +159,67 @@ def parse_sam_records(aln, mons):
         epos_last_monomer = re_full
 
 
+def encodeSAM_DP(samfile):
+    """ Encode PacBio reads in SAM format (reads as query, monomers as reference)
+        NOTE: this tries to select best assignment using DP
+        The result is written out in `out`.
+    """
+
+    def readname2len(s):
+        import re
+        a = re.sub(".*/", "", s).split("_")
+        return int(a[1]) - int(a[0])
+
+    aln = pysam.AlignmentFile(samfile)
+
+    for read, mons in islice(groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name), 10):
+        #yield EncodedRead(name = read, mons = list(parse_sam_records(aln, mons)), length = readname2len(read))
+        length = readname2len(read)
+        mons_f = []
+        for mon in [ m for m in mons if (not m.is_secondary) and m.has_tag("MD") ]:
+            rs, re = get_read_range(mon)
+            rs_full, re_full = rs - mon.reference_start, re + aln.lengths[mon.reference_id] - mon.reference_end
+            score = mon.get_tag("BS")
+            if score > 50:
+                mons_f += [(mon, rs_full, re_full, score)]
+
+        mons_f = sorted(mons_f, key = lambda x: x[1])
+        print(f"before; len(mons_f) = {len(mons_f)}")
+
+        mons_f = groupby(mons_f, key = lambda x: x[1])
+        mons_f = [ sorted(list(sg[1]), key = lambda x: -x[3])[:3] for sg in mons_f ]
+        mons_f = list(chain.from_iterable(mons_f))
+        print(f"slim  ; len(mons_f) = {len(mons_f)}")
+
+        # NOTE: pure DP. BS threshold 50. overlap penalty 2 / bp
+        dp_s = np.zeros(len(mons_f))
+        dp_t = [ () for i in range(len(mons_f)) ] # empty traceback
+
+        for i in range(len(mons_f)):
+            cand = [ (dp_s[j] + (mons_f[i][3] - 50) +  min([0, mons_f[i][1] - mons_f[j][2]]) * 2, j) for j in range(i) ] + [(mons_f[i][3] - 50, -1)]
+            # TODO: I may need suboptimal ones too...
+            # TODO: these 3 lines can be one?
+            max_s, max_j = max(cand)
+            dp_s[i] = max_s
+            dp_t[i] = max_j
+
+        # traceback
+        result = []
+        last_i = max([ (dp_s[i], i) for i in range(len(mons_f)) ])[1]
+        while last_i != -1:
+            result += [mons_f[last_i]]
+            last_i = dp_t[last_i]
+
+        result = sorted(result, key=lambda x:x[1])
+        for r in result:
+            print(f"{aln.references[r[0].reference_id]} {r[1]} {r[2]} {r[0].get_tag('BS')}")
+        print(read)
+        #print(dp_s)
+        #print(dp_t)
+            
+        # NOTE: optimized heuristic impl.
+
+
 def encodeSAM(samfile):
     """ Encode PacBio reads in SAM format (reads as query, monomers as reference)
         The result is written out in `out`.
@@ -166,11 +228,7 @@ def encodeSAM(samfile):
     def readname2len(s):
         a = re.sub(".*/", "", s).split("_")
         return int(a[1]) - int(a[0])
-
     aln = pysam.AlignmentFile(samfile)
-    #return [ EncodedRead(name = read, mons = list(parse_sam_records(aln, mons)), length = readname2len(read))
-    #        for read, mons in groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name) ]
-
     for read, mons in groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name):
         yield EncodedRead(name = read, mons = list(parse_sam_records(aln, mons)), length = readname2len(read))
 
@@ -257,6 +315,26 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print(args.action)
+
+    if args.action == "encode_dp":
+        # This tries to select good assignments based on blast score and overlapping among them
+        assert args.samfile, "SAM file is not specified. aborting."
+        assert args.outfile, "output file is not specified. aborting."
+
+        if not args.split:
+            ers = encodeSAM_DP(args.samfile)
+            #with open(args.outfile, "wb") as f:
+            #    pickle.dump(list(ers), f)
+        else:
+            ers = encodeSAM(args.samfile)
+            nfile = 1
+            grouper = [ers] * 10000
+            for e in zip_longest(*grouper, fillvalue=None):
+                with open(args.outfile + f".{nfile}", "wb") as f:
+                    pickle.dump(e, f)
+                print(f"written {nfile}")
+                nfile += 1
+            print("done")
 
     if args.action == "encode":
         assert args.samfile, "SAM file is not specified. aborting."
