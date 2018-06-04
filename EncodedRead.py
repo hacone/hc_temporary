@@ -14,6 +14,7 @@ import sys
 # These are all immutable
 SNV = namedtuple("SNV", ("pos", "base")) # Int, char
 Monomer = namedtuple("Monomer", ("name", "snvs")) # string, list(SNV) or id: Int, list(SNV)
+# TODO: should it include blast score? orientation of assignment?
 AssignedMonomer = namedtuple("AssignedMonomer", ("begin", "end", "monomer")) # Int, Int, Monomer
 EncodedRead = namedtuple("EncodedRead", ("name", "mons", "length")) # string, list(AssignedMonomer), Int
 
@@ -172,7 +173,8 @@ def encodeSAM_DP(samfile):
 
     aln = pysam.AlignmentFile(samfile)
 
-    for read, mons in islice(groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name), 10):
+    #for read, mons in islice(groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name), 1000):
+    for read, mons in groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name):
         #yield EncodedRead(name = read, mons = list(parse_sam_records(aln, mons)), length = readname2len(read))
         length = readname2len(read)
         mons_f = []
@@ -184,24 +186,41 @@ def encodeSAM_DP(samfile):
                 mons_f += [(mon, rs_full, re_full, score)]
 
         mons_f = sorted(mons_f, key = lambda x: x[1])
-        print(f"before; len(mons_f) = {len(mons_f)}")
-
         mons_f = groupby(mons_f, key = lambda x: x[1])
-        mons_f = [ sorted(list(sg[1]), key = lambda x: -x[3])[:3] for sg in mons_f ]
-        mons_f = list(chain.from_iterable(mons_f))
-        print(f"slim  ; len(mons_f) = {len(mons_f)}")
+        mons_f = [ sorted(list(sg[1]), key = lambda x: -x[3])[0] for sg in mons_f ]
 
-        # NOTE: pure DP. BS threshold 50. overlap penalty 2 / bp
+        if not mons_f:
+            continue
+
+        print(read, flush=True)
         dp_s = np.zeros(len(mons_f))
         dp_t = [ () for i in range(len(mons_f)) ] # empty traceback
 
+        if False: # NOTE: pure DP. BS threshold 50. overlap penalty 2 / bp
+            for i in range(len(mons_f)):
+                cand = [ (dp_s[j] + (mons_f[i][3] - 50) +  min([0, mons_f[i][1] - mons_f[j][2]]) * 2, j) for j in range(i) ] + [(mons_f[i][3] - 50, -1)]
+                # TODO: I may need suboptimal ones too...
+                # TODO: these 3 lines can be one?
+                max_s, max_j = max(cand)
+                dp_s[i] = max_s
+                dp_t[i] = max_j
+
+        # NOTE: optimized impl.
+        max_past = -1 # index
+        cand = [] # overlapping extension is possible only from these.
         for i in range(len(mons_f)):
-            cand = [ (dp_s[j] + (mons_f[i][3] - 50) +  min([0, mons_f[i][1] - mons_f[j][2]]) * 2, j) for j in range(i) ] + [(mons_f[i][3] - 50, -1)]
-            # TODO: I may need suboptimal ones too...
-            # TODO: these 3 lines can be one?
-            max_s, max_j = max(cand)
-            dp_s[i] = max_s
-            dp_t[i] = max_j
+            if max_past != -1:
+                max_past = max( [ (dp_s[j], j) for j in cand if mons_f[j][2] <= mons_f[i][1] ] + [(dp_s[max_past], max_past)] )[1]
+            else:
+                max_past = max( [ (dp_s[j], j) for j in cand if mons_f[j][2] <= mons_f[i][1] ] + [(-1, -1)] )[1]
+            cand = [ j for j in cand if mons_f[j][2] > mons_f[i][1] ]
+            max_s, max_j = dp_s[max_past] + (mons_f[i][3] - 50), max_past
+            for j in cand:
+                s = dp_s[j] + (mons_f[i][3] - 50) + min([0, mons_f[i][1] - mons_f[j][2]]) * 2
+                if s > max_s:
+                    max_s, max_j = s, j
+            dp_s[i], dp_t[i] = max_s, max_j
+            cand += [i]
 
         # traceback
         result = []
@@ -210,14 +229,24 @@ def encodeSAM_DP(samfile):
             result += [mons_f[last_i]]
             last_i = dp_t[last_i]
 
+        # TODO: put pickled file instead of printing
         result = sorted(result, key=lambda x:x[1])
-        for r in result:
-            print(f"{aln.references[r[0].reference_id]} {r[1]} {r[2]} {r[0].get_tag('BS')}")
-        print(read)
-        #print(dp_s)
-        #print(dp_t)
-            
-        # NOTE: optimized heuristic impl.
+        if False:
+            last_r2 = 0
+            for r in result:
+                print(f"{aln.references[r[0].reference_id]} {r[1]} {r[2]} {r[0].get_tag('BS')} {r[1] - last_r2}")
+                last_r2 = r[2]
+
+        def r_to_m(r_cmp):
+            r = r_cmp[0]
+            qseq, rseq = r.query_alignment_sequence, r.get_reference_sequence()
+            qs, rs = r.query_alignment_start, r.reference_start
+            snvs = [ SNV(pos = j, base = qseq[i-qs]) for i,j in r.get_aligned_pairs(matches_only = True) if qseq[i-qs].upper() != rseq[j-rs].upper() ] 
+            monomer = Monomer(name = aln.references[r.reference_id], snvs = snvs)
+            return AssignedMonomer(begin = r_cmp[1], end = r_cmp[2], monomer = monomer)
+
+        yield EncodedRead(name = read, mons = [ r_to_m(r) for r in result ], length = readname2len(read))
+
 
 
 def encodeSAM(samfile):
@@ -323,10 +352,10 @@ if __name__ == "__main__":
 
         if not args.split:
             ers = encodeSAM_DP(args.samfile)
-            #with open(args.outfile, "wb") as f:
-            #    pickle.dump(list(ers), f)
+            with open(args.outfile, "wb") as f:
+                pickle.dump(list(ers), f)
         else:
-            ers = encodeSAM(args.samfile)
+            ers = encodeSAM_DP(args.samfile)
             nfile = 1
             grouper = [ers] * 10000
             for e in zip_longest(*grouper, fillvalue=None):
@@ -336,7 +365,7 @@ if __name__ == "__main__":
                 nfile += 1
             print("done")
 
-    if args.action == "encode":
+    elif args.action == "encode":
         assert args.samfile, "SAM file is not specified. aborting."
         assert args.outfile, "output file is not specified. aborting."
 
