@@ -90,7 +90,7 @@ collect_by_movie() {
 	#rm -r ${TMP_DIR}
 }; export -f collect_by_movie
 
-merge() {
+merge() { # TODO: deprecated !!
 # This merges alignments for monomers into one file, retaining acceptable header.
 #if [ 1 == 0 ]; then
 #fi
@@ -126,6 +126,12 @@ merge() {
 	echo "done."
 }
 
+encode() {
+	SAM=$1
+	source ../../venv/bin/activate
+	echo "-------------------- python3 ../../EncodedRead.py encode_dp --sam ${SAM} --out ${SAM%%p0.*}p0.pickle"
+	python3 ../../EncodedRead.py encode_dp --sam ${SAM} --out ${SAM%%p0.*}p0.pickle
+}; export -f encode
 
 #prep_dbs
 #samtools faidx ${MONOMER_DB}
@@ -150,6 +156,9 @@ if [[ 1==0 ]]; then
 		<(grep @PG ${TMP_DIR}/.headers.tmp | head -n1) > ${TMP_DIR}/header
 fi
 
-ls ${TMP_DIR}/by_monomer/*/ | grep s1_p0 | sed -e "s/.*\///" | sort | uniq | xargs -P 24 -I % bash -c "collect_by_movie %"
+#ls ${TMP_DIR}/by_monomer/*/ | grep s1_p0 | sed -e "s/.*\///" | sort | uniq | xargs -P 24 -I % bash -c "collect_by_movie %"
+#echo "done collection"
 
-echo "done collection"
+find ./blast_assignment | grep ".sam.gz" | sort | uniq | xargs -P 16 -I % bash -c "encode %"
+#find ./blast_assignment | grep ".sam.gz" | sort | uniq | head -n 4 | xargs -P 2 -I % bash -c "encode %"
+
