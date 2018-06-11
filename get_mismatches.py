@@ -57,7 +57,7 @@ def openFasta(path):
 ## two possible implementations; 2nd is more extensive concept (eg, 97, 2, .5, .5)
 ## 1. fix varsite as maxfreq<.9 then find varbase as freq>.01
 ## 2. find varsite as site with 2 bases freq>.01
-## 3. rel.freq must be > error rate = 0.1? (estimate?); abs.freq must be > seq depth (30?)
+## 3. rel.freq must be > error rate = 0.01? (estimate?); abs.freq must be > seq depth (30?)
 def detect_variant_sites(bamfile, reffile):
     """ define variant sites from short read alignment data and write out as pickle. """
 
@@ -65,10 +65,11 @@ def detect_variant_sites(bamfile, reffile):
     ref = openFasta(reffile) # I don't need this ??
     variant_sites = {} # {"Monomer1":{ "Monomer":freq_as_mon, (pos,base):freq }}
 
+    # TODO: make these parameters open
     # SNVs with rel. freq. less than this value are supposed to be errors,
     # or at least it's difficult to distinguish them with error.
     t_err = 0.02
-    # SNVs with abs. freq. less than short read sequencing depth are supposed to be errors
+    # SNVs with abs. freq. less than short read sequencing depth are supposed to be errors; NOTE: I may ignore unique or (occurred-twice) variants
     t_abs = 50
 
     for i in range(len(bam.references)):

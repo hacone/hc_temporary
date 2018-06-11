@@ -36,4 +36,10 @@ subalign: makefile
 sub_bam: makefile
 	cd data/$(ACC); make sub_bam
 
-.PHONY: all makefile reads join aligned_sam aligned_fastq subalign sub_bam
+s14align: makefile
+	cd data/$(ACC); make s14align
+
+s14bam: makefile
+	cd data/$(ACC); make s14bam
+
+.PHONY: all makefile reads join aligned_sam aligned_fastq subalign sub_bam s14align s14bam

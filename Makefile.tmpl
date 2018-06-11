@@ -110,4 +110,34 @@ alignments/$(ACC).un.d0.sort.bam: alignments/$(ACC).un1.d0.sam alignments/$(ACC)
 	rm $(ACC).un.d0.bam && \
 	samtools index $(ACC).un.d0.sort.bam
 
-.PHONY: all join aligned_sam aligned_fastq subalign sub_bam
+## TODO: alignment to another clustered monomer set
+## Alignment using subset of monomers & aligned reads
+s14align: aligned_fastq alignments/$(ACC).join.s14.sam alignments/$(ACC).un1.s14.sam alignments/$(ACC).un2.s14.sam
+
+alignments/$(ACC).join.s14.sam: reads/$(ACC).join.aligned.fq.gz
+	bwa mem ../monomers/s14.fa <(zcat reads/$(ACC).join.aligned.fq.gz) > alignments/$(ACC).join.s14.sam 2> $(ACC).join.s14.log
+alignments/$(ACC).un1.s14.sam: reads/$(ACC).un1.aligned.fq.gz
+	bwa mem ../monomers/s14.fa <(zcat reads/$(ACC).un1.aligned.fq.gz) > alignments/$(ACC).un1.s14.sam 2> $(ACC).un1.s14.log
+alignments/$(ACC).un2.s14.sam: reads/$(ACC).un2.aligned.fq.gz
+	bwa mem ../monomers/s14.fa <(zcat reads/$(ACC).un2.aligned.fq.gz) > alignments/$(ACC).un2.s14.sam 2> $(ACC).un2.s14.log
+
+## Other data for subaligned results; include unaligned.
+s14bam: alignments/$(ACC).join.s14.sort.bam alignments/$(ACC).un.s14.sort.bam
+
+alignments/$(ACC).join.s14.sort.bam: alignments/$(ACC).join.s14.sam
+	cd alignments; samtools view -@ 12 -b $(ACC).join.s14.sam > $(ACC).join.s14.bam && \
+	samtools sort -@ 12 -o $(ACC).join.s14.sort.bam $(ACC).join.s14.bam && \
+	rm $(ACC).join.s14.bam && \
+	samtools index $(ACC).join.s14.sort.bam
+
+alignments/$(ACC).un.s14.sort.bam: alignments/$(ACC).un1.s14.sam alignments/$(ACC).un2.s14.sam
+	cd alignments && \
+	samtools view -@ 12 -b $(ACC).un1.s14.sam > $(ACC).un1.s14.bam && \
+	samtools view -@ 12 -b $(ACC).un2.s14.sam > $(ACC).un2.s14.bam && \
+	samtools cat -o $(ACC).un.s14.bam $(ACC).un1.s14.bam $(ACC).un2.s14.bam && \
+	rm $(ACC).un{1,2}.s14.bam && \
+	samtools sort -@ 12 -o $(ACC).un.s14.sort.bam $(ACC).un.s14.bam && \
+	rm $(ACC).un.s14.bam && \
+	samtools index $(ACC).un.s14.sort.bam
+
+.PHONY: all join aligned_sam aligned_fastq subalign sub_bam s14align s14bam
