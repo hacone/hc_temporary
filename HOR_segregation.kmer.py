@@ -105,26 +105,13 @@ def extract_kmonomers(pkl, k):
 
     reads = pickle.load(open(pkl, "rb"))
 
-    if False:
-        c = Counter()
-        for r in reads:
-            for i in range(len(r.mons)-k+1):
-                if all([r.mons[j+1].begin - r.mons[j].end < 100 for j in range(i, i+k-1)]):
-                    c.update( [ "\t".join([ ren(m.monomer.name) for m in r.mons[i:i+k] ]) ] )
-        for i, n in c.items():
-            print(f"{n}\t{i}")
-
-    return 0
-
+    c = Counter()
     for r in reads:
         for i in range(len(r.mons)-k+1):
             if all([r.mons[j+1].begin - r.mons[j].end < 100 for j in range(i, i+k-1)]):
-                if "#".join(["17-9", "17-10", "17-11", "17-0", "17-2"]) == "#".join([ ren(m.monomer.name) for m in r.mons[i:i+k] ]):
-                    print(f"{r.name}\t{len(r.mons)}\t{r.length}")
-                    last_end = 0
-                    for m in r.mons:
-                        print(f"{m.monomer.name}\t{m.begin}\t{m.end}\t{m.begin-last_end}\t{len(m.monomer.snvs)}")
-                        last_end = m.end
+                c.update( [ "\t".join([ ren(m.monomer.name) for m in r.mons[i:i+k] ]) ] )
+    for i, n in c.items():
+        print(f"{n}\t{i}")
 
 
 # This print out the composition of each cluster.
