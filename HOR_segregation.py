@@ -115,7 +115,8 @@ def HOR_encoding(pkl, path_merged, path_patterns):
 
     # NOTE: copied from kmer_analysis.py
     def load_dict(path, sep = "\t"):
-        return { k:v for k,v in [l.strip("\n").split(sep) for l in open(path, "r").readlines()] }
+        return { k:v for k,v in [l.strip("\n").split(sep)
+            for l in open(path, "r").readlines() if (len(l) > 1) and (l[0] != "#")] }
     merged = load_dict(path_merged)
 
     def ren(s): # rename
@@ -124,18 +125,19 @@ def HOR_encoding(pkl, path_merged, path_patterns):
         return s if not s in merged else merged[s]
 
     def load_patterns(path):
-        return { tuple(m[1:]) : m[0] for m in [l.strip("\n").split("\t") for l in open(path, "r").readlines()] }
+        return { tuple([ a for a in lsp[1:] if a]) : lsp[0] 
+                for lsp in [l.strip("\n").split("\t") for l in open(path, "r").readlines() if (len(l) > 1) and (l[0] != "#")] }
     patterns = load_patterns(path_patterns)
     pat_size = { len(p) for p in patterns.keys() }
 
     reads = pickle.load(open(pkl, "rb"))
-    for r in reads[:20]:
+    for r in reads:
         # list large gap position
         gaps = [ r.mons[i+1].begin - r.mons[i].end for i in range(len(r.mons)-1) ] + [0]
         # renamed monnomers in the read
         ren_mons = [ ren(m.monomer.name) for m in r.mons ]
 
-        # find patterns
+        # find patterns : TODO: this can be faster
         found = []
         for ps in pat_size:
             for i in [i for i in range(len(r.mons)-ps+1) if all([ gaps[j] < 100 for j in range(i,i+ps-1) ])]:
