@@ -27,6 +27,14 @@ if [[ $ACT == "raw-kmer" ]]; then
 	cat kmer_raw_analysis/K${K}C${CLS}.tsv | sort -k1,1nr
 fi
 
+if [[ $ACT == "show-def" ]]; then
+	echo "Identifications made:"
+	cat ./mons_dicts/C${CLS}.dat
+
+	echo -e "\nPatterns defined:"
+	cat ./HOR_patterns/C${CLS}.dat
+fi
+
 # synopsis: ./HOR_work.sh 12 encode
 if [[ $ACT == "encode" ]]; then
 	python HOR_segregation.py encode-hor \
@@ -49,5 +57,6 @@ if [[ $ACT == "summary" ]]; then
 	done 
 
 	nunenc=$( grep "M=" encode.hor.cls${CLS}.dat | wc -l )
-	echo -e "n_unenc\t${nunenc} ($(( $nunenc / $nunenc + $tot_pat )) %)"
+	#echo -e "n_unenc\t${nunenc} ($(( $nunenc / $nunenc + $tot_pat )) %)"
+	echo -e "n_unenc\t${nunenc}"
 fi
