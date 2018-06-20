@@ -1,6 +1,6 @@
 #!/bin/bash
-CLS=$1
-ACT=$2
+export CLS=$1
+export ACT=$2
 
 ## NOTE: suggested workflow;
 ## 1. you'll create an appropriate mental translating table of monomers in ./mons_dicts/ for each cluster,
@@ -50,13 +50,29 @@ if [[ $ACT == "summary" ]]; then
 	echo -e "n_reads\t${nreads}"
 
 	tot_pat=0
-	for p in $( cut -f1 HOR_patterns/C${CLS}.dat | grep -v ^$ | grep -v \# ); do
-		npat=$( grep $p encode.hor.cls${CLS}.dat | wc -l)
-		echo -e "${p}\t${npat}"
-		tot_pat=$(( $tot_pat + $npat ))
-	done 
+
+	echo -e "unit\tsize\tocc\tmons"
+	while read line; do
+		set $line
+		us=$( echo $line | gawk '{ print NF - 1 }' )
+		pat=$( echo  $line | cut -d' ' -f1 )
+		npat=$( grep -F "$pat" encode.hor.cls${CLS}.dat | wc -l)
+		tot_pat=$(( $tot_pat + ( $us * $npat ) ))
+		echo -e "${pat}\t${us}\t${npat}\t$(( $us * $npat ))"
+
+	done < <( cat HOR_patterns/C${CLS}.dat | grep -v ^$ | grep -v \# )
+
+	#for p in $( cut -f1 HOR_patterns/C${CLS}.dat | grep -v ^$ | grep -v \# ); do
+	#	npat=$( grep -F "$p" encode.hor.cls${CLS}.dat | wc -l)
+	#	echo -e "${p}\t${npat}"
+	#	tot_pat=$(( $tot_pat + $npat ))
+	#done 
 
 	nunenc=$( grep "M=" encode.hor.cls${CLS}.dat | wc -l )
-	#echo -e "n_unenc\t${nunenc} ($(( $nunenc / $nunenc + $tot_pat )) %)"
-	echo -e "n_unenc\t${nunenc}"
+	echo -e "n_enc'ed\t*\t${tot_pat} ("$( echo "scale=2; 100*${tot_pat}/(${nunenc}+${tot_pat})" | bc -l )" %)"
+	echo -e "n_unenc'ed\t*\t${nunenc} ("$( echo "scale=2; 100*${nunenc}/(${nunenc}+${tot_pat})" | bc -l )" %)"
+
+	#echo -e "n_unenc\t${nunenc}"
+
+	# TODO: gap and insertion analysis
 fi

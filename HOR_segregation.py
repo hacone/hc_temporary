@@ -13,6 +13,7 @@ import pickle
 import re
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
+import svgwrite
 
 # TODO: get this from param
 l = np.loadtxt("cluster.s14.SRR3189741.fa.fai", dtype = "U20", delimiter = "\t", usecols = (0))
@@ -112,7 +113,6 @@ def extract_kmonomers(pkl, k):
 
 def HOR_encoding(pkl, path_merged, path_patterns):
 
-
     # NOTE: copied from kmer_analysis.py
     def load_dict(path, sep = "\t"):
         return { k:v for k,v in [l.strip("\n").split(sep)
@@ -124,6 +124,50 @@ def HOR_encoding(pkl, path_merged, path_patterns):
         s = re.sub(".mon_", "-", s)
         return s if not s in merged else merged[s]
 
+    def show_HOR(ers, hors):
+        """
+        write out encoded reads with HOR detected to SVG.
+        """
+        import hashlib
+        m2c = lambda n: f"#{hashlib.md5(n.encode()).hexdigest()[:6]}"
+        b2c = dict(A = "#F8766D", C = "#7CAE00", G = "#00BFC4", T = "#C77CFF")
+        dwg = svgwrite.drawing.Drawing("./hors.svg")
+
+        def add_read(dwg, er, hor, offsets, thickness = 8):
+            """
+            (from show-reads.py)
+            er: an encoded read
+            hor: detected hor units ( [begin, end, type] for now )
+            offsets: tuple as (xoff, yoff)
+            """
+            read = dwg.g(id=er.name)
+            for i, m in enumerate(er.mons):
+                #read.add(dwg.rect(insert=(b, y_offset), size=(e-b, thickness), fill=f"#{name_to_color(name)}"))
+                mx, my = offsets[0] + 100 * i, offsets[1]
+                read.add(dwg.rect(
+                    insert=(mx, my), size=(100*0.9, thickness),
+                    fill = m2c(ren(m.monomer.name)), fill_opacity = 0.5)) # backbone
+                read.add(dwg.text(f"{ren(m.monomer.name)}", insert = (mx+30, my)))
+                for snv in m.monomer.snvs: # SNVs
+                    #read_shape.add(dwg.line(
+                    read.add(dwg.circle(center = (mx + 100 * snv.pos / 180 , my), r = 1.5,  fill = b2c[snv.base]))
+            for b, e, t in hor: # HOR structure
+                mx0, mx1, my = offsets[0] + 100 * b, offsets[0] + 100 * e, offsets[1]
+                #read.add(dwg.rect(insert = (mx0+10, my+12), size = (mx1-mx0-20, 3), fill = "#8800FF"))
+                #read.add(dwg.rect(insert = (mx0+10, my+8), size = (mx1-mx0-20, 3), fill = m2c(f"{t}")))
+                read.add(dwg.text(f"{t}", insert = (mx0, my+4)))
+            return dwg.add(read)
+
+        x, y = 10, 10
+        max_off = max( [ [a[2] for a in hors[er.name]].index("D39") for er in ers ] )
+        for er in ers:
+            #add_read(dwg, er, hor, (x, y))
+            xoff = [a[2] for a in hors[er.name]].index("D39")
+            print(f"xoff = {xoff}")
+            add_read(dwg, er, hors[er.name], ((x + (max_off - xoff) * 100), y))
+            y += 25
+        dwg.save()
+
     def load_patterns(path):
         return { tuple([ a for a in lsp[1:] if a]) : lsp[0] 
                 for lsp in [l.strip("\n").split("\t") for l in open(path, "r").readlines() if (len(l) > 1) and (l[0] != "#")] }
@@ -131,18 +175,24 @@ def HOR_encoding(pkl, path_merged, path_patterns):
     pat_size = { len(p) for p in patterns.keys() }
 
     reads = pickle.load(open(pkl, "rb"))
-    for r in reads:
+    ers_show = []
+    hor_show = dict()
+
+    for r in reads[:3000]: # TODO: remove this after testing
         # list large gap position
         gaps = [ r.mons[i+1].begin - r.mons[i].end for i in range(len(r.mons)-1) ] + [0]
         # renamed monnomers in the read
         ren_mons = [ ren(m.monomer.name) for m in r.mons ]
 
-        # find patterns : TODO: this can be faster
+        # find patterns : NOTE: this can be a bit faster
         found = []
         for ps in pat_size:
-            for i in [i for i in range(len(r.mons)-ps+1) if all([ gaps[j] < 100 for j in range(i,i+ps-1) ])]:
-                found += [ (i, i+ps, c) for p,c in patterns.items()
-                        if (len(p) == ps) and "#".join([f"{s}" for s in ren_mons[i:i+ps]]) == "#".join([f"{s}" for s in p]) ]
+            for p, c in patterns.items():
+                if len(p) == ps:
+                    pat_str = "#".join([f"{s}" for s in p])
+                    for i in range(len(r.mons)-ps+1):
+                        if all([ gaps[j] < 100 for j in range(i,i+ps-1) ]) and "#".join([f"{s}" for s in ren_mons[i:i+ps]]) == pat_str:
+                            found += [(i, i+ps, c)]
         # print(found, flush=True)
 
         # find best layout of patterns
@@ -165,13 +215,21 @@ def HOR_encoding(pkl, path_merged, path_patterns):
                 result += [ (last, 1, t[last], g) ]
             else:
                 g = gaps[t[last][0]-1]
-                result += [ (last, t[last][1]-t[last][0], t[last][2], g) ]
+                result += [ (last, t[last][1]-t[last][0], t[last][2], g) ] # idx, size, symbol, gap
 
             last = b[last]
+
+        YFP = "D39"
+        if any([ sym == YFP for i,s,sym,g in result]):
+            ers_show += [r]
+            hor_show[r.name] = [ (res[0], res[0]+res[1], res[2]) for res in sorted(result) if not res[2][0] == "M" ]
 
         print(r.name, flush = True)
         print("idx\tsiz\telm\tgap")
         print("\n".join([ "\t".join([ f"{e}" for e in line ]) for line in sorted(result) ]), flush = True)
+
+    # show HOR in SVG
+    show_HOR(ers_show, hor_show)
 
 
 # This print out the composition of each cluster.
