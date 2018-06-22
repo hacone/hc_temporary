@@ -10,6 +10,8 @@ export ACT=$2
 ## 3a. check the result by `grep -C 10 "symbol" ./encode.hor.cls${CLS}.dat | less -N` and/or command: summary; you may jump to 2 again.
 ## 4. Have you got good HOR structures?
 
+# NOTE: commands implemented are: kmer, raw-kmer, show-def, encode, summary, gap-summary
+
 # TODO: check input
 
 # synopsis: ./HOR_work.sh 12 kmer 15 | less -N
@@ -46,6 +48,7 @@ fi
 
 # synopsis: ./HOR_work.sh 12 summary
 if [[ $ACT == "summary" ]]; then
+
 	nreads=$( grep s1_p0 encode.hor.cls${CLS}.dat | wc -l )
 	echo -e "n_reads\t${nreads}"
 
@@ -72,7 +75,16 @@ if [[ $ACT == "summary" ]]; then
 	echo -e "n_enc'ed\t*\t${tot_pat} ("$( echo "scale=2; 100*${tot_pat}/(${nunenc}+${tot_pat})" | bc -l )" %)"
 	echo -e "n_unenc'ed\t*\t${nunenc} ("$( echo "scale=2; 100*${nunenc}/(${nunenc}+${tot_pat})" | bc -l )" %)"
 
-	#echo -e "n_unenc\t${nunenc}"
 
-	# TODO: gap and insertion analysis
+fi
+
+if [[ $ACT == "gap-summary" ]]; then
+
+	# TODO; this works only for cls12
+	for t in {0..9}; do
+		echo -e "\n$t"
+		cat encode.hor.cls${CLS}.dat \
+		| sed -ne "/s1_p0/h; /\~${t}\]/{ N; /\[$(( $t + 2 ))\~/{ x;p;x;p } }"
+		#| sed -ne "/s1_p0/h; /\~${t}\]/{ N; /\[$(( $t + 1 ))\~/{ x;p;x;p } }"
+	done
 fi

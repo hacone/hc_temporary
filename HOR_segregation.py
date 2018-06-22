@@ -124,14 +124,13 @@ def HOR_encoding(pkl, path_merged, path_patterns):
         s = re.sub(".mon_", "-", s)
         return s if not s in merged else merged[s]
 
-    def show_HOR(ers, hors):
+    def show_HOR(dwg, ers, hors):
         """
         write out encoded reads with HOR detected to SVG.
         """
         import hashlib
         m2c = lambda n: f"#{hashlib.md5(n.encode()).hexdigest()[:6]}"
         b2c = dict(A = "#F8766D", C = "#7CAE00", G = "#00BFC4", T = "#C77CFF")
-        dwg = svgwrite.drawing.Drawing("./hors.svg")
 
         def add_read(dwg, er, hor, offsets, thickness = 8):
             """
@@ -140,33 +139,48 @@ def HOR_encoding(pkl, path_merged, path_patterns):
             hor: detected hor units ( [begin, end, type] for now )
             offsets: tuple as (xoff, yoff)
             """
+
             read = dwg.g(id=er.name)
+            # TODO: clean up here
+            gaps = [ er.mons[i+1].begin - er.mons[i].end for i in range(len(er.mons)-1) ] + [0] # gap after i
+            gaps_inserted = []
+
             for i, m in enumerate(er.mons):
                 #read.add(dwg.rect(insert=(b, y_offset), size=(e-b, thickness), fill=f"#{name_to_color(name)}"))
-                mx, my = offsets[0] + 100 * i, offsets[1]
+                mx, my = offsets[0] + 100 * (i+len(gaps_inserted)), offsets[1]
                 read.add(dwg.rect(
                     insert=(mx, my), size=(100*0.9, thickness),
                     fill = m2c(ren(m.monomer.name)), fill_opacity = 0.5)) # backbone
-                read.add(dwg.text(f"{ren(m.monomer.name)}", insert = (mx+30, my)))
+                read.add(dwg.text(f"{ren(m.monomer.name)}", insert = (mx+10, my-4)))
+
                 for snv in m.monomer.snvs: # SNVs
                     #read_shape.add(dwg.line(
-                    read.add(dwg.circle(center = (mx + 100 * snv.pos / 180 , my), r = 1.5,  fill = b2c[snv.base]))
+                    read.add(dwg.circle(center = (mx + 90 * snv.pos / 180 , my), r = 2,  fill = b2c[snv.base]))
+
+                if gaps[i] > 50:
+                    read.add(dwg.text(f"{gaps[i]}", insert = (mx+90, my)))
+                    gaps_inserted += [ i for j in range(round((gaps[i]-60)/180)) ]
+
             for b, e, t in hor: # HOR structure
-                mx0, mx1, my = offsets[0] + 100 * b, offsets[0] + 100 * e, offsets[1]
-                #read.add(dwg.rect(insert = (mx0+10, my+12), size = (mx1-mx0-20, 3), fill = "#8800FF"))
-                #read.add(dwg.rect(insert = (mx0+10, my+8), size = (mx1-mx0-20, 3), fill = m2c(f"{t}")))
-                read.add(dwg.text(f"{t}", insert = (mx0, my+4)))
+                gi = len([i for i in gaps_inserted if i<b])
+                
+                mx0, mx1, my = offsets[0] + 100 * (b+gi), offsets[0] + 100 * (e+gi), offsets[1]
+                read.add(dwg.rect(insert = (mx0+10, my+8), size = (mx1-mx0+80, 3), fill = m2c(f"{t}")))
+                read.add(dwg.text(f"{t},{b}-{e}:{gi}", insert = (mx0, my+20)))
+
             return dwg.add(read)
 
+        # TODO: clean up
         x, y = 10, 10
-        max_off = max( [ [a[2] for a in hors[er.name]].index("D39") for er in ers ] )
+        max_off = max( [ min( [a[0] for a in hors[er.name] if a[2] == "D39"] ) for er in ers ] ) + 80
         for er in ers:
             #add_read(dwg, er, hor, (x, y))
-            xoff = [a[2] for a in hors[er.name]].index("D39")
+            xoff = min ( [ a[0] for a in hors[er.name] if a[2] == "D39" ] )
+            gaps = [ er.mons[i+1].begin - er.mons[i].end for i in range(len(er.mons)-1) ] + [0] # gap after i
+            ng = sum([ round(gaps[i]-60)/180 for i in range(xoff) if gaps[i] > 60 ])
             print(f"xoff = {xoff}")
-            add_read(dwg, er, hors[er.name], ((x + (max_off - xoff) * 100), y))
-            y += 25
-        dwg.save()
+            add_read(dwg, er, hors[er.name], ((x + (max_off - xoff - ng) * 100), y))
+            y += 45
 
     def load_patterns(path):
         return { tuple([ a for a in lsp[1:] if a]) : lsp[0] 
@@ -178,7 +192,7 @@ def HOR_encoding(pkl, path_merged, path_patterns):
     ers_show = []
     hor_show = dict()
 
-    for r in reads[:3000]: # TODO: remove this after testing
+    for r in reads:
         # list large gap position
         gaps = [ r.mons[i+1].begin - r.mons[i].end for i in range(len(r.mons)-1) ] + [0]
         # renamed monnomers in the read
@@ -215,21 +229,29 @@ def HOR_encoding(pkl, path_merged, path_patterns):
                 result += [ (last, 1, t[last], g) ]
             else:
                 g = gaps[t[last][0]-1]
-                result += [ (last, t[last][1]-t[last][0], t[last][2], g) ] # idx, size, symbol, gap
+                size = t[last][1]-t[last][0]
+                result += [ (last-size+1, size, t[last][2], g) ] # idx, size, symbol, gap
 
             last = b[last]
 
         YFP = "D39"
         if any([ sym == YFP for i,s,sym,g in result]):
             ers_show += [r]
-            hor_show[r.name] = [ (res[0], res[0]+res[1], res[2]) for res in sorted(result) if not res[2][0] == "M" ]
+            hor_show[r.name] = [ (res[0], res[0]+res[1]-1, res[2]) for res in sorted(result) if not res[2][0] == "M" ]
 
-        print(r.name, flush = True)
-        print("idx\tsiz\telm\tgap")
-        print("\n".join([ "\t".join([ f"{e}" for e in line ]) for line in sorted(result) ]), flush = True)
+
+        #print(r.name, flush = True)
+        print(r.name)
+        print("begin\tend\tidx\tsize\telem\tgap")
+        for _idx, _size, elem, _gap in sorted(result):
+            idx, size, gap = int(_idx), int(_size), int(_gap)
+            b, e = r.mons[idx].begin, r.mons[idx + size - 1].end
+            print( f"{b}\t{e}\t{idx}\t{size}\t{elem}\t{gap}")
 
     # show HOR in SVG
-    show_HOR(ers_show, hor_show)
+    dwg = svgwrite.drawing.Drawing("./hors.svg")
+    show_HOR(dwg, ers_show, hor_show)
+    dwg.save()
 
 
 # This print out the composition of each cluster.
