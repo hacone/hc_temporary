@@ -129,8 +129,8 @@ merge() { # TODO: deprecated !!
 encode() {
 	SAM=$1
 	source ../../venv/bin/activate
-	echo "-------------------- python3 ../../EncodedRead.py encode_dp --sam ${SAM} --out ${SAM%%p0.*}p0.pickle"
-	python3 ../../EncodedRead.py encode_dp --sam ${SAM} --out ${SAM%%p0.*}p0.pickle
+	echo "-------------------- python3 ../../EncodedRead.py encode_dp --sam ${SAM} --out ${SAM%%p0.*}p0.ori.pickle"
+	python3 ../../EncodedRead.py encode_dp --sam ${SAM} --out ${SAM%%p0.*}p0.ori.pickle
 }; export -f encode
 
 #prep_dbs

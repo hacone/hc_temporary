@@ -14,8 +14,9 @@ import sys
 # These are all immutable
 SNV = namedtuple("SNV", ("pos", "base")) # Int, char
 Monomer = namedtuple("Monomer", ("name", "snvs")) # string, list(SNV) or id: Int, list(SNV)
-# TODO: should it include blast score? orientation of assignment?
-AssignedMonomer = namedtuple("AssignedMonomer", ("begin", "end", "monomer")) # Int, Int, Monomer
+# TODO: should it include blast score? orientation of assignment? aligned parts info?
+AssignedMonomer = namedtuple("AssignedMonomer", ("begin", "end", "monomer", "ori")) # Int, Int, Monomer, '+'/'-'
+#AssignedMonomer = namedtuple("AssignedMonomer", ("begin", "end", "monomer")) # Int, Int, Monomer # this definition deprecated
 EncodedRead = namedtuple("EncodedRead", ("name", "mons", "length")) # string, list(AssignedMonomer), Int
 
 # multiple alignment representation. that is a set of "cells"
@@ -127,7 +128,7 @@ def get_read_range(aligned_segment):
     else:
         return (aligned_segment.query_alignment_start, aligned_segment.query_alignment_end)
 
-# this parses sam records for a read
+# this parses sam records for a read # NOTE: deprecated, not used in encode_dp
 def parse_sam_records(aln, mons):
     """
     calc encoded representation of the read.
@@ -160,6 +161,7 @@ def parse_sam_records(aln, mons):
         epos_last_monomer = re_full
 
 
+# TODO: handle orientation info properly
 def encodeSAM_DP(samfile):
     """ Encode PacBio reads in SAM format (reads as query, monomers as reference)
         NOTE: this tries to select best assignment using DP
@@ -173,24 +175,24 @@ def encodeSAM_DP(samfile):
 
     aln = pysam.AlignmentFile(samfile)
 
-    #for read, mons in islice(groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name), 1000):
     for read, mons in groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name):
         #yield EncodedRead(name = read, mons = list(parse_sam_records(aln, mons)), length = readname2len(read))
         length = readname2len(read)
         mons_f = []
-        for mon in [ m for m in mons if (not m.is_secondary) and m.has_tag("MD") ]:
+        for mon in [ m for m in mons if (not m.is_secondary) and m.has_tag("MD") and m.get_tag("BS") > 50 ]:
             rs, re = get_read_range(mon)
             rs_full, re_full = rs - mon.reference_start, re + aln.lengths[mon.reference_id] - mon.reference_end
+            if mon.is_reverse:
+                re_full, rs_full = length - rs_full, length - re_full
             score = mon.get_tag("BS")
-            if score > 50:
-                mons_f += [(mon, rs_full, re_full, score)]
-
-        mons_f = sorted(mons_f, key = lambda x: x[1])
-        mons_f = groupby(mons_f, key = lambda x: x[1])
-        mons_f = [ sorted(list(sg[1]), key = lambda x: -x[3])[0] for sg in mons_f ]
+            mons_f += [(mon, rs_full, re_full, score, not mon.is_reverse)]
 
         if not mons_f:
             continue
+        # NOTE: here is stringent heuristic; taking ones with maximal score
+        mons_f = sorted(mons_f, key = lambda x: x[1])
+        mons_f = groupby(mons_f, key = lambda x: x[1])
+        mons_f = [ sorted(list(sg[1]), key = lambda x: -x[3])[0] for sg in mons_f ]
 
         print(read, flush=True)
         dp_s = np.zeros(len(mons_f))
@@ -230,12 +232,9 @@ def encodeSAM_DP(samfile):
             last_i = dp_t[last_i]
 
         # TODO: put pickled file instead of printing
+        #len([ m for m in result if m[3] ]) / len(result) >= 0.5
+
         result = sorted(result, key=lambda x:x[1])
-        if False:
-            last_r2 = 0
-            for r in result:
-                print(f"{aln.references[r[0].reference_id]} {r[1]} {r[2]} {r[0].get_tag('BS')} {r[1] - last_r2}")
-                last_r2 = r[2]
 
         def r_to_m(r_cmp):
             r = r_cmp[0]
@@ -243,9 +242,10 @@ def encodeSAM_DP(samfile):
             qs, rs = r.query_alignment_start, r.reference_start
             snvs = [ SNV(pos = j, base = qseq[i-qs]) for i,j in r.get_aligned_pairs(matches_only = True) if qseq[i-qs].upper() != rseq[j-rs].upper() ] 
             monomer = Monomer(name = aln.references[r.reference_id], snvs = snvs)
-            return AssignedMonomer(begin = r_cmp[1], end = r_cmp[2], monomer = monomer)
+            return AssignedMonomer(begin = r_cmp[1], end = r_cmp[2], monomer = monomer, ori = '+' if r_cmp[4] else '-')
 
-        yield EncodedRead(name = read, mons = [ r_to_m(r) for r in result ], length = readname2len(read))
+        #yield EncodedRead(name = read, mons = [ r_to_m(r) for r in result ], length = readname2len(read))
+        yield EncodedRead(name = read, mons = [ r_to_m(r) for r in result ], length = length)
 
 
 
@@ -334,7 +334,7 @@ def kmonomers_stats(ers):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Monomer-encoding of reads.')
-    parser.add_argument('action', metavar='action', type=str, help='action to perform: encode, correct, k-monomer, ...')
+    parser.add_argument('action', metavar='action', type=str, help='action to perform: encode_dp, encode, correct, k-monomer, ...')
     parser.add_argument('--sam', dest='samfile', help='SAM format alignments to be encoded')
     parser.add_argument('--split', dest='split', help='specify to split the encoded reads pickle (for larger sam file)')
     parser.add_argument('--read', dest='readfile', help='pickled encoded reads')

@@ -39,12 +39,40 @@ fi
 
 # synopsis: ./HOR_work.sh 12 encode
 if [[ $ACT == "encode" ]]; then
+	mkdir -p HOR_encoded_reads/
 	python HOR_segregation.py encode-hor \
 		--reads encoded_read_clusters/C_${CLS}.pickle \
 		--merged mons_dicts/C${CLS}.dat \
 		--patterns HOR_patterns/C${CLS}.dat \
-		> encode.hor.cls${CLS}.dat
+		--out HOR_encoded_reads/C_${CLS}.hor.pickle
+
+	# TODO: to be implemented
+	# python HOR_segregation.py print-hor \
+		#--hors HOR_encoded_reads/C_${CLS}.hor.pickle \
+		#> encode.hor.cls${CLS}.dat
 fi
+
+
+if [[ $ACT == "show-hor" ]]; then
+#	python HOR_segregation.py show \
+#		--hor-reads HOR_encoded_reads/C_12.hor.pickle > log
+		#--merged mons_dicts/C${CLS}.dat \
+		#--patterns HOR_patterns/C${CLS}.dat \
+		#--out HOR_encoded_reads/C_${CLS}.hor.pickle
+	PAT=$3
+	REF_PBREADS=pacbio/blast/pbreads_centromeres_143cells.fasta
+	if [[ $PAT == "default" ]]; then
+		while read line; do
+			# TODO: what to do with invalid regions?
+			set $line; samtools faidx ${REF_PBREADS} ${1}:$(($2 - 50))-$(($3 + 50));
+		done < <(grep -e "~" log | grep -v "\]" | grep -v "\[")
+	else
+		while read line; do
+			set $line; samtools faidx ${REF_PBREADS} ${1}:$(($2 - 50))-$(($3 + 50));
+		done < <(grep -e $PAT log)
+	fi
+fi
+
 
 # synopsis: ./HOR_work.sh 12 summary
 if [[ $ACT == "summary" ]]; then
