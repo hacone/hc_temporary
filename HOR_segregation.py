@@ -16,7 +16,7 @@ import svgwrite
 
 # NOTE: here's data structure for HOR encoded reads (cf. EncodedRead.py for other lower-level representation)
 # hors := (index, size, symbol)
-HOR_Read = namedtuple("HOR_Read", ("name", "mons", "hors", "length"))
+HOR_Read = namedtuple("HOR_Read", ("name", "mons", "hors", "length", "ori"))
 
 # TODO: get this from param
 l = np.loadtxt("cluster.s14.SRR3189741.fa.fai", dtype = "U20", delimiter = "\t", usecols = (0))
@@ -62,8 +62,7 @@ def cluster_reads(occ, n_clusters = 40):
 
 
 def segregate_reads(pickles_dir):
-    pickles = [ pickles_dir + path for path in os.listdir(pickles_dir) if path.endswith('.pickle') ]
-    #reads = load_encoded_reads(pickles, 20000)
+    pickles = [ pickles_dir + path for path in os.listdir(pickles_dir) if path.endswith('.ori.pickle') ]
     reads = load_encoded_reads(pickles)
     cls = cluster_reads(monomers_in_reads(reads))
     cls_reads = [ [] for i in range(40) ]
@@ -74,7 +73,7 @@ def segregate_reads(pickles_dir):
 
     for i, c in enumerate(cls_reads):
         print(f"C-{i+1} has {len(c)} reads")
-        pickle.dump(c, open(f"./encoded_read_clusters/C_{i+1}.pickle", "wb"))
+        pickle.dump(c, open(f"./encoded_read_clusters_ori/C_{i+1}.pickle", "wb"))
 
 def print_reads(pkl):
     reads = pickle.load(open(pkl, "rb"))
@@ -108,25 +107,22 @@ def extract_kmonomers(pkl, k):
 
     c = Counter()
     for r in reads:
-        for i in range(len(r.mons)-k+1):
-            if all([r.mons[j+1].begin - r.mons[j].end < 100 for j in range(i, i+k-1)]):
-                c.update( [ "\t".join([ ren(m.monomer.name) for m in r.mons[i:i+k] ]) ] )
+        is_ori_plus = True if len([ m for m in r.mons if m.ori == '+' ]) / len(r.mons) >= 0.5 else False
+        if is_ori_plus:
+            for i in range(len(r.mons)-k+1):
+                if all([r.mons[j+1].begin - r.mons[j].end < 100 for j in range(i, i+k-1)]):
+                    c.update( [ "\t".join([ ren(m.monomer.name) for m in r.mons[i:i+k] ]) ] )
+        else:
+            rev_mons = list(reversed(r.mons))
+            for i in range(len(rev_mons)-k+1):
+                if all([rev_mons[j+1].end - rev_mons[j].begin < 100 for j in range(i, i+k-1)]):
+                    c.update( [ "\t".join([ ren(m.monomer.name) for m in rev_mons[i:i+k] ]) ] )
+
     for i, n in c.items():
         print(f"{n}\t{i}")
 
-#TODO: write up #TODO: signature is wrong now
+# TODO; write up
 def show_HOR(hors):
-
-    #print(r.name, flush = True) # NOTE: print into stdout
-    print("name\tbegin\tend\tidx\tsize\telem\tgap")
-    for r in hors:
-        for _idx, _size, elem in r.hors:
-            idx, size = int(_idx), int(_size)
-            b, e = r.mons[idx].begin, r.mons[idx + size - 1].end
-            gap = 0 if idx == 0 else r.mons[idx].begin - r.mons[idx-1].end
-            print( f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t{gap}")
-
-    return # NOTE: below, output to svg
 
     import matplotlib.pyplot as plt
 
@@ -191,11 +187,27 @@ def show_HOR(hors):
     YFP = "D39"
     # hor_show[r.name] = [ (res[0], res[0]+res[1]-1, res[2]) for res in sorted(result) if not res[2][0] == "M" ]
 
-
     # show HOR in SVG
     dwg = svgwrite.drawing.Drawing("./hors.svg")
     show_svg_HOR(dwg, ers_show, hor_show)
     dwg.save()
+
+def print_HOR(pkl):
+    hors = pickle.load(open(pkl, "rb"))
+    #print(r.name, flush = True) # NOTE: print into stdout
+    print("name\tbegin\tend\tidx\tsize\telem\tgap")
+    for r in hors:
+        for _idx, _size, elem in r.hors:
+            idx, size = int(_idx), int(_size)
+            if r.ori == '+':
+                b, e = r.mons[idx].begin, r.mons[idx + size - 1].end
+                # gap before me.
+                gap = 0 if idx == 0 else r.mons[idx].begin - r.mons[idx-1].end
+            else:
+                b, e = r.mons[idx].end, r.mons[idx + size - 1].begin
+                gap = 0 if idx == 0 else -(r.mons[idx].end - r.mons[idx-1].begin)
+
+            print( f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t{gap}")
 
 def HOR_encoding(pkl, path_merged, path_patterns):
 
@@ -218,10 +230,17 @@ def HOR_encoding(pkl, path_merged, path_patterns):
         return s if not s in merged else merged[s]
 
     def hor_encode_read(er):
-        # list large gap position
-        gaps = [ er.mons[i+1].begin - er.mons[i].end for i in range(len(er.mons)-1) ] + [0]
+
+        is_ori_plus = True if len([ m for m in er.mons if m.ori == '+' ]) / len(er.mons) >= 0.5 else False
+        if is_ori_plus:
+            mons = er.mons
+        # list large gap position (gap after me)
+            gaps = [ mons[i+1].begin - mons[i].end for i in range(len(mons)-1) ] + [0]
+        else:
+            mons = list(reversed(er.mons))
+            gaps = [ mons[i].begin - mons[i+1].end for i in range(len(mons)-1) ] + [0]
         # renamed monnomers in the read
-        ren_mons = [ ren(m.monomer.name) for m in er.mons ]
+        ren_mons = [ ren(m.monomer.name) for m in mons ]
 
         # find patterns : NOTE: this can be a bit faster
         found = []
@@ -229,25 +248,24 @@ def HOR_encoding(pkl, path_merged, path_patterns):
             for p, c in patterns.items():
                 if len(p) == ps:
                     pat_str = "#".join([f"{s}" for s in p])
-                    for i in range(len(er.mons)-ps+1):
+                    for i in range(len(mons)-ps+1):
                         if all([ gaps[j] < 100 for j in range(i,i+ps-1) ]) and "#".join([f"{s}" for s in ren_mons[i:i+ps]]) == pat_str:
                             found += [(i, i+ps, c)]
         # print(found, flush=True)
 
         # find best layout of patterns
-        # s, b = np.zeros(len(r.mons)+1), np.zeros(len(r.mons)+1)
-        s = [ 0 for i in range(len(er.mons) + 1) ]
-        b = [ 0 for i in range(len(er.mons) + 1) ]
-        t = [ "" for i in range(len(er.mons)) ]
+        s = [ 0 for i in range(len(mons) + 1) ]
+        b = [ 0 for i in range(len(mons) + 1) ]
+        t = [ "" for i in range(len(mons)) ]
 
-        for i in range(len(er.mons)):
+        for i in range(len(mons)):
             # TODO: this is naive impl
             found = [ f for f in found if not f[1] <= i  ]
-            s[i], b[i], t[i] = max( [ (s[f[0]-1] + 2 * (f[1] - f[0]) - 1, f[0]-1, f) for f in found if f[1]-1 == i ] + [(s[i-1] - 1, i-1, f"M={ren(er.mons[i].monomer.name)}")] )
+            s[i], b[i], t[i] = max( [ (s[f[0]-1] + 2 * (f[1] - f[0]) - 1, f[0]-1, f) for f in found if f[1]-1 == i ] + [(s[i-1] - 1, i-1, f"M={ren(mons[i].monomer.name)}")] )
 
         # report.
         result = []
-        last = len(er.mons)-1
+        last = len(mons)-1
         while last >= 0:
             if t[last][0] == "M":
                 g = gaps[last-1]
@@ -258,7 +276,8 @@ def HOR_encoding(pkl, path_merged, path_patterns):
                 result += [ (last-size+1, size, t[last][2], g) ] # idx, size, symbol, gap
             last = b[last]
 
-        return HOR_Read(name = er.name, mons = er.mons, hors = [ h[:-1] for h in sorted(result) ], length = er.length)
+        return HOR_Read(name = er.name, mons = mons, hors = [ h[:-1] for h in sorted(result) ],
+                length = er.length, ori = '+' if is_ori_plus else '-')
 
     reads = pickle.load(open(pkl, "rb"))
     return [ hor_encode_read(r) for r in reads ]
@@ -269,7 +288,7 @@ if __name__ == '__main__':
     # TODO: write menu
     import argparse
     parser = argparse.ArgumentParser(description='Breakup encoded read based on the set of assigned monomers.')
-    parser.add_argument('action', metavar='action', type=str, help='action to perform: segregate, print(temporary), kmer, encode-hor, show...')
+    parser.add_argument('action', metavar='action', type=str, help='action to perform: segregate, print(temporary), kmer, encode-hor, prinr-hor, show...')
     parser.add_argument('--pickle-dir', dest='pickle_dir', help='directory where pickled encoded reads are placed')
     parser.add_argument('--reads', dest='reads', help='pickled encoded reads')
     parser.add_argument('--hor-reads', dest='hors', help='pickled encoded reads with hor encoding')
@@ -287,8 +306,8 @@ if __name__ == '__main__':
 
 
     if args.action == "segregate":
-        assert args.pickle_dir, "pickle dir is not specified"
-        assert args.reffile, "ref file is missing"
+        #assert args.pickle_dir, "pickle dir is not specified"
+        #assert args.reffile, "ref file is missing"
         #segregate_reads(args.pickle_dir)
         segregate_reads("./pacbio/blast/blast_assignment/")
 
@@ -311,8 +330,12 @@ if __name__ == '__main__':
         hor_reads = HOR_encoding(args.reads, args.merged, args.patterns)
         pickle.dump(hor_reads, open(args.outfile, "wb"))
 
+    elif args.action == "print-hor":
+        assert args.hors, "specify path to HOR encoded read"
+        print_HOR(args.hors)
+
     elif args.action == "show":
-        # both stdout and svg
+        # both stdout and svg; NOTE; or only to svg? cf action print
         if not args.hors:
             assert args.reads, "please specify either HOR encoded reads or monomer encoded reads"
             assert args.merged, "why not merging monomers?"

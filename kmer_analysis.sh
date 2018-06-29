@@ -8,7 +8,7 @@ c=$1
 
 for k in 2 3 4 5 6 8 10 12 15 20 25 30; do
 # NOTE: this .py code will have been changed when you see this script. please infer my intension...
-echo "python HOR_segregation.kmer.py kmer -k ${k} --reads encoded_read_clusters/C_${c}.pickle > ./kmer_raw_analysis/K.${k}.C.${c}.tsv"
+echo "python HOR_segregation.kmer.py kmer -k ${k} --reads encoded_read_clusters/C_${c}.pickle > ./kmer_raw_analysis/K${k}C${c}.tsv"
 python HOR_segregation.kmer.py kmer -k ${k} --reads encoded_read_clusters/C_${c}.pickle > ./kmer_raw_analysis/K${k}C${c}.tsv
 
 done

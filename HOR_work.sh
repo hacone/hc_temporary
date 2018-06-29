@@ -13,6 +13,7 @@ export ACT=$2
 # NOTE: commands implemented are: kmer, raw-kmer, show-def, encode, summary, gap-summary
 
 # TODO: check input
+# NOTE: tsv in kmer_raw_analysis was created using kmer_analysis.sh
 
 # synopsis: ./HOR_work.sh 12 kmer 15 | less -N
 # available K = 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30
@@ -46,30 +47,59 @@ if [[ $ACT == "encode" ]]; then
 		--patterns HOR_patterns/C${CLS}.dat \
 		--out HOR_encoded_reads/C_${CLS}.hor.pickle
 
-	# TODO: to be implemented
-	# python HOR_segregation.py print-hor \
-		#--hors HOR_encoded_reads/C_${CLS}.hor.pickle \
-		#> encode.hor.cls${CLS}.dat
 fi
 
+if [[ $ACT == "print-hor" ]]; then
+	python HOR_segregation.py print-hor \
+		--hor-reads HOR_encoded_reads/C_${CLS}.hor.pickle \
+		> encode.hor.cls${CLS}.dat
+fi
 
+# This output raw read sequence which is assigned as a specified HOR unit
 if [[ $ACT == "show-hor" ]]; then
+#	NOTE: delegated to print-hor
 #	python HOR_segregation.py show \
 #		--hor-reads HOR_encoded_reads/C_12.hor.pickle > log
 		#--merged mons_dicts/C${CLS}.dat \
 		#--patterns HOR_patterns/C${CLS}.dat \
 		#--out HOR_encoded_reads/C_${CLS}.hor.pickle
+
+	FORMATTER=~/local/bin/fasta_formatter
 	PAT=$3
 	REF_PBREADS=pacbio/blast/pbreads_centromeres_143cells.fasta
+	HOR_TAB=./encode.hor.cls${CLS}.dat
+
 	if [[ $PAT == "default" ]]; then
 		while read line; do
 			# TODO: what to do with invalid regions?
-			set $line; samtools faidx ${REF_PBREADS} ${1}:$(($2 - 50))-$(($3 + 50));
-		done < <(grep -e "~" log | grep -v "\]" | grep -v "\[")
+			set $line;
+			if [[ $2 -lt $3 ]]; then
+				samtools faidx ${REF_PBREADS} ${1}:$(($2 - 50))-$(($3 + 50));
+			else
+				samtools faidx ${REF_PBREADS} ${1}:$(($3 - 50))-$(($2 + 50)) \
+				| ${FORMATTER} -o .tmp
+				cat <( head -n1 .tmp | sed -e "/^>/s/$/_RC/" ) \
+				    <( gawk 'NR>1' .tmp | sed -e "/^[ACGTNacgtn]/y/acgtACGT/tgcaTGCA/" | rev ) \
+			        | ${FORMATTER} -w 60
+				rm .tmp
+			fi
+		done < <(grep -e "~" $HOR_TAB | grep -v "\]" | grep -v "\[")
 	else
 		while read line; do
-			set $line; samtools faidx ${REF_PBREADS} ${1}:$(($2 - 50))-$(($3 + 50));
-		done < <(grep -e $PAT log)
+			set $line;
+			if [[ $2 -lt $3 ]]; then
+				samtools faidx ${REF_PBREADS} ${1}:$(($2 - 50))-$(($3 + 50)) \
+				| ${FORMATTER} -w 60 
+			else
+				# TODO: revcomp version seems to produce slightly wrong seq?
+				samtools faidx ${REF_PBREADS} ${1}:$(($3 - 50))-$(($2 + 50)) \
+				| ~/local/bin/fasta_formatter -o .tmp
+				cat <( head -n1 .tmp | sed -e "/^>/s/$/_RC/" ) \
+				    <( gawk 'NR>1' .tmp | sed -e "/^[ACGTNacgtn]/y/acgtACGT/tgcaTGCA/" | rev ) \
+			        | ${FORMATTER} -w 60
+				rm .tmp
+			fi
+		done < <(grep -e $PAT $HOR_TAB)
 	fi
 fi
 
@@ -102,7 +132,6 @@ if [[ $ACT == "summary" ]]; then
 	nunenc=$( grep "M=" encode.hor.cls${CLS}.dat | wc -l )
 	echo -e "n_enc'ed\t*\t${tot_pat} ("$( echo "scale=2; 100*${tot_pat}/(${nunenc}+${tot_pat})" | bc -l )" %)"
 	echo -e "n_unenc'ed\t*\t${nunenc} ("$( echo "scale=2; 100*${nunenc}/(${nunenc}+${tot_pat})" | bc -l )" %)"
-
 
 fi
 
