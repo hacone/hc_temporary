@@ -1,9 +1,5 @@
 # segregate/encode reads by HOR patterns contianed in it.
 
-# NOTE: charm
-import matplotlib
-matplotlib.use('Agg')
-
 from collections import Counter 
 from EncodedRead import *
 import numpy as np
@@ -88,6 +84,10 @@ def print_reads(pkl):
 def tsne_reads(occ):
     """ t-SNE embedding of reads based on monomer sharing to visualize the clusters. """
 
+    # NOTE: charm
+    import matplotlib
+    matplotlib.use('Agg')
+
     # reduced = TSNE(n_components=2, random_state=0, verbose=1).fit_transform(all_data)
     # np.save("20k_reads.tsne.npy", reduced)
     reduced = np.load("20k_reads.tsne.npy")
@@ -123,8 +123,6 @@ def extract_kmonomers(pkl, k):
 
 # TODO; write up
 def show_HOR(hors):
-
-    import matplotlib.pyplot as plt
 
     def show_svg_HOR(dwg, ers, hors):
         """
