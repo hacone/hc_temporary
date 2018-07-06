@@ -5,6 +5,10 @@
 # TODO: rename this script
 
 from collections import Counter
+import matplotlib as mpl
+mpl.use('SVG')
+import matplotlib.pyplot as plt
+import numpy as np
 import re
 import svgwrite
 import sys
@@ -13,10 +17,37 @@ from EncodedRead import *
 # for HOR_read
 from HOR_segregation import *
 
+def tsne_units(bitvec):
+
+    # TODO; I'll do many types of analysis;
+    # distance stats for units neighboring (k=2, 3, 4, ...), intra-read, inter-reads, random globally, in boxplot or in density est.
+    # K means clusters and t-SNE embedding (all or each represents one read)
+
+    kmeans = []
+    for n_sites in [15, 27, 40]:
+        from sklearn.cluster import KMeans
+        n_clusters = 3
+        kmeans += [ KMeans(n_clusters=n_clusters, random_state=0, verbose=1, n_jobs=-3).fit(bitvec[:,2:(2+n_sites)]) ]
+        print(len(kmeans))
+
+    for n_sites in [15, 27, 40]:
+        from sklearn.manifold import TSNE
+        #reduced = TSNE(n_components=2, random_state=0, verbose=1).fit_transform(bitvec[:,2:(2+n_sites)])
+        #np.save(f"X_default_units.tsne_{n_sites}snv.npy", reduced)
+        reduced = np.load(f"X_default_units.tsne_{n_sites}snv.npy")
+        print("shape = " + f"{reduced.shape}")
+
+        for i,j in [(0, 15), (1, 27), (2, 40)]:
+            cls = kmeans[i].predict(bitvec[:,2:(2+j)])
+            #plt.scatter(reduced[:, 0], reduced[:, 1], c=cls, s=6, alpha=0.5, edgecolors="none", cmap=mycm)
+            plt.scatter(reduced[:, 0], reduced[:, 1], c=cls, s=2, alpha=0.4, edgecolors="none")
+            plt.savefig(f"units_tsne_{n_sites}snv_{j}.svg")
+            plt.close()
+
 # TODO: rename this
 def load_array_of_default(hers):
 
-    # TODO: to be defined elsewhere
+    # TODO: to be defined elsewhere # TODO: reasonably, read from tabulated file, instead of hardcoding
     SNV_sites = [ (2, 15, "T"), (2, 135, "A"), (2, 139, "C"), (3, 108, "C"), (3, 59, "G"), (3, 116, "C"), (3, 137, "G"), (4, 92, "T"), (4, 122, "C"), (4, 5, "G"), (5, 45, "G"), (5, 109, "G"), (5, 65, "T"), (6, 15, "C"), (6, 137, "C"), (6, 41, "G"), (6, 89, "C"), (7, 127, "A"), (8, 105, "A"), (8, 75, "C"), (9, 138, "A"), (9, 148, "G"), (9, 163, "T"), (9, 78, "G"), (10, 101, "G"), (10, 43, "A"), (11, 22, "C") ]
     s20 = [(2, 135, "A"), (6, 15, "C"), (2, 15, "T"), (8, 105, "A"), (9, 138, "A"), (5, 65, "T"), (10, 43, "A"), (8, 75, "C"), (6, 41, "G"), (3, 116, "C"), (7, 127, "A"), (2, 139, "C"), (6, 89, "C"), (4, 5, "G"), (4, 122, "C")]
     s10 = [(10, 101, "G"), (9, 163, "T"), (4, 92, "T"), (5, 45, "G"), (6, 137, "C"), (5, 109, "G"), (9, 78, "G"), (3, 108, "C"), (3, 59, "G"), (3, 137, "G"), (9, 148, "G"), (11, 22, "C")]
@@ -24,7 +55,18 @@ def load_array_of_default(hers):
 
     ers = pickle.load(open(hers, "rb"))
     # pick the longest stretch of default unit
-    for er in ers:
+
+    n_sites = len(s5) + len(s10) + len(s20) # = 40
+    # TODO: NO!
+    #bitv_rep = np.zeros(len(ers) * n_sites).reshape(len(ers), n_sites)
+    acc_bitv_rep = []
+    idx_readid = []
+    idx_arrid = []
+    arr_i = 0
+
+    for ers_i in range(len(ers)):
+
+        er = ers[ers_i]
 
         arrays = []
 
@@ -37,10 +79,9 @@ def load_array_of_default(hers):
         if (not arrays) or all([ i == j for i,j in arrays ]):
             continue
 
-        str_rep = [[], [], []]
-        is_name_said = False
-
         # TODO: NOTE: this part output the string representation of the SNV-compressed reads, which was very essential. But functionally this should be elsewhere.
+
+        is_name_said = False
         for i,j in arrays:
 
             if not is_name_said:
@@ -51,23 +92,32 @@ def load_array_of_default(hers):
             # TODO: unit size are given through param
             for s in range(i, j+1, 12):
 
-                str_rep[0] = [ "." for i in range(len(s20)) ]
-                for (l, (k, p, b)) in enumerate(s20):
-                    if [ sp for sp in er.mons[s+k].monomer.snvs if sp.pos == p and sp.base == b ]:
-                        str_rep[0][l] = "#"
+                def bitv_rep(sites):
+                    # TODO: logic is the same so maybe merged with str_rep()
+                    bv = [ 0 for i in range(len(sites)) ]
+                    for (l, (k, p, b)) in enumerate(sites):
+                        if [ sp for sp in er.mons[s+k].monomer.snvs if sp.pos == p and sp.base == b ]:
+                            bv[l] = 1
+                    return bv
 
-                str_rep[1] = [ "." for i in range(len(s10)) ]
-                for (l, (k, p, b)) in enumerate(s10):
-                    if [ sp for sp in er.mons[s+k].monomer.snvs if sp.pos == p and sp.base == b ]:
-                        str_rep[1][l] = "#"
+                acc_bitv_rep += bitv_rep(s20 + s10 + s5)
+                idx_readid += [ers_i]
+                idx_arrid += [arr_i]
 
-                str_rep[2] = [ "." for i in range(len(s5)) ]
-                for (l, (k, p, b)) in enumerate(s5):
-                    if [ sp for sp in er.mons[s+k].monomer.snvs if sp.pos == p and sp.base == b ]:
-                        str_rep[2][l] = "#"
+                def str_rep(sites):
+                    str_rep = [ "." for i in range(len(sites)) ]
+                    for (l, (k, p, b)) in enumerate(sites):
+                        if [ sp for sp in er.mons[s+k].monomer.snvs if sp.pos == p and sp.base == b ]:
+                            str_rep[l] = "#"
+                    return str_rep
+                str_line = " | ".join([ " ".join(str_rep(s)) for s in [s20, s10, s5] ])
+                #print(f"{er.mons[s].begin}\t{str_line}") # TODO: back these three print
 
-                print(f"{er.mons[s].begin}\t" + " ".join(str_rep[0]) + " | " + " ".join(str_rep[1]) + " | " + " ".join(str_rep[2]))
-            print("")
+            arr_i += 1
+            #print("")
+
+        #print("", flush=True)
+        print(f"{ers_i} / {len(ers)} : {arr_i}", flush = True)
         
         # TODO: implement later
         #for i in range(len(er.hors)-1):
@@ -75,6 +125,17 @@ def load_array_of_default(hers):
                 # make one
 
         # for i in [ h for h, _, t in er.hors if t == "~" ]:
+
+    bv_data = np.array(acc_bitv_rep, dtype="int").reshape(len(idx_readid), n_sites)
+    idx_col = np.append( np.array(idx_readid, dtype="int").reshape(len(idx_readid), 1),
+                         np.array(idx_arrid, dtype="int").reshape(len(idx_readid), 1), axis = 1 )
+    bv_data_withid = np.append(idx_col, bv_data, axis = 1)
+
+    np.save("forty_bits_vector.npy", bv_data)
+    np.save("forty_bits_vector_withid.npy", bv_data_withid)
+
+    np.savetxt("forty_bits_vector.txt", bv_data, fmt="%d")
+    np.savetxt("forty_bits_vector_withid.txt", bv_data_withid, fmt="%d")
 
 
 # TODO: resolve all TODO.
@@ -168,22 +229,28 @@ def draw_all_default(hers, us, something_for_short_read = None):
 
     dwg.save()
 
-#draw_all_default()
-
 if __name__ == '__main__':
 
     import argparse
     parser = argparse.ArgumentParser(description='Breakup encoded read based on the set of assigned monomers.')
-    parser.add_argument('action', metavar='action', type=str, help='action to perform: plot, ...')
+    parser.add_argument('action', metavar='action', type=str, help='action to perform: plot, tmp-bitv, tsne, ...')
     parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads')
     parser.add_argument('--unit-size', dest='us', help='default unit size (currently not inferred)')
+    parser.add_argument('--bitvec', dest='bitvec', help='bit vector of SNV status (with 2 index columns)')
     args = parser.parse_args()
 
     if args.action == "plot":
         assert args.hors, "give me HOR-encoded reads"
         assert args.us, "give me unit size of the default unit"
         draw_al_default(args.hors, args.us)
-    elif args.action == "":
-        load_array_of_default()
-        sys.exit()
+    elif args.action == "tmp-bitv":
+        # TODO: this is temporal. analysis based on bit vector representation and generating string representation
+        assert args.hors, "give me HOR-encoded reads"
+        load_array_of_default(args.hors)
+    elif args.action == "tsne":
+        assert args.bitvec, "bit vector representation .npy is required"
+        bitvec = np.load(args.bitvec)
+        tsne_units(bitvec)
+    else:
+        assert None, "invalid action."
 
