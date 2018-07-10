@@ -30,6 +30,10 @@ def tsne_units(bitvec):
         kmeans += [ KMeans(n_clusters=n_clusters, random_state=0, verbose=1, n_jobs=-3).fit(bitvec[:,2:(2+n_sites)]) ]
         print(len(kmeans))
 
+    # rest are skipped.
+    return 
+
+
     for n_sites in [15, 27, 40]:
         from sklearn.manifold import TSNE
         #reduced = TSNE(n_components=2, random_state=0, verbose=1).fit_transform(bitvec[:,2:(2+n_sites)])
@@ -44,42 +48,197 @@ def tsne_units(bitvec):
             plt.savefig(f"units_tsne_{n_sites}snv_{j}.svg")
             plt.close()
 
+# NOTE: this is partly sorted by freq.
+SNV_sites = [
+        (2, 15, "T"), (2, 135, "A"), (2, 139, "C"), (3, 108, "C"), (3, 59, "G"), (3, 116, "C"), (3, 137, "G"), (4, 92, "T"),
+        (4, 122, "C"), (4, 5, "G"), (5, 45, "G"), (5, 109, "G"), (5, 65, "T"), (6, 15, "C"), (6, 137, "C"), (6, 41, "G"),
+        (6, 89, "C"), (7, 127, "A"), (8, 105, "A"), (8, 75, "C"), (9, 138, "A"), (9, 148, "G"), (9, 163, "T"), (9, 78, "G"),
+        (10, 101, "G"), (10, 43, "A"), (11, 22, "C"), (6, 36, "C"), (10, 137, "G"), (2, 90, "A"), (4, 25, "C"), (11, 68, "G"),
+        (2, 154, "G"), (4, 35, "G"), (11, 154, "C"), (5, 3, "G"), (11, 12, "G"), (3, 132, "T"), (11, 39, "C"), (9, 162, "A") ]
+
+# TODO: this should be outside
+def consecutive_units(hors):
+    """ get consecutive (default) units in a read"""
+    arrays = []
+    for h in filter(lambda x: x[2] == "~", hors):
+        if arrays and h[0] == arrays[-1][1] + 12:
+            arrays[-1][1] = h[0]
+        else:
+            arrays += [ [h[0], h[0]] ]
+    #return [ [i,j] for i, j in arrays if i < j ]
+    return arrays if any([ i < j for i, j in arrays ]) else []
+
+# TODO: take specifier of units? or can i use whole reps, ignoring some sites conveniently?
+def bit_vector_repr(ers, sites, range_of_units = None):
+    """ obtain bit vector representation as np.ndarray 
+        param: 
+            ers = HOR encoded reads
+            sites = SNV sites as iterable of SNV (cf. defined as in EncodedRead)
+        out:
+            [rid, aid, hor_idx, SNV_states*]
+    """
+
+    if range_of_units:
+        bv = []
+        for ri, h in range_of_units:
+            bv += [ri, -1, h]
+            for ki, p, b in sites:
+                bv += [1] if any([ (sp.pos, sp.base) == (p, b) for sp in ers[ri].mons[h+ki].monomer.snvs ]) else [0]
+        return np.array(bv).reshape(len(range_of_units), 3+len(sites))
+
+    bv, n_units = [], 0
+    for ri, er in enumerate(ers):
+        # TODO: consecutive units detection should not be here
+        for ai, (k, l) in enumerate(consecutive_units(er.hors)): 
+            for s in range(k, l+1, 12):
+                #ris += [ri]
+                #ais += [ai]
+                bv += [ri, ai, s]
+                n_units += 1
+                for ki, p, b in sites:
+                    # NOTE: seems big
+                    if [ sp for sp in er.mons[s+ki].monomer.snvs if sp.pos == p and sp.base == b ]:
+                        bv += [1]
+                    else:
+                        bv += [0]
+    return np.array(bv).reshape(n_units, 3 + len(sites))
+
+def cluster(hers):
+    """ describe current cluster and proceed """
+
+    # Take initial set of default units.
+    bag_of_units = [ (ri, h) for ri, er in enumerate(hers) for h, _, t in er.hors if t == "~" ]
+    n_units = len(bag_of_units)
+    print(f"{n_units} units found in {len(hers)} reads.", flush=True)
+
+    # Detect variants
+    def detect_snvs(units):
+        n_units = len(units)
+        counter = Counter()
+        for ri, i in units:
+            for j in range(2, 12):
+                counter.update([ (j, s.pos, s.base) for s in hers[ri].mons[i+j].monomer.snvs ])
+
+        print("i\tk\tpos\tbase\tfreq\t%freq")
+        for i, ((k, p, b), c) in enumerate(counter.most_common(8000)):
+            if 0.05 < c/n_units and c/n_units < 0.8:
+                print(f"{i}\t{k}\t{p}\t{b}\t{c}\t{100*c/n_units}%")
+
+        return [ (k, p, b) for (k, p, b), c in counter.most_common(8000) if (0.05 < c/n_units) and (c/n_units < 0.8) ]
+
+
+    snv_sites = detect_snvs(bag_of_units)
+    print(f"{len(snv_sites)} SNV sites defined:")
+
+    # TODO: organize below
+    brep = bit_vector_repr(hers, snv_sites, range_of_units = bag_of_units)
+    print(f"brep.shape = {brep.shape}")
+
+    # define tentative clustering
+    from sklearn.cluster import KMeans
+    km_cls = KMeans(n_clusters=3, random_state=0, n_jobs=-3).fit(brep[:,3:]).predict(brep[:,3:])
+    print("done clustering")
+
+    # t-SNE
+    if False:
+        from sklearn.manifold import TSNE
+        reduced = TSNE(n_components=2, random_state=0, verbose=0).fit_transform(brep[:,3:])
+        print("done t-SNE")
+        plt.scatter(reduced[:,0], reduced[:,1], c=km_cls, s=2, alpha=0.4, edgecolors="none")
+        plt.savefig(f"units_tsne_{len(snv_sites)}snv_{len(bag_of_units)}units.svg")
+        plt.close()
+        # TODO: PCA
+        from sklearn.decomposition import PCA
+        reduced = PCA(n_components=2, random_state=0).fit_transform(brep[:,3:])
+        print("done PCA")
+        plt.scatter(reduced[:,0], reduced[:,1], c=km_cls, s=2, alpha=0.4, edgecolors="none")
+        plt.savefig(f"units_pca_{len(snv_sites)}snv_{len(bag_of_units)}units.svg")
+        plt.close()
+
+    import pandas as pd
+    df_units = pd.DataFrame(brep, columns = ["read_id", "array_id", "unit_idx"] + list(range(len(snv_sites)))).assign( cls = km_cls )
+
+    outfile = "kmeans_cluster.desc.dat"
+    print("mean, variance (original; later they should be plotted)")
+    pd.DataFrame(df_units.mean()).T.to_csv(outfile, sep="\t", float_format = "%.3f", mode = "a")
+    pd.DataFrame(df_units.var()).T.to_csv(outfile, sep="\t", float_format = "%.3f", mode = "a")
+    print("count, mean, variance (clusters; later they should be plotted)")
+    df_units.groupby(by = "cls").count().to_csv(outfile, sep="\t", float_format = "%.3f", mode = "a")
+    df_units.groupby(by = "cls").mean().to_csv(outfile, sep="\t", float_format = "%.3f", mode = "a")
+    df_units.groupby(by = "cls").var().to_csv(outfile, sep="\t", float_format = "%.3f", mode = "a")
+
+    # TODO: loop for each cluster
+    for cls_i in range(3):
+        c0_units = [ (t.read_id, t.unit_idx) for t in df_units.itertuples() if t.cls == cls_i ]
+        print("play with the cluster" + f" {cls_i}, which had {len(c0_units)} units.", flush = True)
+        snv_sites = detect_snvs(c0_units)
+        print(f"{len(snv_sites)} SNV sites defined:")
+        # NOTE: rest are just copied to see how it works.
+        brep = bit_vector_repr(hers, snv_sites, range_of_units = c0_units)
+        km_cls = KMeans(n_clusters=3, random_state=0, n_jobs=-3).fit(brep[:,3:]).predict(brep[:,3:])
+
+        # t-SNE
+        from sklearn.manifold import TSNE
+        reduced = TSNE(n_components=2, random_state=0, verbose=0).fit_transform(brep[:,3:])
+        print("done t-SNE")
+        plt.scatter(reduced[:,0], reduced[:,1], c=km_cls, s=2, alpha=0.4, edgecolors="none")
+        plt.savefig(f"units_tsne_{len(snv_sites)}snv_{len(c0_units)}units.svg")
+        plt.close()
+
+        # TODO: PCA
+        from sklearn.decomposition import PCA
+        reduced = PCA(n_components=2, random_state=0).fit_transform(brep[:,3:])
+        print("done PCA")
+        plt.scatter(reduced[:,0], reduced[:,1], c=km_cls, s=2, alpha=0.4, edgecolors="none")
+        plt.savefig(f"units_pca_{len(snv_sites)}snv_{len(c0_units)}units.svg")
+        plt.close()
+
+        _df_units = pd.DataFrame(brep, columns = ["read_id", "array_id", "unit_idx"] + list(range(len(snv_sites)))).assign( cls = km_cls )
+        outfile = "kmeans_cluster.desc.dat"
+        print(f"mean for {len(snv_sites)} sites, {len(c0_units)} units.", file = open(outfile, "a"))
+        pd.DataFrame(_df_units.mean()).T.to_csv(outfile, sep="\t", float_format = "%.3f", mode = "a")
+        print(f"variance for {len(snv_sites)} sites, {len(c0_units)} units.", file = open(outfile, "a"))
+        pd.DataFrame(_df_units.var()).T.to_csv(outfile, sep="\t", float_format = "%.3f", mode = "a")
+        print(f"count, mean, variance for 3 clusters defined on {len(snv_sites)} sites, {len(c0_units)} units.", file = open(outfile, "a"))
+        _df_units.groupby(by = "cls").count().to_csv(outfile, sep="\t", float_format = "%.3f", mode = "a")
+        _df_units.groupby(by = "cls").mean().to_csv(outfile, sep="\t", float_format = "%.3f", mode = "a")
+        _df_units.groupby(by = "cls").var().to_csv(outfile, sep="\t", float_format = "%.3f", mode = "a")
+
 # TODO: rename this
+# TODO: this will perform iterative classifying. and summary picture at each stage.
 def load_array_of_default(hers):
 
     # TODO: to be defined elsewhere # TODO: reasonably, read from tabulated file, instead of hardcoding
-    SNV_sites = [ (2, 15, "T"), (2, 135, "A"), (2, 139, "C"), (3, 108, "C"), (3, 59, "G"), (3, 116, "C"), (3, 137, "G"), (4, 92, "T"), (4, 122, "C"), (4, 5, "G"), (5, 45, "G"), (5, 109, "G"), (5, 65, "T"), (6, 15, "C"), (6, 137, "C"), (6, 41, "G"), (6, 89, "C"), (7, 127, "A"), (8, 105, "A"), (8, 75, "C"), (9, 138, "A"), (9, 148, "G"), (9, 163, "T"), (9, 78, "G"), (10, 101, "G"), (10, 43, "A"), (11, 22, "C") ]
-    s20 = [(2, 135, "A"), (6, 15, "C"), (2, 15, "T"), (8, 105, "A"), (9, 138, "A"), (5, 65, "T"), (10, 43, "A"), (8, 75, "C"), (6, 41, "G"), (3, 116, "C"), (7, 127, "A"), (2, 139, "C"), (6, 89, "C"), (4, 5, "G"), (4, 122, "C")]
-    s10 = [(10, 101, "G"), (9, 163, "T"), (4, 92, "T"), (5, 45, "G"), (6, 137, "C"), (5, 109, "G"), (9, 78, "G"), (3, 108, "C"), (3, 59, "G"), (3, 137, "G"), (9, 148, "G"), (11, 22, "C")]
-    s5 = [(6, 36, "C"), (10, 137, "G"), (2, 90, "A"), (4, 25, "C"), (11, 68, "G"), (2, 154, "G"), (4, 35, "G"), (11, 154, "C"), (5, 3, "G"), (11, 12, "G"), (3, 132, "T"), (11, 39, "C"), (9, 162, "A")]
+    s20 = [ (2, 135, "A"), (6, 15, "C"), (2, 15, "T"), (8, 105, "A"), (9, 138, "A"), (5, 65, "T"), (10, 43, "A"), (8, 75, "C"),
+            (6, 41, "G"), (3, 116, "C"), (7, 127, "A"), (2, 139, "C"), (6, 89, "C"), (4, 5, "G"), (4, 122, "C")]
+    s10 = [ (10, 101, "G"), (9, 163, "T"), (4, 92, "T"), (5, 45, "G"), (6, 137, "C"), (5, 109, "G"), (9, 78, "G"), (3, 108, "C"),
+            (3, 59, "G"), (3, 137, "G"), (9, 148, "G"), (11, 22, "C")]
+    s5 = [ (6, 36, "C"), (10, 137, "G"), (2, 90, "A"), (4, 25, "C"), (11, 68, "G"), (2, 154, "G"), (4, 35, "G"), (11, 154, "C"),
+           (5, 3, "G"), (11, 12, "G"), (3, 132, "T"), (11, 39, "C"), (9, 162, "A")]
 
     ers = pickle.load(open(hers, "rb"))
     # pick the longest stretch of default unit
-
     n_sites = len(s5) + len(s10) + len(s20) # = 40
-    # TODO: NO!
+
+    # TODO: already extracted.
     #bitv_rep = np.zeros(len(ers) * n_sites).reshape(len(ers), n_sites)
     acc_bitv_rep = []
     idx_readid = []
     idx_arrid = []
     arr_i = 0
-
     for ers_i in range(len(ers)):
-
         er = ers[ers_i]
-
         arrays = []
-
         for h in filter(lambda x: x[2] == "~", er.hors):
             if arrays and h[0] == arrays[-1][1] + 12:
                 arrays[-1][1] = h[0]
             else:
                 arrays += [ [h[0], h[0]] ]
-
         if (not arrays) or all([ i == j for i,j in arrays ]):
             continue
 
         # TODO: NOTE: this part output the string representation of the SNV-compressed reads, which was very essential. But functionally this should be elsewhere.
+        # TODO: string repr should be derived from bit vec rep.
 
         is_name_said = False
         for i,j in arrays:
@@ -131,14 +290,13 @@ def load_array_of_default(hers):
                          np.array(idx_arrid, dtype="int").reshape(len(idx_readid), 1), axis = 1 )
     bv_data_withid = np.append(idx_col, bv_data, axis = 1)
 
+    # NOTE: then you can play with these data.
     np.save("forty_bits_vector.npy", bv_data)
     np.save("forty_bits_vector_withid.npy", bv_data_withid)
-
     np.savetxt("forty_bits_vector.txt", bv_data, fmt="%d")
     np.savetxt("forty_bits_vector_withid.txt", bv_data_withid, fmt="%d")
 
-
-# TODO: resolve all TODO.
+# TODO: resolve all TODO. extract the logic where frequent SNVs are detected.
 def draw_all_default(hers, us, something_for_short_read = None):
     """
         generate SVG showing mismatch/SNV distribution over default unit (12-mer, for X).
@@ -147,7 +305,7 @@ def draw_all_default(hers, us, something_for_short_read = None):
         us = unit size (can be inferred from hers[i].hors?)
     """
 
-    # open long read 
+    # open long read # TODO: move this part to there.
     ers = pickle.load(open(hers, "rb"))
     n_units = 0
     snv_counters = [ Counter() for i in range(us) ]
@@ -233,7 +391,7 @@ if __name__ == '__main__':
 
     import argparse
     parser = argparse.ArgumentParser(description='Breakup encoded read based on the set of assigned monomers.')
-    parser.add_argument('action', metavar='action', type=str, help='action to perform: plot, tmp-bitv, tsne, ...')
+    parser.add_argument('action', metavar='action', type=str, help='action to perform: plot, tmp-bitv, tsne, cluster, ...')
     parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads')
     parser.add_argument('--unit-size', dest='us', help='default unit size (currently not inferred)')
     parser.add_argument('--bitvec', dest='bitvec', help='bit vector of SNV status (with 2 index columns)')
@@ -251,6 +409,10 @@ if __name__ == '__main__':
         assert args.bitvec, "bit vector representation .npy is required"
         bitvec = np.load(args.bitvec)
         tsne_units(bitvec)
+    elif args.action == "cluster":
+        assert args.hors, "need HOR-encoded reads"
+        hers = pickle.load(open(args.hors, "rb"))
+        cluster(hers)
     else:
         assert None, "invalid action."
 
