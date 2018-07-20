@@ -2,19 +2,20 @@
 ## Here is where HOR analysis and SNV analysis come together
 
 # TODO: this is the most dirty code in this project. 
-# TODO: rename this script
+# TODO: rename this script?
 
 from collections import Counter
-import matplotlib as mpl
-mpl.use('SVG')
-import matplotlib.pyplot as plt
 import numpy as np
 import re
 import svgwrite
 import sys
-# for the other data structures
+
+# NOTE: these 3 lines must be in this order.
+import matplotlib as mpl
+mpl.use('SVG')
+import matplotlib.pyplot as plt
+
 from EncodedRead import *
-# for HOR_read
 from HOR_segregation import *
 
 def tsne_units(bitvec):
@@ -47,78 +48,59 @@ def tsne_units(bitvec):
             plt.savefig(f"units_tsne_{n_sites}snv_{j}.svg")
             plt.close()
 
-# NOTE: this is partly sorted by freq.
-SNV_sites = [
-        (2, 15, "T"), (2, 135, "A"), (2, 139, "C"), (3, 108, "C"), (3, 59, "G"), (3, 116, "C"), (3, 137, "G"), (4, 92, "T"),
-        (4, 122, "C"), (4, 5, "G"), (5, 45, "G"), (5, 109, "G"), (5, 65, "T"), (6, 15, "C"), (6, 137, "C"), (6, 41, "G"),
-        (6, 89, "C"), (7, 127, "A"), (8, 105, "A"), (8, 75, "C"), (9, 138, "A"), (9, 148, "G"), (9, 163, "T"), (9, 78, "G"),
-        (10, 101, "G"), (10, 43, "A"), (11, 22, "C"), (6, 36, "C"), (10, 137, "G"), (2, 90, "A"), (4, 25, "C"), (11, 68, "G"),
-        (2, 154, "G"), (4, 35, "G"), (11, 154, "C"), (5, 3, "G"), (11, 12, "G"), (3, 132, "T"), (11, 39, "C"), (9, 162, "A") ]
-
-# TODO: this should be outside
-def consecutive_units(hors):
-    """ get consecutive (default) units in a read"""
-    arrays = []
-    for h in filter(lambda x: x[2] == "~", hors):
-        if arrays and h[0] == arrays[-1][1] + 12:
-            arrays[-1][1] = h[0]
-        else:
-            arrays += [ [h[0], h[0]] ]
-    #return [ [i,j] for i, j in arrays if i < j ]
-    return arrays if any([ i < j for i, j in arrays ]) else []
-
-def bit_vector_repr(ers, sites, range_of_units = None):
+def bit_vector_repr(ers, sites, range_of_units):
     """ obtain bit vector representation as np.ndarray 
         missing units (with spacing of 23~24 mons) are represented as 0-masked units
         param: 
-            ers = HOR encoded reads
-            sites = SNV sites as iterable of SNV (cf. defined as in EncodedRead)
+            ers = HOR encoded reads (load from pickle)
+            sites = SNV sites as iterable of SNV (cf. defined as in EncodedRead.py)
+            range_of_units = (possibly a subset of) units which should be encoded into bit-vec repr.
         out:
             [rid, aid, hor_idx, SNV_states*]
     """
+    bv, n_units = [], 0
+    last_ri, last_s = -1, -1
+    for ri, h in range_of_units:
+        # NOTE: here I filling up gaps due to 1 or 2 missing monomer assignment.
+        if ri == last_ri and (h == last_s + 22 or h == last_s + 23 or h == last_s + 24):
+            bv += [ri, -1, last_s + 12] + [ 0 for i in sites ]
+            n_units += 1
+        elif ri == last_ri and (h == last_s + 33 or h == last_s + 34 or h == last_s + 35):
+            bv += [ri, -1, last_s + 12] + [ 0 for i in sites ]
+            bv += [ri, -1, last_s + 24] + [ 0 for i in sites ] # 2nd units
+            n_units += 2
+        bv += [ri, -1, h]
+        for ki, p, b, f in sites:
+            bv += [1] if any([ (sp.pos, sp.base) == (p, b) for sp in ers[ri].mons[h+ki].monomer.snvs ]) else [-1]
+        last_ri, last_s = ri, h
+    return np.array(bv).reshape(len(range_of_units) + n_units, 3+len(sites))
 
-    if range_of_units:
-        bv, n_units = [], 0
-        last_ri, last_s = -1, -1
-        for ri, h in range_of_units:
-            # NOTE: here I filling up gaps due to 1 or 2 missing monomer assignment.
-            if ri == last_ri and (h == last_s + 22 or h == last_s + 23 or h == last_s + 24):
-                bv += [ri, -1, last_s + 12] + [ 0 for i in sites ]
-                n_units += 1
-            elif ri == last_ri and (h == last_s + 33 or h == last_s + 34 or h == last_s + 35):
-                bv += [ri, -1, last_s + 12] + [ 0 for i in sites ]
-                bv += [ri, -1, last_s + 24] + [ 0 for i in sites ] # 2nd units
-                n_units += 2
-            bv += [ri, -1, h]
-            for ki, p, b, f in sites:
-                bv += [1] if any([ (sp.pos, sp.base) == (p, b) for sp in ers[ri].mons[h+ki].monomer.snvs ]) else [-1]
-            last_ri, last_s = ri, h
-        return np.array(bv).reshape(len(range_of_units) + n_units, 3+len(sites))
+def get_e67(pi):
+    """
+    return a log odds ratio matrix of shape = (4, n_snv_sites)
+    this depends on accuracy estimates p, q, and (local) SNV distribution in a random region, p1.
+    p, q are currently scalars and can be defined globally. p1 is matrix of shape = (1, n_snv_sites).
+    """
 
-    else: # if range_of_units is not specified 
-        bv, n_units = [], 0
-        for ri, er in enumerate(ers):
-            last_s = -100 # dummy
-            # TODO: consecutive units detection should not be here
-            for ai, (k, l) in enumerate(consecutive_units(er.hors)): 
-                if k == last_s + 23:
-                    bv += [ri, ai-1, last_s + 12] + [ 0 for i in sites ]
-                    n_units += 1
-                elif k == last_s + 24:
-                    bv += [ri, ai-1, last_s + 12] + [ 0 for i in sites ]
-                    n_units += 1
-                for s in range(k, l+1, 12):
-                    bv += [ri, ai, s]
-                    n_units += 1
-                    last_s = s
-                    for ki, p, b, f in sites:
-                        # NOTE: seems big
-                        if [ sp for sp in er.mons[s+ki].monomer.snvs if sp.pos == p and sp.base == b ]:
-                            bv += [1]
-                        else:
-                            bv += [-1]
-        return np.array(bv).reshape(n_units, 3 + len(sites))
+    # variables for alignment score calc
+    n = pi.shape[1]
+    p, q = 0.80, 0.90
+    # p, q = 0.7, 0.7
 
+    e_tilde = np.zeros(4*n).reshape(4, n)
+    e_tilde[0,:] = (1-p)*(1-p)*pi + q*q*(1-pi) # 00
+    e_tilde[1,:] = p*(1-p)*pi + (1-q)*q*(1-pi) # 01
+    e_tilde[2,:] = p*(1-p)*pi + (1-q)*q*(1-pi) # 10 = e_tilde[1,:]
+    e_tilde[3,:] = p*p*pi + (1-q)*(1-q)*(1-pi) # 11
+
+    e_hat = np.zeros(4*n).reshape(4, n)
+    e_hat[0,:] = ((1-p)*pi + q*(1-pi)) * ((1-p)*pi + q*(1-pi)) # 00
+    e_hat[1,:] = p*(1-p)*pi*pi + (1-q)*q*(1-pi)*(1-pi) + (p*q + (1-p)*(1-q))*pi*(1-pi) # 01
+    e_hat[2,:] = p*(1-p)*pi*pi + (1-q)*q*(1-pi)*(1-pi) + (p*q + (1-p)*(1-q))*pi*(1-pi) # 10 = e_hat[1,:]
+    e_hat[3,:] = (p*pi + (1-q)*(1-pi)) * (p*pi + (1-q)*(1-pi)) # 11
+
+    e67 = np.divide(e_tilde, e_hat)
+    return e67
 
 def cluster(hers):
     """ describe current cluster and proceed """
@@ -163,7 +145,7 @@ def cluster(hers):
     # TODO: organize below
     brep = bit_vector_repr(hers, snv_sites, range_of_units = bag_of_units)
 
-    regs = valid_regions(brep)
+    regs = sorted(valid_regions(brep), key = lambda x: x[0] - x[1])
     print(f"{len(regs)} consecutive regions found")
 
     # define tentative clustering
@@ -174,30 +156,6 @@ def cluster(hers):
         if brep[i,3] == 0: # if masked
             km_cls[i] = km_cls[i-1]
     print("done clustering")
-
-    # variables for alignment score calc
-    p, q = 0.80, 0.90
-    # p, q = 0.7, 0.7
-
-    # global pi # NOTE: to be refined
-    pi = np.array([ f for k,p,b,f in snv_sites ]).reshape(1, len(snv_sites))
-    print(f"pi = {pi}")
-
-    e_tilde = np.zeros(4*len(snv_sites)).reshape(4, len(snv_sites))
-    e_tilde[0,:] = (1-p)*(1-p)*pi + q*q*(1-pi) # 00
-    e_tilde[1,:] = p*(1-p)*pi + (1-q)*q*(1-pi) # 01
-    e_tilde[2,:] = p*(1-p)*pi + (1-q)*q*(1-pi) # 10
-    e_tilde[3,:] = p*p*pi + (1-q)*(1-q)*(1-pi) # 11
-
-    e_hat = np.zeros(4*len(snv_sites)).reshape(4, len(snv_sites))
-    e_hat[0,:] = ((1-p)*pi + q*(1-pi)) * ((1-p)*pi + q*(1-pi)) # 00
-    e_hat[1,:] = p*(1-p)*pi*pi + (1-q)*q*(1-pi)*(1-pi) + (p*q + (1-p)*(1-q))*pi*(1-pi) # 01
-    e_hat[2,:] = p*(1-p)*pi*pi + (1-q)*q*(1-pi)*(1-pi) + (p*q + (1-p)*(1-q))*pi*(1-pi) # 10
-    e_hat[3,:] = (p*pi + (1-q)*(1-pi)) * (p*pi + (1-q)*(1-pi)) # 11
-
-    e67 = np.divide(e_tilde, e_hat)
-    print("e67 = ")
-    print(e67)
 
     # t-SNE
     if False:
@@ -222,11 +180,10 @@ def cluster(hers):
 
     # NOTE: better text representation.
     #print("uid\trid\tcls\tmix\t" + "\t".join([ f"{i}" for i in range(brep.shape[1]-3) ])) # header
-    print("rid\tuidx\tcid\tis_mix\t" + f"{brep.shape[1]-3}_bits" ) # header
+    #print("rid\tuidx\tcid\tis_mix\t" + f"{brep.shape[1]-3}_bits" ) # header
     last_rid = 0
 
     # TODO: organize here
-    regs = sorted(regs, key = lambda x: x[0] - x[1])
 
     if False:
         for ii, jj in regs:
@@ -240,16 +197,31 @@ def cluster(hers):
 
     # TODO test some alignments here!
     long_regs = list(filter(lambda x: x[1] - x[0] > 11, regs))
-    print("calculating alignments for {len(long_regs)} regions...")
+    print(f"calculating alignments for {len(long_regs)} regions...")
 
     def diff_bv(bv1, bv2):
         """ simple correlation of -1/0/1-bit vector """
         assert bv1.shape == bv2.shape, "wrong shapes"
         m = np.multiply(bv1, bv2)
         a = np.sum(np.absolute(m))
-        s = (1 + np.sum(m) / a) / 2
+        s = (1 + np.sum(m) / (a+1)) / 2
         return s
 
+    def diff_bv2(bv1, bv2):
+        """ n11 / (n10+n01+n11) """
+        assert bv1.shape == bv2.shape, "wrong shapes"
+
+        m = np.multiply(bv1, bv2) # 1: match, 0: masked, -1: mismatch
+        mt = np.multiply((m + 1), m) / 2 # 1: match, 0: masked/mismatch
+        n_m = np.sum(np.multiply(m, m) - mt) # n01 or n10
+        n11 = np.sum(np.multiply(mt, (bv1 + 1) / 2)) # n11
+        return n11 / (1 + n11 + n_m)
+
+    # global pi # NOTE: to be refined
+    pi = np.array([ f for k,p,b,f in snv_sites ]).reshape(1, len(snv_sites))
+    e67 = get_e67(pi)
+
+    #def diff67(bv1, bv2, e67): # NOTE: I don't need this as e67 is constant, since pi is constant now.
     def diff67(bv1, bv2):
         assert bv1.shape == bv2.shape, "wrong shapes"
 
@@ -258,67 +230,146 @@ def cluster(hers):
 
         x = np.zeros(len(snv_sites)*4).reshape(4, len(snv_sites))
         x[0,:] = np.sum(np.multiply(mt, (1 - bv1) / 2), axis=0) # n00
-        x[1,:] = np.sum((mt - 1) / 2, axis=0) # n01 or n10
+        x[1,:] = np.sum((mt - 1) / 2, axis=0) # n01 or n10 # TODO FIXME bug when masked
         # x[2,:] = np.sum((mt - 1) / 2, axis=0) # n01 or n10
         x[3,:] = np.sum(np.multiply(mt, (bv1 + 1) / 2), axis=0) # n11
-
         return np.sum(np.multiply(x, np.log(e67)))
 
-    ms_t = 0.9
-    ms2_t = 0.0
-    for r in long_regs[:20]:
-        print(f"\n--->>> --->>> r = {r}")
-        for s in list(filter(lambda x: (x[1]-x[0] <= r[1]-r[0]) and (x != r), long_regs)):
-            print(f"\n-->> r = {r}; s = {s}")
-            show = False
+    # Threshold for reporting alignments
+    ms_t = 0.6 # for primary score. correlation (as in diff_bv) or identity (as in diff_bv2)
+    ms2_t = 5.0
+
+    targets = dict() # this will accumulates alignment results. # TODO: rename. utilize.
+
+    #for ri in range(0, 5): # for testing
+    for ri in range(len(long_regs)):
+        r = long_regs[ri]
+        targets[ri] = dict()
+
+        #for si in range(ri+1, len(long_regs)): # avoids redundant calc but makes stats from reads difficult to compare.
+        target_sis = [ _si for _si in range(len(long_regs)) if _si != ri ]
+        for si in target_sis:
+            targets[ri][si] = [] # this accumulate results of alignments
+            s = long_regs[si]
 
             l_r = r[1]-r[0]
             l_s = s[1]-s[0]
 
             # dovetail.
-            for i in range(2, l_s):
-                ms = diff_bv(brep[r[0]:r[0]+i,3:], brep[s[1]-i:s[1],3:])
-                ms2 = diff67(brep[r[0]:r[0]+i,3:], brep[s[1]-i:s[1],3:])
-                if (ms > ms_t and ms2/i > ms2_t and i > 2):
-                    show = True
-                    print(f"d-\t{ (r[0], r[0]+i) } ~ { (s[1]-i, s[1]) }\t{i}\t{ms:.3f}\t{ms2:.2f}\t{ms2/i:.2f}")
-                #r[0], r[0]+i
-                #s[1]-i, s[1]
-            # contained
-            for i in range(0, l_r - l_s + 1):
-                ms = diff_bv(brep[r[0]+i:r[0]+i+l_s,3:], brep[s[0]:s[1],3:])
-                ms2 = diff67(brep[r[0]+i:r[0]+i+l_s,3:], brep[s[0]:s[1],3:])
-                if (ms > ms_t and ms2/l_s > ms2_t and l_s > 2):
-                    show = True
-                    print(f"ct\t{ (r[0]+i, r[0]+i+l_s) } ~ { (s[0], s[1]) }\t{l_s}\t{ms:.3f}\t{ms2:.2f}\t{ms2/l_s:.2f}")
-                #(r[0]+i), (r[0]+i)+l_s = r[1]
-                #s[0], s[1]
-            # dovetail
-            #for i in range(l_s-1, 1, -1):
-            for i in range(l_s-1, 4, -1):
-                ms = diff_bv(brep[r[1]-i:r[1],3:], brep[s[0]:s[0]+i,3:])
-                ms2 = diff67(brep[r[1]-i:r[1],3:], brep[s[0]:s[0]+i,3:])
-                if (ms > ms_t and ms2/i > ms2_t and i > 3):
-                    show = True
-                    print(f"d+\t{ (r[1]-i, r[1]) } ~ { (s[0], s[0]+i) }\t{i}\t{ms:.3f}\t{ms2:.2f}\t{ms2/i:.2f}")
-                #r[1] - i, r[1]
-                #s[0], s[0] + i
+            #for i in range(2, l_s):
+            for i in range(2, min([l_s, l_r])):
+                rs, re = r[0], r[0]+i
+                qs, qe = s[1]-i, s[1]
+                # NOTE: use diff_bv or diff_bv2
+                ms, ms2 = diff_bv2(brep[rs:re,3:], brep[qs:qe,3:]), diff67(brep[rs:re,3:], brep[qs:qe,3:])
+                targets[ri][si] += [ ri, si, rs, re, qs, qe, ms, ms2, ms2/i ]
 
-            if show:
-                print(f"L={r[1]-r[0]}")
-                for i, t in enumerate(df_units.iloc[r[0]:r[1],:].itertuples()):
-                    line = f"{r[0]+i}\t{t.read_id}\t{t.unit_idx}\t{t.cls}\t" \
-                        + (".\t" if t.is_hom else "M\t") \
-                        + "".join([ ("X" if e == 1 else ("o" if e == 0 else "-")) for e in brep[r[0]+i,3:] ])
+            # contained/containing
+            for i in range(0, abs(l_r - l_s) + 1):
+                if l_r > l_s:
+                    rs, re = r[0]+i, r[0]+i+l_s
+                    qs, qe = s[0], s[1]
+                else:
+                    rs, re = r[0], r[1]
+                    qs, qe = s[1]-i-l_r, s[1]-i
+                ms, ms2 = diff_bv2(brep[rs:re,3:], brep[qs:qe,3:]), diff67(brep[rs:re,3:], brep[qs:qe,3:])
+                targets[ri][si] += [ ri, si, rs, re, qs, qe, ms, ms2, ms2/l_s ]
+
+            # dovetail
+            for i in range(min([l_s, l_r])-1, 1, -1):
+                rs, re = r[1]-i, r[1]
+                qs, qe = s[0], s[0]+i
+                ms, ms2 = diff_bv2(brep[rs:re,3:], brep[qs:qe,3:]), diff67(brep[rs:re,3:], brep[qs:qe,3:])
+                targets[ri][si] += [ ri, si, rs, re, qs, qe, ms, ms2, ms2/i ]
+
+            targets[ri][si] = np.array(targets[ri][si]).reshape(l_s+l_r-3, 9)
+
+        print(f"\nRef. region:\t{ri}\t{hers[brep[r[0],0]].name}")
+        print(f"read_id\treg_id\treg_b\treg_e\treg_l")
+        print(f"{brep[r[0],0]}\t{ri}\t{r[0]}\t{r[1]}\t{r[1]-r[0]}")
+
+        print("\nStructure:")
+        for i, t in enumerate(df_units.iloc[r[0]:r[1],:].itertuples()):
+            line = f"{r[0]+i}\t{t.read_id}\t{t.unit_idx}\t{t.cls}\t" \
+                + (".\t" if t.is_hom else "M\t") \
+                + "".join([ ("X" if e == 1 else ("o" if e == 0 else "-")) for e in brep[r[0]+i,3:] ])
+            print(line)
+
+        print("\nDistribution of Correlation (Identity) (%):")
+        for i, m in enumerate( sorted([ np.max(targets[ri][x], axis=0)[6] for x in target_sis ], key = lambda x: -x)[:30] ):
+            print(f"{i+1}\t{100*m:.2f}")
+
+        # for the best 25 target reads
+        n_shown = 0
+        for si in sorted(target_sis, key=lambda x: -1 * np.max(targets[ri][x], axis=0)[6])[:25]:
+        #for si in sorted(list(range(ri+1, ri+11)), key=lambda x: -1 * np.max(targets[ri][x], axis=0)[6])[:50]:
+
+            t = targets[ri][si]
+
+            # for the best 1 alignments configuration
+            rank = sorted([ (i, t[i,6], t[i,8]) for i in range(t.shape[0]) ], key = lambda x: -x[1])
+            if n_shown < 5 or t[rank[0][0], 6] > ms_t:
+
+                n_shown += 1
+                ii = rank[0][0]
+                print(f"\n\nTo:\t{si}\t{hers[brep[int(t[ii,4]),0]].name}")
+
+                for i,c,r in rank[:5]:
+                    print(f"{ri}\t{si}\t{int(t[i,2])}\t{int(t[i,3])}\t{int(t[i,4])}\t{int(t[i,5])}\t{100*t[i,6]:.2f}\t{t[i,7]:.2f}\t{t[i,8]:.2f}")
+
+                print("\nAlignments:\n")
+                rs, re = int(t[ii,2]), int(t[ii,3])
+                qs, qe = int(t[ii,4]), int(t[ii,5])
+                r0, r1 = long_regs[ri]
+                q0, q1 = long_regs[si]
+                if r0 < rs:
+                    for i, tu in enumerate(df_units.iloc[r0:rs,:].itertuples()):
+                        line = f"{r0+i}\t{tu.read_id}\t{tu.unit_idx}\t{tu.cls}\t" \
+                            + (".\t" if tu.is_hom else "M\t") \
+                            + "".join([ ("X" if e == 1 else ("o" if e == 0 else "-")) for e in brep[r0+i,3:] ]) \
+                            + f"\t*\t*\t*\t*\t*"
+                        print(line)
+                elif q0 < qs:
+                    for i, tu in enumerate(df_units.iloc[q0:qs,:].itertuples()):
+                        line = f"*\t*\t*\t*\t*\t" \
+                            + "".join([ ("X" if e == 1 else ("o" if e == 0 else "-")) for e in brep[q0+i,3:] ]) \
+                            + f"\t{q0+i}\t{tu.read_id}\t{tu.unit_idx}\t{tu.cls}\t" \
+                            + ("." if tu.is_hom else "M")
+                        print(line)
+
+                def str_pair(e, d):
+                    # TODO: shorten this further? we may have dict somewhere?
+                    if e == 1:
+                        return "#" if d == 1 else ("." if d == -1 else "0")
+                    if e == -1:
+                        return "'" if d == 1 else (" " if d == -1 else "0")
+                    if e == 0:
+                        #return "0" if d == 1 else ("0" if d == -1 else "0")
+                        return "0"
+
+                for i, tu in enumerate(df_units.iloc[rs:re,:].itertuples()):
+                    qu = df_units.iloc[qs+i,:]
+                    line = f"{rs+i}\t{tu.read_id}\t{tu.unit_idx}\t{tu.cls}\t" \
+                        + (".\t" if tu.is_hom else "M\t") \
+                        + "".join([ str_pair(e, d) for e,d in zip(brep[rs+i,3:], brep[qs+i,3:]) ]) \
+                        + f"\t{qs+i}\t{qu.read_id}\t{qu.unit_idx}\t{qu.cls}\t" \
+                        + ("." if qu.is_hom else "M")
                     print(line)
-                print("------------------------------")
-                print(f"L={s[1]-s[0]}")
-                for i, t in enumerate(df_units.iloc[s[0]:s[1]:].itertuples()):
-                    line = f"{s[0]+i}\t{t.read_id}\t{t.unit_idx}\t{t.cls}\t" \
-                        + (".\t" if t.is_hom else "M\t") \
-                        + "".join([ ("X" if e == 1 else ("o" if e == 0 else "-")) for e in brep[s[0]+i,3:] ])
-                    print(line)
-                print("------------------------------")
+
+                if re < r1:
+                    for i, tu in enumerate(df_units.iloc[re:r1,:].itertuples()):
+                        line = f"{re+i}\t{tu.read_id}\t{tu.unit_idx}\t{tu.cls}\t" \
+                            + (".\t" if tu.is_hom else "M\t") \
+                            + "".join([ ("X" if e == 1 else ("o" if e == 0 else "-")) for e in brep[re+i,3:] ]) \
+                            + f"\t*\t*\t*\t*\t*"
+                        print(line)
+                elif qe < q1:
+                    for i, tu in enumerate(df_units.iloc[qe:q1,:].itertuples()):
+                        line = f"*\t*\t*\t*\t*\t" \
+                            + "".join([ ("X" if e == 1 else ("o" if e == 0 else "-")) for e in brep[qe+i,3:] ]) \
+                            + f"\t{qe+i}\t{tu.read_id}\t{tu.unit_idx}\t{tu.cls}\t" \
+                            + ("." if tu.is_hom else "M")
+                        print(line)
 
     return
 
