@@ -150,6 +150,7 @@ def cluster(hers):
 
     # define tentative clustering
     from sklearn.cluster import KMeans
+    # clustering without masked units.
     km = KMeans(n_clusters=3, random_state=0, n_jobs=-3).fit( brep[np.any(brep[:,3:] != 0, axis = 1), 3:] )
     km_cls = km.predict(brep[:,3:])
     for i in range(1, brep.shape[0]):
@@ -183,21 +184,9 @@ def cluster(hers):
     #print("rid\tuidx\tcid\tis_mix\t" + f"{brep.shape[1]-3}_bits" ) # header
     last_rid = 0
 
-    # TODO: organize here
-
-    if False:
-        for ii, jj in regs:
-            print(f"L={jj-ii}")
-            for i, t in enumerate(df_units.iloc[ii:jj,:].itertuples()):
-                line = f"{t.read_id}\t{t.unit_idx}\t{t.cls}\t" \
-                    + (".\t" if t.is_hom else "M\t") \
-                    + "".join([ ("X" if e == 1 else ("o" if e == 0 else "-")) for e in brep[ii+i,3:] ])
-                print(line)
-            print("")
-
-    # TODO test some alignments here!
-    long_regs = list(filter(lambda x: x[1] - x[0] > 11, regs))
-    print(f"calculating alignments for {len(long_regs)} regions...")
+    min_units = 12
+    long_regs = list(filter(lambda x: x[1] - x[0] >= min_units, regs))
+    print(f"calculating alignments for {len(long_regs)} regions with >={min_units} units...")
 
     def diff_bv(bv1, bv2):
         """ simple correlation of -1/0/1-bit vector """
@@ -324,6 +313,7 @@ def cluster(hers):
                 q0, q1 = long_regs[si]
                 if r0 < rs:
                     for i, tu in enumerate(df_units.iloc[r0:rs,:].itertuples()):
+    if 0 < rs:
                         line = f"{r0+i}\t{tu.read_id}\t{tu.unit_idx}\t{tu.cls}\t" \
                             + (".\t" if tu.is_hom else "M\t") \
                             + "".join([ ("X" if e == 1 else ("o" if e == 0 else "-")) for e in brep[r0+i,3:] ]) \
@@ -419,21 +409,6 @@ def cluster(hers):
         _df_units.groupby(by = "cls").count().to_csv(outfile, sep="\t", float_format = "%.3f", mode = "a")
         _df_units.groupby(by = "cls").mean().to_csv(outfile, sep="\t", float_format = "%.3f", mode = "a")
         _df_units.groupby(by = "cls").var().to_csv(outfile, sep="\t", float_format = "%.3f", mode = "a")
-
-def work_assembly(bitvec):
-    """ take bitvector with rid, uidx, aid. perform something. """
-    # TODO: what to do with missing unit?
-    p = 0.85
-    q = 0.95
-    e00 = log ( 0.5*(1-p)*(1-p) + 0.5*q*q ) / ( 2*0.5*0.5*q*(1-p))
-    e11 = log ( 0.5*(1-q)*(1-q) + 0.5*p*p ) / ( 2*0.5*0.5*p*(1-q))
-    e01 = log ( 0.5*p*(1-p) + 0.5*q*(1-q) ) / ( 0.5*0.5*(p*q + (1-p)*(1-q)))
-    def diff(i,j,k):
-        # TODO: write up
-        A = bitvec[i:i+k,3:]
-        B = bitvec[j:j+k,3:] 
-        S = (1-A)*(1-B)*e00 + (1-A)*B*e01 + A*(1-B)*e01 + A*B*e11
-        score = sum(S)
 
 # TODO: rename this
 # TODO: this will perform iterative classifying. and summary picture at each stage.
@@ -621,7 +596,7 @@ def draw_all_default(hers, us, something_for_short_read = None):
 if __name__ == '__main__':
 
     import argparse
-    parser = argparse.ArgumentParser(description='Breakup encoded read based on the set of assigned monomers.')
+    parser = argparse.ArgumentParser(description='SNV distribution') # TODO: explain
     parser.add_argument('action', metavar='action', type=str, help='action to perform: plot, tmp-bitv, tsne, cluster, ...')
     parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads')
     parser.add_argument('--unit-size', dest='us', help='default unit size (currently not inferred)')
