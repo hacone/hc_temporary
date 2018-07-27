@@ -125,11 +125,11 @@ def print_aln(regs, ri, qi, bv, res, is_top):
     rl, ql = r1-r0, q1-q0
 
     #print(f"\nAlignment: {res[4]/10:.1f} % match in {res[5]} units.\n")
-    print(f"\n     *     \tri\tqi\trs\tre\tqs\tqe\tscr\tlen")
+    print(f"\n     *     \tri\tqi\trs\tre\trl\tqs\tqe\tql\tscr\tlen")
     if is_top:
-        print(f"BEST_ALIGN\t{ri}\t{qi}\t{rs}\t{re}\t{qs}\t{qe}\t{res[4]/10:.1f}\t{res[5]}\n")
+        print(f"BEST_ALIGN\t{ri}\t{qi}\t{rs}\t{re}\t{rl}\t{qs}\t{qe}\t{ql}\t{res[4]/10:.1f}\t{res[5]}\n")
     else:
-        print(f"SUBOPT_ALIGN\t{ri}\t{qi}\t{rs}\t{re}\t{qs}\t{qe}\t{res[4]/10:.1f}\t{res[5]}\n")
+        print(f"SUBOPT_ALIGN\t{ri}\t{qi}\t{rs}\t{re}\t{rl}\t{qs}\t{qe}\t{ql}\t{res[4]/10:.1f}\t{res[5]}\n")
 
     _l = f"statuses of {bv.shape[1]-3} SNVs"
     lines = f"  i\t       ids\tmid\t{_l:^40}\tmid\tids      \tj  "
@@ -165,11 +165,40 @@ def print_aln(regs, ri, qi, bv, res, is_top):
     print(lines)
     # return lines
 
-def align(hers):
+def gxfe_temp(nodes, edges):
+    """ this directly outputs reads ovlp info in GEXF format. """
+
+    s = '<?xml version="1.0" encoding="UTF-8"?>\n' +\
+        '<gexf xmlns="http://www.gexf.net/1.2draft"' +\
+        ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' +\
+        ' xsi:schemaLocation="http://www.gexf.net/1.2draft' +\
+        ' http://www.gexf.net/1.2draft/gexf.xsd" version="1.2">\n' +\
+        '<meta lastmodifieddate="1990-01-01"><creator>hacone@mlab</creator><description>reads ovlps</description></meta>\n' +\
+        '<graph defaultedgetype="directed">\n'
+
+    # TODO: abstract out?
+    s += '<attributes class="node">' +\
+        '<attribute id="0" title="n_units" type="integer"/>' +\
+        '</attributes>\n'
+
+    s += '<attributes class="edge">' +\
+        '<attribute id="0" title="identity" type="float"/>' +\
+        '<attribute id="1" title="units_ovlp" type="integer"/>' +\
+        '<attribute id="2" title="step" type="integer"/>' +\
+        '<attribute id="3" title="delta" type="float"/>' +\
+        '</attributes>\n'
+
+    s += "<nodes>\n" + nodes + "</nodes>\n"
+    s += "<edges>\n" + edges + "</edges>\n"
+    s += "</graph>\n</gexf>"
+
+    return s
+
+def align(hers, alns_pers = None):
 
     bag_of_units = [ (ri, h) for ri, er in enumerate(hers) for h, _, t in er.hors if t == "~" ]
     n_units = len(bag_of_units)
-    print(f"{n_units} units found in {len(hers)} reads.", flush=True)
+    print(f"{n_units} units found in {len(hers)} reads.")
 
     snv_sites = detect_snvs(bag_of_units)
     print(f"{len(snv_sites)} SNV sites defined.")
@@ -180,11 +209,14 @@ def align(hers):
     regs = sorted(valid_regions(brep), key = lambda x: x[0] - x[1])
     print(f"{len(regs)} consecutive regions found")
 
+    # NOTE: I'm not going to change the definition of above variable for now; they should be stable.
+    # NOTE: you may change below, though. 
+
     min_units = 10
     print(f"{ len([ r for r in regs if r[1]-r[0] >= min_units ]) } regions >= {min_units} units")
 
     import pickle
-    if False:
+    if not alns_pers:
         pw_aln = {}
         for i in range(len(regs)):
             if regs[i][1] - regs[i][0] < min_units:
@@ -196,9 +228,10 @@ def align(hers):
         pw_aln = { k : v for k, v in pw_aln.items() if v }
 
         pickle.dump(pw_aln, open(f"pairwise_alignments.{min_units}u.pickle", "wb"))
-        print(f"{ sum([ len(pw_aln[i]) for i in pw_aln.keys() ]) } alignments saved.")
+        print(f"{ sum([ len(pw_aln[i]) for i in pw_aln.keys() ]) } alignments saved to pairwise_alignments.{min_units}u.pickle")
     else:
-        pw_aln = pickle.load(open(f"pairwise_alignments.{min_units}u.pickle", "rb"))
+        #pw_aln = pickle.load(open(f"pairwise_alignments.{min_units}u.pickle", "rb"))
+        pw_aln = pickle.load(open(alns_pers, "rb"))
         print(f"{ sum([ len(pw_aln[i]) for i in pw_aln.keys() ]) } alignments loaded.")
 
     # print only aln with >4 units
@@ -207,19 +240,51 @@ def align(hers):
         pw_aln[i] = { k : v for k, v in pw_aln[i].items() if v }
     pw_aln = { k : v for k, v in pw_aln.items() if v }
 
+    nodes, edges = "", "" # for gephi
+
     #for i, v in list(pw_aln.items())[:10]:
     for i, v in list(pw_aln.items()):
-        print(f"\nSTATS\t{i}\trid = {i} had {len(v)} alns")
-        for j, alns in [ (k, v) for k, v in sorted(list(v.items()), key = lambda x: -max([ y[4] for y in x[1]])) ][:10]:
-            #print(f"\nqid = {j} had {len(alns)} alns: {[s[4] for s in alns][:5]}...")
-            print(f"{i}\t{j}\t" + " ".join([f"{s[4]/10:.1f}/{s[5]}" for s in alns]))
 
+        nodes += f'<node id="{i}" label="{i}"><attvalues><attvalue for="0" value="{regs[i][1]-regs[i][0]}"/></attvalues></node>\n'
+
+        if len(v) < sum([ len(alns) for j, alns in v.items() ]):
+            continue # only singles
+            # pass # include doubles, triples, ...
+
+        print(f"\nSTATS\t{i}\n" + "rid\tn_targets\tn_alns\n" + f"{i}\t{len(v)}\t{sum([ len(alns) for j, alns in v.items() ])}")
+
+        # print out alignments for this reference.
+        print("rid\tqid\tn_alns\tstep\tdelta\tIdent/units_ovlp")
+        max_ident = None 
+        for j, alns in [ (k, v) for k, v in sorted(list(v.items()), key = lambda x: -max([ y[4] for y in x[1]])) ][:10]:
+            if not max_ident:
+                max_ident = alns[0][4]
+
+            #print(f"\nqid = {j} had {len(alns)} alns: {[s[4] for s in alns][:5]}...")
+            step, delta = alns[0][0] - alns[0][2], alns[0][4] - max_ident
+
+            print(f"{i}\t{j}\t{len(alns)}\t{step}\t{delta:.1f}\t" + " ".join([f"{s[4]/10:.1f}/{s[5]}" for s in alns]))
+
+            # NOTE: some printing for graph viz. abstract out this later. # NOTE: only the best ovlp for the target, for now?
+            if j in pw_aln.keys():
+                #edges += f'<edge id="{i}-{j}" source="{i}" target="{j}" label="{step}"><attvalues>'
+                edges += f'<edge id="{i}-{j}" source="{i}" target="{j}" label="{step}"><attvalues>' if step > 0 else f'<edge id="rev-{i}-{j}" source="{j}" target="{i}" label="{step}"><attvalues>'
+                edges += f'<attvalue for="0" value="{alns[0][4]/10:.1f}" />' +\
+                        f'<attvalue for="1" value="{alns[0][5]}" />' +\
+                        f'<attvalue for="2" value="{step}" />' +\
+                        f'<attvalue for="3" value="{delta:.1f}" />' +\
+                        '</attvalues></edge>\n'
+
+        # printing structure of alignments
+        # TODO: consider a good ordering - containing, negative steps, contained (ns-ps), positive steps
         for j, alns in [ (k, v) for k, v in sorted(list(v.items()), key = lambda x: -max([ y[4] for y in x[1]])) ][:10]:
             ri, qi = i, j
             print_aln(regs, ri, qi, brep, alns[0], is_top = True) 
             for aln in alns[1:3]:
                 print_aln(regs, ri, qi, brep, aln, is_top = False) 
 
+    #print(gxfe_temp(nodes, edges), file=open("ovlp_graph.gexf", "w"))
+    print(gxfe_temp(nodes, edges), file=open("ovlp_graph_step-direct.gexf", "w"))
     print("done.")
 
 if __name__ == '__main__':
@@ -228,11 +293,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='perform pair-wise alignment among HOR encoded reads on SNV data') # TODO: explain
     parser.add_argument('action', metavar='action', type=str, help='action to perform: align, ...')
     parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads')
+    parser.add_argument('--alns', dest='alns', help='pickled pickled alignments')
     args = parser.parse_args()
 
     if args.action == "align":
         assert args.hors, "need HOR-encoded reads"
         hers = pickle.load(open(args.hors, "rb"))
-        align(hers)
+        if args.alns:
+            align(hers, args.alns)
+        else:
+            align(hers)
     else:
         assert None, "invalid action."
