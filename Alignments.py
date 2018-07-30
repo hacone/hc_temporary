@@ -7,19 +7,31 @@ import numpy as np
 from EncodedRead import *
 from HOR_segregation import *
 
+from collections import namedtuple
+Pool = namedtuple("Pool", ("hers", "arrs")) # simple class for the context; hor encoded reads, layouts, ...
+pool = None # TODO; how can I make sure this is singleton (like the pattern)? namedtuple is immutable!
+
+# NOTE: alignments depend on gap-filling, SNV detection, scoring scheme, ... should I just restore score distribution? 
+
 # 1 - First, Detect variants
 def detect_snvs(units):
-    """ return: [(monomer index in unit, position in monomer, alt. base, relative frequency)] """
+    """
+    input: [(read id, mon id of the head of the HOR unit)]
+    return: [(monomer index in unit, position in monomer, alt. base, relative frequency)]
+    """
+
     n_units = len(units)
     counter = Counter()
     for ri, i in units:
         for j in range(2, 12): # I'm skipping the first 2 monomers, where assignment is always wrong
-            counter.update([ (j, s.pos, s.base) for s in hers[ri].mons[i+j].monomer.snvs ])
+            counter.update([ (j, s.pos, s.base) for s in pool.hers[ri].mons[i+j].monomer.snvs ])
+    # TODO: make cleaner
     return [ (k, p, b, c/n_units) for (k, p, b), c in counter.most_common(1000) if (0.05 < c/n_units) and (c/n_units < 0.8) ]
 
 # 2 - Then, construct the bit representation matrix of shape (n_units, n_sites + 3).
 def bit_vector_repr(ers, sites, range_of_units):
-    """ obtain bit vector representation as np.ndarray 
+    """
+        obtain bit vector representation as np.ndarray 
         missing units (with spacing of 22~24, 33~35 mons) are represented as 0-masked units
         param: 
             ers = HOR encoded reads (load from pickle)
@@ -28,6 +40,7 @@ def bit_vector_repr(ers, sites, range_of_units):
         out:
             [is_not_masked, rid, hid, SNV_states*]
     """
+
     bv, n_units = [], 0
     last_r, last_h = -1, -1
 
@@ -50,6 +63,7 @@ def bit_vector_repr(ers, sites, range_of_units):
 # 3 - determine which part of the matrix should be aligned each other.
 def valid_regions(bitvec):
     """ get valid consecutive regions after filling up 22/23/24-mons or 33/34/35-mons gaps """
+
     regs = []
     b, last_mi, last_ri = 0, bitvec[0,2], bitvec[0,1]
     for i in range(bitvec.shape[0]):
@@ -68,6 +82,7 @@ def align_two(bv1, bv2):
 
     def match_ratio(bv1, bv2):
         """ scoring scheme: n11 / (n10+n01+n11) """
+
         assert bv1.shape == bv2.shape, "wrong shapes"
         m = np.multiply(bv1, bv2) # 1: match, 0: masked, -1: mismatch
         mt = np.multiply((m + 1), m) / 2 # 1: match, 0: masked/mismatch
@@ -124,8 +139,6 @@ def print_aln(regs, ri, qi, bv, res, is_top):
     # lengths
     rl, ql = r1-r0, q1-q0
 
-    #print(f"\nAlignment: {res[4]/10:.1f} % match in {res[5]} units.\n")
-    print(f"\n     *     \tri\tqi\trs\tre\trl\tqs\tqe\tql\tscr\tlen")
     if is_top:
         print(f"BEST_ALIGN\t{ri}\t{qi}\t{rs}\t{re}\t{rl}\t{qs}\t{qe}\t{ql}\t{res[4]/10:.1f}\t{res[5]}\n")
     else:
@@ -181,6 +194,7 @@ def gxfe_temp(nodes, edges):
         '<attribute id="0" title="n_units" type="integer"/>' +\
         '</attributes>\n'
 
+    bag_of_units = [ (ri, h) for ri, er in enumerate(pool.hers) for h, _, t in er.hors if t == "~" ]
     s += '<attributes class="edge">' +\
         '<attribute id="0" title="identity" type="float"/>' +\
         '<attribute id="1" title="units_ovlp" type="integer"/>' +\
@@ -194,16 +208,18 @@ def gxfe_temp(nodes, edges):
 
     return s
 
-def align(hers, alns_pers = None):
+# TODO: now being rewritten.
+def align(alns_pers = None):
+    """ Now it's just printing the alignment. """
 
-    bag_of_units = [ (ri, h) for ri, er in enumerate(hers) for h, _, t in er.hors if t == "~" ]
+    bag_of_units = [ (ri, h) for ri, er in enumerate(pool.hers) for h, _, t in er.hors if t == "~" ]
     n_units = len(bag_of_units)
-    print(f"{n_units} units found in {len(hers)} reads.")
+    print(f"{n_units} units found in {len(pool.hers)} reads.")
 
     snv_sites = detect_snvs(bag_of_units)
     print(f"{len(snv_sites)} SNV sites defined.")
 
-    brep = bit_vector_repr(hers, snv_sites, range_of_units = bag_of_units)
+    brep = bit_vector_repr(pool.hers, snv_sites, range_of_units = bag_of_units)
     print(f"{brep.shape[0] - n_units} are filled in construction of bits representation.")
 
     regs = sorted(valid_regions(brep), key = lambda x: x[0] - x[1])
@@ -211,6 +227,7 @@ def align(hers, alns_pers = None):
 
     # NOTE: I'm not going to change the definition of above variable for now; they should be stable.
     # NOTE: you may change below, though. 
+
 
     min_units = 10
     print(f"{ len([ r for r in regs if r[1]-r[0] >= min_units ]) } regions >= {min_units} units")
@@ -300,8 +317,17 @@ if __name__ == '__main__':
         assert args.hors, "need HOR-encoded reads"
         hers = pickle.load(open(args.hors, "rb"))
         if args.alns:
-            align(hers, args.alns)
+            align(args.alns)
         else:
-            align(hers)
+            align()
+
+    if args.action == "layout":
+        assert args.hors, "need HOR-encoded reads"
+        hers = pickle.load(open(args.hors, "rb"))
+        pool = Pool(hers = hers, arrs = None)
+        if args.alns:
+            layout(args.alns)
+        #else:
+        #    layout()
     else:
         assert None, "invalid action."
