@@ -292,10 +292,7 @@ def layout(alns_dict = None):
 
         pickle.dump(alns_dict, open(f"alns_dict.75snvs.10u.400-4.pickle", "wb"))
 
-    # describe_alns_dict(alns_dict, bits_dict)
-
-    #import sys
-    #sys.exit()
+    # describe_alns_dict(alns_dict, bits_dict) # 
 
     slippies = double_edge_component(alns_dict)
     print(f"{ len(slippies) } components found.")
@@ -337,84 +334,100 @@ def layout(alns_dict = None):
     # NOTE: TODO: below is experimental.
     # pick best alignment, make a layout of the two, (*)pick best alignment from the layout, merge one into the layout. repeat until satisfied.
     # pick best from remaining nodes. proceed similarly...
+    
+    good_nodes = { comp[0] for comp in slippies if len(comp) == 1 }
+    n_iter = 0
 
-    good_nodes = [ comp[0] for comp in slippies if len(comp) == 1 ]
-    print(f"\n{len(good_nodes)} nodes are to be layout.")
+    while len(good_nodes) > 10:
 
-    # TODO TODO clean up the notations
-    good_edges = [ (i, ai, j, aj, alns_dict[(i, ai)][(j, aj)])
-            for i, ai in good_nodes for j, aj in good_nodes
-            if i < j and (j, aj) in alns_dict[(i, ai)] and alns_dict[(i, ai)][(j, aj)][0].score > 600 ]
-    print(f"{len(good_edges)} edges available.")
+        n_iter += 1; print(f"\n{len(good_nodes)} nodes are to be layout. Layout No.{n_iter}.")
 
-    good_edges = sorted(good_edges, key = lambda x: -x[4][0].score)
-    print("sorted."); print("\n".join([ f"{x[4][0]}" for x in good_edges[:20] ]))
+        good_edges = [ (i, ai, j, aj, alns_dict[(i, ai)][(j, aj)])
+                for i, ai in good_nodes for j, aj in good_nodes
+                if i < j and (j, aj) in alns_dict[(i, ai)] and alns_dict[(i, ai)][(j, aj)][0].score > 500 ]
 
-    # TODO: maybe check for internal consistency, ... then final iterative assembly procedure.
-    # TODO: assert the size of good_edges
+        good_edges = sorted(good_edges, key = lambda x: -x[4][0].score) # sorted with the best score for the pair
 
-    # make a seed
-    best = good_edges[0][4][0]
-    seed_layout = Layout(
-        reads = [ ((best.i, best.ai), 0), ((best.j, best.aj), best.k) ],
-        begin = -best.r_ext, end = best.li + best.f_ext)
-    good_edges = good_edges[1:]
-    visited = [ (i, ai) for (i, ai), d in seed_layout.reads ]
-
-    print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True); print(seed_layout)
-
-    next_e = [ e for e in good_edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
-    if next_e:
-        print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
-        best = next_e[0][4][0]
-    else:
-        print("aborting.")
-        import sys
-        sys.exit()
-
-    # good_nodes = [ n for n in good_nodes if not n in visited ] 
-
-    while True:
-
-        if (best.i, best.ai) in visited:
-            ll = best.lj
-            lo_alns = [ calc_align_layout(seed_layout,
-                Layout(reads = [((best.j, best.aj), 0)], begin = 0, end = best.lj), k, bits_dict)
-                for k in range(seed_layout.begin - best.lj + 2, seed_layout.end - 2 + 1) ]
-
-        elif (best.j, best.aj) in visited:
-            ll = best.li
-            lo_alns = [ calc_align_layout(seed_layout,
-                Layout(reads = [((best.i, best.ai), 0)], begin = 0, end = best.li), k, bits_dict)
-                for k in range(seed_layout.begin - best.li + 2, seed_layout.end - 2 + 1) ]
-
-        lo_alns = sorted(lo_alns, key = lambda x: -x.score)
-        print(f"\na read {lo_alns[0].l2.reads[0][0][0]} aligned to the current layout.\nscr\t  k\teol")
-        print("\n".join([ f"{lo_aln.score}\t{lo_aln.k}\t{lo_aln.eff_ovlp}" for lo_aln in lo_alns[:5] ]))
-
-        if lo_alns[0].score > 0 and (lo_alns[0].score - lo_alns[1].score) > 15:
-            visited += [(lo_alns[0].l2.reads[0][0][0], lo_alns[0].l2.reads[0][0][1])]
-            seed_layout = Layout(
-                    reads = seed_layout.reads + [((lo_alns[0].l2.reads[0][0][0], lo_alns[0].l2.reads[0][0][1]), lo_alns[0].k)],
-                    begin = min(seed_layout.begin, lo_alns[0].k), end = max(seed_layout.end, lo_alns[0].k + ll))
-            next_e = [ e for e in good_edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
-
-            print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True); print(seed_layout)
-            if next_e:
-                print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
-                best = next_e[0][4][0]
-            else:
-                break
+        if not good_edges:
+            print("No Good edges at all.")
+            break
         else:
-            print(f"\nAlignment looks not good; current layout has {len(seed_layout.reads)} reads:", flush = True); print(seed_layout)
-            if len(next_e) > 1:
-                next_e = next_e[1:]
-                print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
-                best = next_e[0][4][0]
+            print(f"{len(good_edges)} edges available.") 
+            print("\n".join([ f"{x[4][0]}" for x in good_edges[:10] ]))
+
+
+        # TODO: maybe check for internal consistency, ... then final iterative assembly procedure.
+        # TODO: assert the size of good_edges
+
+        # make a seed
+        best = good_edges[0][4][0]
+        seed_layout = Layout(
+            reads = [ ((best.i, best.ai), 0), ((best.j, best.aj), best.k) ],
+            begin = -best.r_ext, end = best.li + best.f_ext)
+        good_edges = good_edges[1:]
+        visited = [ (i, ai) for (i, ai), d in seed_layout.reads ]
+
+        print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True); print(seed_layout)
+
+        next_e = [ e for e in good_edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
+
+        if next_e:
+            print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
+            best = next_e[0][4][0]
+        else:
+            print(f"\nNo initial extention: FINAL LAYOUT with {len(seed_layout.reads)} reads, {seed_layout.end - seed_layout.begin} units:")
+            print(seed_layout)
+            good_nodes -= set(visited)
+            continue
+
+        while True:
+
+            if (best.i, best.ai) in visited:
+                ll = best.lj
+                lo_alns = [ calc_align_layout(seed_layout,
+                    Layout(reads = [((best.j, best.aj), 0)], begin = 0, end = best.lj), k, bits_dict)
+                    for k in range(seed_layout.begin - best.lj + 2, seed_layout.end - 2 + 1) ]
+
+            elif (best.j, best.aj) in visited:
+                ll = best.li
+                lo_alns = [ calc_align_layout(seed_layout,
+                    Layout(reads = [((best.i, best.ai), 0)], begin = 0, end = best.li), k, bits_dict)
+                    for k in range(seed_layout.begin - best.li + 2, seed_layout.end - 2 + 1) ]
+
+            lo_alns = sorted(lo_alns, key = lambda x: -x.score)
+
+            best_ext_aln = lo_alns[0]
+            best_ext_i, best_ext_ai = best_ext_aln.l2.reads[0][0]
+
+            print(f"\na read {best_ext_aln.l2.reads[0][0][0]} aligned to the current layout.\nscr\t  k\teol")
+            print("\n".join([ f"{lo_aln.score}\t{lo_aln.k}\t{lo_aln.eff_ovlp}" for lo_aln in lo_alns[:5] ]))
+
+            if best_ext_aln.score > 500 and (best_ext_aln.score - lo_alns[1].score) > 100:
+                # add new node into layout
+                visited += [(best_ext_i, best_ext_ai)]
+                seed_layout = Layout(
+                        reads = seed_layout.reads + [((best_ext_i, best_ext_ai), best_ext_aln.k)],
+                        begin = min(seed_layout.begin, best_ext_aln.k), end = max(seed_layout.end, best_ext_aln.k + ll))
+                next_e = [ e for e in good_edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
+
+                print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True); print(seed_layout)
+                if next_e:
+                    print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
+                    best = next_e[0][4][0]
+                else:
+                    break
             else:
-                break
+                print(f"\nAlignment looks not good; current layout has {len(seed_layout.reads)} reads:", flush = True); print(seed_layout)
+                if len(next_e) > 1:
+                    next_e = next_e[1:]
+                    print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
+                    best = next_e[0][4][0]
+                else:
+                    break
 
-
+        print(f"\nNo additional extention: FINAL LAYOUT with {len(seed_layout.reads)} reads, {seed_layout.end - seed_layout.begin} units:")
+        print(seed_layout)
+        good_nodes -= set(visited)
 
 if __name__ == '__main__':
 
