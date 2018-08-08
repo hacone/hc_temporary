@@ -15,11 +15,16 @@ Pool = namedtuple("Pool", ("hers", "arrs")) # simple class for the context; hor 
 
 # a record for an alignment (for reads, and for layouts).
 #   eff_ovlp = effective length of ovlp, f_ext/r_ext = extention forward/reverse
-Aln = namedtuple("Aln", ("i", "ai", "li", "j", "aj", "lj", "k", "score", "len_ovlp", "eff_ovlp", "f_ext", "r_ext"))
-LoAln = namedtuple("LoAln", ("l1", "l2", "k", "score", "len_ovlp", "eff_ovlp")) # NOTE: do I have to calc extension stats?
+Aln = namedtuple("Aln", ("i", "ai", "li", "j", "aj", "lj", "k", "len_ovlp", "eff_ovlp", "f_ext", "r_ext", "n00", "nmis", "n11", "score"))
+LoAln = namedtuple("LoAln", ("l1", "l2", "k", "len_ovlp", "eff_ovlp", "n00", "nmis", "n11", "score")) # NOTE: do I have to calc extension stats?
 
 # I need total length for calc overlap length
 Layout = namedtuple("Layout", ("reads", "begin", "end"))
+
+T_agr = 700 # agree score threshold. alignment with score above this can be ...
+T_gap = 100 # required score gap between best one vs 2nd best one.
+T_dag = 600 # disagree score threshold. alignments with scores below this are considered false.
+# T_dag = 550 # disagree score threshold. alignments with scores below this are considered false.
 
 # 1 - First, Detect variants
 def detect_snvs(units):
@@ -109,13 +114,13 @@ def mismatX(i, ai, j, aj, k, bits_dict):
     if k < 0:
         len_ovlp = min(li, k+lj)
         if len_ovlp < 1:
-            return dict(li = li, lj = lj, len_ovlp = 0, eff_ovlp = 0, n11 = 0, match = 0, mismatch = 0)
+            return dict(li = li, lj = lj, len_ovlp = 0, eff_ovlp = 0, n11 = 0, n00 = 0, match = 0, mismatch = 0)
         xi = bits_dict[(i, ai)][0:len_ovlp,:]
         xj = bits_dict[(j, aj)][-k:-k+len_ovlp,:]
     else:
         len_ovlp = min(lj, -k+li) 
         if len_ovlp < 1:
-            return dict(li = li, lj = lj, len_ovlp = 0, eff_ovlp = 0, n11 = 0, match = 0, mismatch = 0)
+            return dict(li = li, lj = lj, len_ovlp = 0, eff_ovlp = 0, n11 = 0, n00 = 0, match = 0, mismatch = 0)
         xi = bits_dict[(i, ai)][k:k+len_ovlp,:]
         xj = bits_dict[(j, aj)][0:len_ovlp,]
 
@@ -123,35 +128,53 @@ def mismatX(i, ai, j, aj, k, bits_dict):
     match = np.multiply((m + 1), m) / 2 # 1: match, 0: masked/mismatch
     mismatch = np.sum(np.multiply(m, m) - match) # 1: mismatch, 0: masked/match # n01 or n10
     n11 = np.sum(np.multiply(match, (xi + 1) / 2)) # n11
+    n00 = np.sum(match) - n11
     eff_ovlp = len_ovlp - sum([ 1 if x == 0 else 0 for x in m[:,0] ])
 
     return dict(li = li, lj = lj, len_ovlp = len_ovlp, eff_ovlp = eff_ovlp,
-            n11 = n11, match = np.sum(match), mismatch = mismatch)
+            n11 = n11, n00 = n00, match = np.sum(match), mismatch = mismatch)
 
 def calc_align(i, ai, j, aj, k, bits_dict):
     """ calculate alignment for a pair; in a specified configuration """
     X = mismatX(i, ai, j, aj, k, bits_dict)
-    score = int(1000 * X["n11"] / (1 + X["n11"] + X["mismatch"])) # per-mille !
+
+    # NOTE: I'm trying a robust score
+    c_00, c_ms = 0.1, 1.5 
+    #c_00, c_ms = 0.4735, 1.5 
+    # c_00, c_ms = 0.0, 1.0 
+    #score = int(1000 * (X["n11"] + c_00 * X["n00"]) / (0.01 + X["n11"] + c_00 * X["n00"] + c_ms * X["mismatch"])) # per-mille !
+    score = 1000 * (X["n11"] + c_00 * X["n00"]) / (0.01 + X["n11"] + c_00 * X["n00"] + c_ms * X["mismatch"]) # per-mille !
+
     return Aln(i = i, ai = ai, li = X["li"], j = j, aj = aj, lj = X["lj"], k = k,
         score = score, len_ovlp = X["len_ovlp"], eff_ovlp = X["eff_ovlp"],
-        f_ext = max(0, k+X["lj"]-X["li"]), r_ext = max(0, -k))
+        f_ext = max(0, k+X["lj"]-X["li"]), r_ext = max(0, -k),
+        n00 = X["n00"], nmis = X["mismatch"], n11 = X["n11"])
 
 def calc_align_layout(l1, l2, k, bits_dict):
     """ calculate alignment between two layouts; in a specified (by displacement k) configuration """
 
+    # NOTE: I'm trying a robust score
+    c_00, c_ms = 0.1, 1.5 
+    #c_00, c_ms = 0.4735, 1.5 
+    # c_00, c_ms = 0.0, 1.0 
+
     t_ovlp, t_eff_ovlp = 0, 0
-    t_n11, t_mat, t_mis = 0, 0, 0
+    t_n11, t_n00, t_mat, t_mis = 0, 0, 0, 0
 
     for (i, ai), di in l1.reads:
         for (j, aj), dj in l2.reads:
             X = mismatX(i, ai, j, aj, dj-di+k, bits_dict)
             t_ovlp += X["len_ovlp"]; t_eff_ovlp += X["eff_ovlp"]
-            #t_n11 += X["n11"]; t_mat += X["match"]; t_mis += X["mismatch"]
             t_n11 += X["n11"]
+            t_n00 += X["n00"]
             t_mis += X["mismatch"]
 
-    score = int(1000 * t_n11 / (1 + t_n11 + t_mis))
-    return LoAln(l1 = l1, l2 = l2, k = k, score = score, len_ovlp = t_ovlp, eff_ovlp = t_eff_ovlp)
+    # NOTE: is this robust score?
+    # score = int(1000 * t_n11 / (1 + t_n11 + t_mis))
+    score = 1000 * (t_n11 + c_00 * t_n00) / (0.01 + t_n11 + c_00 * t_n00 + c_ms * t_mis)
+
+    return LoAln(l1 = l1, l2 = l2, k = k, len_ovlp = t_ovlp, eff_ovlp = t_eff_ovlp,
+            n00 = t_n00, nmis = t_mis, n11 = t_n11, score = score)
 
 def print_align(aln, bits_dict):
 
@@ -193,12 +216,15 @@ def print_align(aln, bits_dict):
     print(lines)
 
 def describe_alns_dict(alns_dict, bits_dict, alt_alns_dict = None, alt_bits_dict = None):
+
+    T_print = 650
     
     for (i, ai), d in alns_dict.items(): 
-        targets = sorted([ (j, aj, alns) for (j, aj), alns in d.items() if alns[0].score > 600 ], key = lambda x: -x[2][0].score)
+        targets = sorted([ (j, aj, alns) for (j, aj), alns in d.items() if alns[0].score > T_print ], key = lambda x: -x[2][0].score)
         if targets:
             print("\n--------------------------------------------------")
-            print(f"Alignments for read {i} region {ai}...")
+            n11, n00 = targets[0][2][0].n11, targets[0][2][0].n00
+            print(f"Alignments for read {i} region {ai}...: {100*n11/(n11+n00):.2f} " + " ".join([f"{alns[0].score/10:.3f}" for j, aj, alns in targets[:10]]))
         for j, aj, alns in targets[:10]: # for the first 10 reads
             print(f"\nFrom read {i}, {ai} To read {j}, {aj}...")
             print("alt.confs: " + " ".join([ f"{s.score/10:.2f}~({s.k})" for s in alns[:10] ]))
@@ -213,6 +239,53 @@ def describe_alns_dict(alns_dict, bits_dict, alt_alns_dict = None, alt_bits_dict
                 else:
                     print("\nNo corresponding alignment in original setting.")
 
+def layout_consensus(layout):
+    """ construct a consensus read out of a layout """
+
+    #for i in range(layout.begin, layout.end):
+        # i-th unit.
+        #for ri, rai, k in layout.reads:
+            # if in a good range
+            # check if its good unit
+            # count the sites as in k, p, b
+        # got unit
+        # h = i - layout.begin, "~"...
+        # HOR_Read( name = "anything",
+        #           mons = [ AssignedMonomer(begin = 12*h + 171*ki, end = begin + 171, monomer = Monomer(name = m, snvs = consensus)) for h for ki ],
+        #           hors = [ (h*12, 12, "~") for h in hoge ] )
+
+
+    #""" construct bit vectors in dict """ # copied just for ref.
+    #bits_dict = {}
+    #for i, ai, l in [ (i, ai, pool.arrs[i][ai]) for i, ai in regions ]:
+    #    v = []
+    #    for h in l:
+    #        if h == -1:
+    #            v += [0] * len(snvs)
+    #        else:
+    #            # NOTE: Was snv a dict ? # TODO: cleanup
+    #            v += [ 1 if any([ (sp.pos, sp.base) == (s["p"], s["b"]) for sp in pool.hers[i].mons[h+s["k"]].monomer.snvs ]) else -1 for s in snvs ]
+    #    bits_dict[(i, ai)] = np.array(v).reshape(len(l), len(snvs))
+    #return bits_dict
+
+    return None
+
+def print_layout(layout, bits_dict):
+
+    def is_in(i, j, aj, d):
+        lj = bits_dict[(j, aj)].shape[0]
+        return d <= i and i < d + lj
+
+    print("\n   i\t>  >  >  reads  <  <  <")
+    for i in range(layout.begin, layout.end):
+        #line = f"{i-layout.begin:<4}\t" + "".join([ "|" if is_in(i, j, aj, d) else " " for (j, aj), d in sorted(layout.reads, key=lambda x: x[1]) ])
+        line = f"{i-layout.begin:<4}\t" + "".join([ "|" if is_in(i, j, aj, d) else " " for (j, aj), d in layout.reads ])
+        print(line)
+    print("----\t" + "-" * len(layout.reads))
+
+    return None
+
+
 def double_edge_component(alns_dict):
     """
     obtain so called slippy component, whose elements are connected by multi-edges.
@@ -220,7 +293,7 @@ def double_edge_component(alns_dict):
     """
 
     def is_double(alns):
-        return 1 < len([ aln for aln in alns if aln.score > 500 and aln.len_ovlp > 4 ])
+        return 1 < len([ aln for aln in alns if aln.score > T_dag and aln.len_ovlp > 4 ])
 
     nodes = set()
     for (i, ai), d in alns_dict.items():
@@ -257,6 +330,7 @@ def layout(alns_dict = None):
     print(f"{n_units} units found in {len(pool.hers)} reads.")
 
     snv_sites = detect_snvs(bag_of_units)
+    #snv_sites = detect_snvs(bag_of_units)[:40] # force 40?
     print(f"{len(snv_sites)} SNV sites defined globally.")
     print_snvs(snv_sites)
 
@@ -277,6 +351,7 @@ def layout(alns_dict = None):
     if not alns_dict:
         alns_dict = dict()
         n = 0
+        #for i, ai in long_arrays[:100]: # NOTE: temporary
         for i, ai in long_arrays:
             n += 1
             print(f"aligning {i} - {ai}. {n} / {len(long_arrays)}")
@@ -285,21 +360,27 @@ def layout(alns_dict = None):
                 li, lj = bits_dict[(i, ai)].shape[0], bits_dict[(j, aj)].shape[0]
                 # with at least 2 units in overlap
                 alns = [ calc_align(i, ai, j, aj, k, bits_dict = bits_dict) for k in range(-lj+2, li-2) ]
-                alns = [ aln for aln in alns if aln.score > 400 and aln.eff_ovlp > 4 ]
+                alns = [ aln for aln in alns if aln.score > T_dag - 100 and aln.eff_ovlp > 4 ] # NOTE: threshold depends on scoring scheme.
                 if alns:
                     alns_dict[(i, ai)][(j, aj)] = sorted(alns, key = lambda x: -1 * x.score)
-            print(f"{ len([ (j, aj, aln) for (j, aj), alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > 500 and aln.eff_ovlp > 4 ]) } targets found.", flush = True)
+            l = f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag -100 and aln.eff_ovlp > 4 ]) } targets found for saving. "
+            l += f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag and aln.eff_ovlp > 4 ]) } targets above T_dag = {T_dag}."
+            print(l, flush = True)
 
-        pickle.dump(alns_dict, open(f"alns_dict.75snvs.10u.400-4.pickle", "wb"))
+        pickle.dump(alns_dict, open(f"alns_dict.{len(snv_sites)}snvs.10u.{T_dag-100}-4.robust.pickle", "wb"))
 
-    # describe_alns_dict(alns_dict, bits_dict) # 
+    describe_alns_dict(alns_dict, bits_dict) 
+
+    #import sys
+    #sys.exit()
 
     slippies = double_edge_component(alns_dict)
     print(f"{ len(slippies) } components found.")
     print(f"Of these, { len([ s for s in slippies if len(s) > 1 ]) } comprises multiple reads.")
     #print(slippies)
 
-    for ic, comp in enumerate(slippies[:0]): # NOTE: suppressed just for the experiment below.
+    #for ic, comp in enumerate(slippies[:0]): # NOTE: suppressed just for the experiment below.
+    for ic, comp in enumerate(slippies): # NOTE: suppressed just for the experiment below.
 
         if len(comp) < 2:
             continue
@@ -322,7 +403,7 @@ def layout(alns_dict = None):
                 li, lj = bits_dict_local[(i, ai)].shape[0], bits_dict_local[(j, aj)].shape[0]
                 # with at least 2 units in overlap
                 alns = [ calc_align(i, ai, j, aj, k, bits_dict = bits_dict_local) for k in range(-lj+2, li-2) ]
-                alns = [ aln for aln in alns if aln.score > 400 and aln.eff_ovlp > 4 ]
+                alns = [ aln for aln in alns if aln.score > T_dag - 100 and aln.eff_ovlp > 4 ]
                 if alns:
                     alns_dict_local[(i, ai)][(j, aj)] = sorted(alns, key = lambda x: -1 * x.score)
 
@@ -344,7 +425,7 @@ def layout(alns_dict = None):
 
         good_edges = [ (i, ai, j, aj, alns_dict[(i, ai)][(j, aj)])
                 for i, ai in good_nodes for j, aj in good_nodes
-                if i < j and (j, aj) in alns_dict[(i, ai)] and alns_dict[(i, ai)][(j, aj)][0].score > 500 ]
+                if i < j and (j, aj) in alns_dict[(i, ai)] and alns_dict[(i, ai)][(j, aj)][0].score > T_dag ]
 
         good_edges = sorted(good_edges, key = lambda x: -x[4][0].score) # sorted with the best score for the pair
 
@@ -395,6 +476,7 @@ def layout(alns_dict = None):
                     for k in range(seed_layout.begin - best.li + 2, seed_layout.end - 2 + 1) ]
 
             lo_alns = sorted(lo_alns, key = lambda x: -x.score)
+            lo_alns = [ la for la in lo_alns if la.eff_ovlp > 4 ]
 
             best_ext_aln = lo_alns[0]
             best_ext_i, best_ext_ai = best_ext_aln.l2.reads[0][0]
@@ -402,7 +484,7 @@ def layout(alns_dict = None):
             print(f"\na read {best_ext_aln.l2.reads[0][0][0]} aligned to the current layout.\nscr\t  k\teol")
             print("\n".join([ f"{lo_aln.score}\t{lo_aln.k}\t{lo_aln.eff_ovlp}" for lo_aln in lo_alns[:5] ]))
 
-            if best_ext_aln.score > 500 and (best_ext_aln.score - lo_alns[1].score) > 100:
+            if best_ext_aln.score > T_dag and (best_ext_aln.score - lo_alns[1].score) > T_gap:
                 # add new node into layout
                 visited += [(best_ext_i, best_ext_ai)]
                 seed_layout = Layout(
@@ -427,6 +509,7 @@ def layout(alns_dict = None):
 
         print(f"\nNo additional extention: FINAL LAYOUT with {len(seed_layout.reads)} reads, {seed_layout.end - seed_layout.begin} units:")
         print(seed_layout)
+        print_layout(seed_layout, bits_dict)
         good_nodes -= set(visited)
 
 if __name__ == '__main__':
