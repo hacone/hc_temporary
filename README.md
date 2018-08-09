@@ -12,10 +12,8 @@ EncodedRead = namedtuple("EncodedRead", ("name", "mons", "length")) # string, li
 variant_sites = { "MonomerName" : { "Monomer" : freq_as_mon, (pos, base) : freq } }
 ```
 
-
 ### TODO
-1868 is too redundant even for original alignment. use 1197 distinct ones.
-
+Too many to be written down here.
 
 ### Data Source
 
@@ -27,11 +25,19 @@ https://github.com/splatlab/squeakr
 
 ### Requirements
 
-`HOR_work.sh shor-hor` uses `fasta_formatter` from FASTX-Toolkit
+`HOR_work.sh shor-hor` uses `fasta_formatter` from FASTX-Toolkit.
 
-venv is not maintained by git. Below should be the output from pip3 freeze.
+Our `venv` is not maintained by git, but you should be able to replicate the environment as follows.
 
 ```
+python3 -m venv venv
+source venv/bin/activate
+pip3 install -r requirements.txt
+```
+
+As you expect, `requirements.txt` is the output from `pip3 freeze`.
+
+```requirements.txt
 biopython==1.70
 cycler==0.10.0
 kiwisolver==1.0.1

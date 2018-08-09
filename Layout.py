@@ -216,6 +216,7 @@ def print_align(aln, bits_dict):
     print(lines)
 
 def describe_alns_dict(alns_dict, bits_dict, alt_alns_dict = None, alt_bits_dict = None):
+    """ visualize alns_dict in text """
 
     T_print = 650
     
@@ -238,6 +239,42 @@ def describe_alns_dict(alns_dict, bits_dict, alt_alns_dict = None, alt_bits_dict
                     print_align(alt_alns[0], alt_bits_dict)
                 else:
                     print("\nNo corresponding alignment in original setting.")
+
+def stats_alns_dict(alns_dict):
+    """ empirical score distribution for plotting """
+    # (score, gap, n11/n11+n00, eff_ovlp, rank)
+    print("i\tj\tscore\tscoreGap\tvars_frac\teff_ovlp\trank")
+    for (i, ai), d in alns_dict.items():
+        for rank, (j, aj, alns) in enumerate(
+                sorted([ (j, aj, alns) for (j, aj), alns in d.items() if (j, aj) != (i, ai) ], key = lambda x: -1.0 * x[2][0].score)[:10]):
+            scoreGap = alns[0].score - alns[1].score if len(alns) > 1 else alns[0].score - (T_dag-100)
+            vars_frac = alns[0].n11 / (alns[0].n11 + alns[0].n00) # n11/(n11+n00)
+            line = f"{i}\t{j}\t{alns[0].score/10:.2f}\t{scoreGap/10:.2f}\t{100*vars_frac:.2f}\t{alns[0].eff_ovlp}\t{rank}"
+            print(line)
+
+def all_vs_all_aln(regs, bits_dict):
+    """ calculate all-vs-all alignments among reads, returning dict of alns. """
+    # TODO: need all-vs-all alignments among layouts?
+
+    alns_dict = dict()
+    n = 0
+
+    for i, ai in regs:
+        n += 1
+        print(f"aligning {i} - {ai}. {n} / {len(regs)}")
+        alns_dict[(i, ai)] = dict()
+        for j, aj in [ (j, aj) for j, aj in regs if not (j, aj) == (i, ai)]:
+            li, lj = bits_dict[(i, ai)].shape[0], bits_dict[(j, aj)].shape[0]
+            # with at least 2 units in overlap
+            alns = [ calc_align(i, ai, j, aj, k, bits_dict = bits_dict) for k in range(-lj+2, li-2) ]
+            alns = [ aln for aln in alns if aln.score > T_dag - 100 and aln.eff_ovlp > 4 ] # NOTE: threshold depends on scoring scheme.
+            if alns:
+                alns_dict[(i, ai)][(j, aj)] = sorted(alns, key = lambda x: -1 * x.score)
+        l = f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag -100 and aln.eff_ovlp > 4 ]) } targets found for saving. "
+        l += f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag and aln.eff_ovlp > 4 ]) } targets above T_dag = {T_dag}."
+        print(l, flush = True)
+
+    return alns_dict
 
 def layout_consensus(layout):
     """ construct a consensus read out of a layout """
@@ -285,6 +322,113 @@ def print_layout(layout, bits_dict):
 
     return None
 
+def iterative_layout(alns_dict, bits_dict, nodes):
+    """ for nodes and alns_dict, perform iterative layout process and returns list of obtained layout
+        nodes :: [(i, ai)]
+    """
+
+    result_layouts = [] # this accumulates the results.
+    n_iter = 0
+
+    while len(nodes) > 1:
+
+        n_iter += 1; print(f"\n{len(nodes)} nodes are to be layout. Layout No.{n_iter}.")
+
+        edges = [ (i, ai, j, aj, alns_dict[(i, ai)][(j, aj)])
+                for i, ai in nodes for j, aj in nodes
+                if i < j and (j, aj) in alns_dict[(i, ai)] and alns_dict[(i, ai)][(j, aj)][0].score > T_dag ]
+
+        # remove slippy pairs
+        edges = [ e for e in edges if len(e[4]) < 2 or e[4][0].score - e[4][1].score > T_gap ] 
+
+        edges = sorted(edges, key = lambda x: -x[4][0].score) # sorted with the best score for the pair
+
+        if not edges:
+            print("No Good edges any more.")
+            break
+        else:
+            print(f"{len(edges)} edges available.") 
+            print("\n".join([ f"{x[4][0]}" for x in edges[:10] ]))
+
+
+        # TODO: maybe check for internal consistency, ... then final iterative assembly procedure.
+        # TODO: assert the size of edges
+
+        # make a seed
+        best = edges[0][4][0]
+        seed_layout = Layout(
+            reads = [ ((best.i, best.ai), 0), ((best.j, best.aj), best.k) ],
+            begin = -best.r_ext, end = best.li + best.f_ext)
+        edges = edges[1:]
+        visited = [ (i, ai) for (i, ai), d in seed_layout.reads ]
+
+        print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True) ; print(seed_layout)
+
+        next_e = [ e for e in edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
+
+        if next_e:
+            #print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
+            best = next_e[0][4][0]
+        else:
+            print(f"\nNo initial extention: FINAL LAYOUT with {len(seed_layout.reads)} reads, {seed_layout.end - seed_layout.begin} units:")
+            print(seed_layout)
+            result_layouts += [seed_layout]
+            nodes -= set(visited)
+            continue
+
+        while True:
+
+            if (best.i, best.ai) in visited:
+                ll = best.lj
+                lo_alns = [ calc_align_layout(seed_layout,
+                    Layout(reads = [((best.j, best.aj), 0)], begin = 0, end = best.lj), k, bits_dict)
+                    for k in range(seed_layout.begin - best.lj + 2, seed_layout.end - 2 + 1) ]
+
+            elif (best.j, best.aj) in visited:
+                ll = best.li
+                lo_alns = [ calc_align_layout(seed_layout,
+                    Layout(reads = [((best.i, best.ai), 0)], begin = 0, end = best.li), k, bits_dict)
+                    for k in range(seed_layout.begin - best.li + 2, seed_layout.end - 2 + 1) ]
+
+            lo_alns = sorted(lo_alns, key = lambda x: -x.score)
+            lo_alns = [ la for la in lo_alns if la.eff_ovlp > 4 ]
+
+            best_ext_aln = lo_alns[0]
+            best_ext_i, best_ext_ai = best_ext_aln.l2.reads[0][0]
+
+            print(f"\na read {best_ext_aln.l2.reads[0][0][0]} aligned to the current layout.\nscr\t  k\teol")
+            print("\n".join([ f"{lo_aln.score}\t{lo_aln.k}\t{lo_aln.eff_ovlp}" for lo_aln in lo_alns[:3] ]))
+
+            if best_ext_aln.score > T_dag and (best_ext_aln.score - lo_alns[1].score) > T_gap:
+                # add new node into layout
+                visited += [(best_ext_i, best_ext_ai)]
+                seed_layout = Layout(
+                        reads = seed_layout.reads + [((best_ext_i, best_ext_ai), best_ext_aln.k)],
+                        begin = min(seed_layout.begin, best_ext_aln.k), end = max(seed_layout.end, best_ext_aln.k + ll))
+                next_e = [ e for e in edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
+
+                print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True); print(seed_layout)
+                if next_e:
+                    print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
+                    best = next_e[0][4][0]
+                else:
+                    break
+            else:
+                print(f"\nBad alignment; current layout has {len(seed_layout.reads)} reads:", flush = True)# ; print(seed_layout)
+                if len(next_e) > 1:
+                    next_e = next_e[1:]
+                    print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
+                    best = next_e[0][4][0]
+                else:
+                    break
+
+        print(f"\nNo additional extention: FINAL LAYOUT with {len(seed_layout.reads)} reads, {seed_layout.end - seed_layout.begin} units:")
+        result_layouts += [seed_layout]
+        #print(seed_layout)
+        #print_layout(seed_layout, bits_dict)
+        nodes -= set(visited)
+
+    return result_layouts
 
 def double_edge_component(alns_dict):
     """
@@ -298,7 +442,6 @@ def double_edge_component(alns_dict):
     nodes = set()
     for (i, ai), d in alns_dict.items():
         nodes |= { (i, ai) } | { (j, aj) for (j, aj), alns in d.items() }
-    print(f"{len(nodes)} nodes in total.")
 
     components = []
     while len(nodes) > 0:
@@ -336,7 +479,7 @@ def layout(alns_dict = None):
 
     arrs = valid_read_regions(pool.hers)
     print(f"{len(arrs)} read has an array to be aligned.")
-    print(f"{ sum([ len(v) for k, v in arrs.items() ]) } in total.")
+    print(f"{ sum([ len(v) for k, v in arrs.items() ]) } units-long in total.")
 
     pool = Pool(hers = hers, arrs = arrs) # NOTE: I wanted to express global variables ...
 
@@ -349,35 +492,25 @@ def layout(alns_dict = None):
 
     # TODO: once again abstract the logic to calc all-vs-all alns_dict for subset of reads (i mean, slippy parts).
     if not alns_dict:
-        alns_dict = dict()
-        n = 0
-        #for i, ai in long_arrays[:100]: # NOTE: temporary
-        for i, ai in long_arrays:
-            n += 1
-            print(f"aligning {i} - {ai}. {n} / {len(long_arrays)}")
-            alns_dict[(i, ai)] = dict()
-            for j, aj in [ (j, aj) for j, aj in long_arrays if not (j, aj) == (i, ai)]:
-                li, lj = bits_dict[(i, ai)].shape[0], bits_dict[(j, aj)].shape[0]
-                # with at least 2 units in overlap
-                alns = [ calc_align(i, ai, j, aj, k, bits_dict = bits_dict) for k in range(-lj+2, li-2) ]
-                alns = [ aln for aln in alns if aln.score > T_dag - 100 and aln.eff_ovlp > 4 ] # NOTE: threshold depends on scoring scheme.
-                if alns:
-                    alns_dict[(i, ai)][(j, aj)] = sorted(alns, key = lambda x: -1 * x.score)
-            l = f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag -100 and aln.eff_ovlp > 4 ]) } targets found for saving. "
-            l += f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag and aln.eff_ovlp > 4 ]) } targets above T_dag = {T_dag}."
-            print(l, flush = True)
-
+        alns_dict = all_vs_all_aln(long_arrays, bits_dict)
         pickle.dump(alns_dict, open(f"alns_dict.{len(snv_sites)}snvs.10u.{T_dag-100}-4.robust.pickle", "wb"))
 
-    describe_alns_dict(alns_dict, bits_dict) 
+    #describe_alns_dict(alns_dict, bits_dict) 
+    #stats_alns_dict(alns_dict)
 
     #import sys
     #sys.exit()
 
     slippies = double_edge_component(alns_dict)
     print(f"{ len(slippies) } components found.")
-    print(f"Of these, { len([ s for s in slippies if len(s) > 1 ]) } comprises multiple reads.")
-    #print(slippies)
+    print(f"Of these, { len([ s for s in slippies if len(s) > 1 ]) } comprises multiple reads (slippery components).")
+
+    good_nodes = { comp[0] for comp in slippies if len(comp) == 1 }
+    layouts = iterative_layout(alns_dict, bits_dict, good_nodes)
+
+    print(f"{len(layouts)} layouts obtained for non-slippery parts: " +\
+          f"{sum([ len(l.reads) for l in layouts ])} nodes, "+\
+          f"{sum([ l.end - l.begin for l in layouts ])} units long.")
 
     #for ic, comp in enumerate(slippies[:0]): # NOTE: suppressed just for the experiment below.
     for ic, comp in enumerate(slippies): # NOTE: suppressed just for the experiment below.
@@ -387,130 +520,37 @@ def layout(alns_dict = None):
         units_in_comp = [ (i, mi) for i, ai in comp for mi in arrs[i][ai] if mi > -1 ]
 
         snvs = detect_snvs(units_in_comp) # local
-        print(f"\n{len(snvs)} SNVs for the Component {ic}: {len(comp)} reads; {len(units_in_comp)} units.")
+        print(f"\n{len(snvs)} SNVs for the component {ic}: {len(comp)} reads; {len(units_in_comp)} units.")
         print_snvs(snvs, snv_sites)
-
         bits_dict_local = get_bits_dict(snvs, comp) # local
-        print("\ngot bits_dict updated.")
 
-        # alignment locally in the component # copied.
-        alns_dict_local = dict() # local
-        n = 0
-        for i, ai in comp:
-            n += 1
-            alns_dict_local[(i, ai)] = dict()
-            for j, aj in [ (j, aj) for j, aj in comp if not (j, aj) == (i, ai)]:
-                li, lj = bits_dict_local[(i, ai)].shape[0], bits_dict_local[(j, aj)].shape[0]
-                # with at least 2 units in overlap
-                alns = [ calc_align(i, ai, j, aj, k, bits_dict = bits_dict_local) for k in range(-lj+2, li-2) ]
-                alns = [ aln for aln in alns if aln.score > T_dag - 100 and aln.eff_ovlp > 4 ]
-                if alns:
-                    alns_dict_local[(i, ai)][(j, aj)] = sorted(alns, key = lambda x: -1 * x.score)
+        # alignment locally, using global SNVs 
+        alns_dict_original = all_vs_all_aln(comp, bits_dict)
+        print("alns in original SNVs")
+        stats_alns_dict(alns_dict_original)
 
+        # alignment locally in the component, using new SNVs
+        alns_dict_local = all_vs_all_aln(comp, bits_dict_local)
+        print("alns in updated SNVs")
+        stats_alns_dict(alns_dict_local)
+
+        """
         describe_alns_dict(alns_dict_local, bits_dict_local, alns_dict, bits_dict)
+        """
+
+        layouts = iterative_layout(alns_dict, bits_dict, set(comp))
+        print(f"\n\nUsing original SNVs, {len(layouts)} layouts obtained for slippery component No.{ic}: " +\
+              f"{sum([ len(l.reads) for l in layouts ])} (/ {len(comp)}) nodes, "+\
+              f"{sum([ l.end - l.begin for l in layouts ])} (/ {len(units_in_comp)}) units long.")
+
+        layouts = iterative_layout(alns_dict_local, bits_dict_local, set(comp))
+        print(f"Using  updated SNVs, {len(layouts)} layouts obtained for slippery component No.{ic}: " +\
+              f"{sum([ len(l.reads) for l in layouts ])} (/ {len(comp)}) nodes, "+\
+              f"{sum([ l.end - l.begin for l in layouts ])} (/ {len(units_in_comp)}) units long.")
 
     #import sys
     #sys.exit()
 
-    # NOTE: TODO: below is experimental.
-    # pick best alignment, make a layout of the two, (*)pick best alignment from the layout, merge one into the layout. repeat until satisfied.
-    # pick best from remaining nodes. proceed similarly...
-    
-    good_nodes = { comp[0] for comp in slippies if len(comp) == 1 }
-    n_iter = 0
-
-    while len(good_nodes) > 10:
-
-        n_iter += 1; print(f"\n{len(good_nodes)} nodes are to be layout. Layout No.{n_iter}.")
-
-        good_edges = [ (i, ai, j, aj, alns_dict[(i, ai)][(j, aj)])
-                for i, ai in good_nodes for j, aj in good_nodes
-                if i < j and (j, aj) in alns_dict[(i, ai)] and alns_dict[(i, ai)][(j, aj)][0].score > T_dag ]
-
-        good_edges = sorted(good_edges, key = lambda x: -x[4][0].score) # sorted with the best score for the pair
-
-        if not good_edges:
-            print("No Good edges at all.")
-            break
-        else:
-            print(f"{len(good_edges)} edges available.") 
-            print("\n".join([ f"{x[4][0]}" for x in good_edges[:10] ]))
-
-
-        # TODO: maybe check for internal consistency, ... then final iterative assembly procedure.
-        # TODO: assert the size of good_edges
-
-        # make a seed
-        best = good_edges[0][4][0]
-        seed_layout = Layout(
-            reads = [ ((best.i, best.ai), 0), ((best.j, best.aj), best.k) ],
-            begin = -best.r_ext, end = best.li + best.f_ext)
-        good_edges = good_edges[1:]
-        visited = [ (i, ai) for (i, ai), d in seed_layout.reads ]
-
-        print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True); print(seed_layout)
-
-        next_e = [ e for e in good_edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
-
-        if next_e:
-            print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
-            best = next_e[0][4][0]
-        else:
-            print(f"\nNo initial extention: FINAL LAYOUT with {len(seed_layout.reads)} reads, {seed_layout.end - seed_layout.begin} units:")
-            print(seed_layout)
-            good_nodes -= set(visited)
-            continue
-
-        while True:
-
-            if (best.i, best.ai) in visited:
-                ll = best.lj
-                lo_alns = [ calc_align_layout(seed_layout,
-                    Layout(reads = [((best.j, best.aj), 0)], begin = 0, end = best.lj), k, bits_dict)
-                    for k in range(seed_layout.begin - best.lj + 2, seed_layout.end - 2 + 1) ]
-
-            elif (best.j, best.aj) in visited:
-                ll = best.li
-                lo_alns = [ calc_align_layout(seed_layout,
-                    Layout(reads = [((best.i, best.ai), 0)], begin = 0, end = best.li), k, bits_dict)
-                    for k in range(seed_layout.begin - best.li + 2, seed_layout.end - 2 + 1) ]
-
-            lo_alns = sorted(lo_alns, key = lambda x: -x.score)
-            lo_alns = [ la for la in lo_alns if la.eff_ovlp > 4 ]
-
-            best_ext_aln = lo_alns[0]
-            best_ext_i, best_ext_ai = best_ext_aln.l2.reads[0][0]
-
-            print(f"\na read {best_ext_aln.l2.reads[0][0][0]} aligned to the current layout.\nscr\t  k\teol")
-            print("\n".join([ f"{lo_aln.score}\t{lo_aln.k}\t{lo_aln.eff_ovlp}" for lo_aln in lo_alns[:5] ]))
-
-            if best_ext_aln.score > T_dag and (best_ext_aln.score - lo_alns[1].score) > T_gap:
-                # add new node into layout
-                visited += [(best_ext_i, best_ext_ai)]
-                seed_layout = Layout(
-                        reads = seed_layout.reads + [((best_ext_i, best_ext_ai), best_ext_aln.k)],
-                        begin = min(seed_layout.begin, best_ext_aln.k), end = max(seed_layout.end, best_ext_aln.k + ll))
-                next_e = [ e for e in good_edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
-
-                print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True); print(seed_layout)
-                if next_e:
-                    print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
-                    best = next_e[0][4][0]
-                else:
-                    break
-            else:
-                print(f"\nAlignment looks not good; current layout has {len(seed_layout.reads)} reads:", flush = True); print(seed_layout)
-                if len(next_e) > 1:
-                    next_e = next_e[1:]
-                    print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
-                    best = next_e[0][4][0]
-                else:
-                    break
-
-        print(f"\nNo additional extention: FINAL LAYOUT with {len(seed_layout.reads)} reads, {seed_layout.end - seed_layout.begin} units:")
-        print(seed_layout)
-        print_layout(seed_layout, bits_dict)
-        good_nodes -= set(visited)
 
 if __name__ == '__main__':
 
