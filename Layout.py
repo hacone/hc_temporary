@@ -3,6 +3,7 @@
 from scipy.stats import binom
 from collections import Counter
 from collections import namedtuple
+
 import numpy as np
 import pickle
 
@@ -10,7 +11,7 @@ from EncodedRead import *
 from HOR_segregation import *
 
 Pool = namedtuple("Pool", ("hers", "arrs")) # simple class for the context; hor encoded reads, layouts, ...
-#pool = Pool(hers = None, arrs = None) # TODO; how can I make sure this is singleton (like the pattern)? namedtuple is immutable!
+# pool = Pool(hers = None, arrs = None) # TODO; how can I make sure this is singleton (like the pattern)? namedtuple is immutable!
 # bits_dict should be in context...
 
 # a record for an alignment (for reads, and for layouts).
@@ -24,7 +25,6 @@ Layout = namedtuple("Layout", ("reads", "begin", "end"))
 T_agr = 700 # agree score threshold. alignment with score above this can be ...
 T_gap = 100 # required score gap between best one vs 2nd best one.
 T_dag = 600 # disagree score threshold. alignments with scores below this are considered false.
-# T_dag = 550 # disagree score threshold. alignments with scores below this are considered false.
 
 # 1 - First, Detect variants
 def detect_snvs(units):
@@ -155,7 +155,7 @@ def calc_align_layout(l1, l2, k, bits_dict):
 
     # NOTE: I'm trying a robust score
     c_00, c_ms = 0.1, 1.5 
-    #c_00, c_ms = 0.4735, 1.5 
+    # c_00, c_ms = 0.4735, 1.5 
     # c_00, c_ms = 0.0, 1.0 
 
     t_ovlp, t_eff_ovlp = 0, 0
@@ -252,6 +252,8 @@ def stats_alns_dict(alns_dict):
             line = f"{i}\t{j}\t{alns[0].score/10:.2f}\t{scoreGap/10:.2f}\t{100*vars_frac:.2f}\t{alns[0].eff_ovlp}\t{rank}"
             print(line)
 
+# def plot_scoreGap_distr():
+
 def all_vs_all_aln(regs, bits_dict):
     """ calculate all-vs-all alignments among reads, returning dict of alns. """
     # TODO: need all-vs-all alignments among layouts?
@@ -276,36 +278,48 @@ def all_vs_all_aln(regs, bits_dict):
 
     return alns_dict
 
-def layout_consensus(layout):
-    """ construct a consensus read out of a layout """
+# TODO: let's test this
+def layout_consensus(layout): # NOTE: far from pythonic, i believe
+    """ construct a consensus read out of a layout / compute minimal-mismatches to evaluate layout """
 
-    #for i in range(layout.begin, layout.end):
+    lb, le = layout.begin, layout.end
+    cons_snvs = dict() # NOTE: i can be negative, thus it must be dict.
+    depth = dict()
+    for i in range(lb, le): # NOTE: this is not really efficient, but hope it's not bottleneck.
+        cons_snvs[i] = [ Counter() for ki in range(12) ]
+        depth[i] = 0
         # i-th unit.
-        #for ri, rai, k in layout.reads:
-            # if in a good range
-            # check if its good unit
-            # count the sites as in k, p, b
-        # got unit
-        # h = i - layout.begin, "~"...
-        # HOR_Read( name = "anything",
-        #           mons = [ AssignedMonomer(begin = 12*h + 171*ki, end = begin + 171, monomer = Monomer(name = m, snvs = consensus)) for h for ki ],
-        #           hors = [ (h*12, 12, "~") for h in hoge ] )
+        for (ri, rai), k in layout.reads:
+            l = pool.arrs[ri][rai]
+            if k > i or k + len(l) <= i:
+                continue
+            if l[i-k] == -1:
+                continue
 
+            else: # if i[i-k] is canonical unit
+                for ki in range(12): # NOTE: the first two mons should be ignored?
+                    cons_snvs[i][ki].update(pool.hers[ri].mons[l[i-k]].monomer.snvs)
+                depth[i] += 1
 
-    #""" construct bit vectors in dict """ # copied just for ref.
-    #bits_dict = {}
-    #for i, ai, l in [ (i, ai, pool.arrs[i][ai]) for i, ai in regions ]:
-    #    v = []
-    #    for h in l:
-    #        if h == -1:
-    #            v += [0] * len(snvs)
-    #        else:
-    #            # NOTE: Was snv a dict ? # TODO: cleanup
-    #            v += [ 1 if any([ (sp.pos, sp.base) == (s["p"], s["b"]) for sp in pool.hers[i].mons[h+s["k"]].monomer.snvs ]) else -1 for s in snvs ]
-    #    bits_dict[(i, ai)] = np.array(v).reshape(len(l), len(snvs))
-    #return bits_dict
+    nm = 0 # NOTE: for now, this excludes the first 2 (wrong) monomers
+    for i in range(lb, le):
+        for ki in range(2,12):
+            for s, fq in cons_snvs[i][ki].items():
+                # TODO: fix threshold
+                nm += (depth[i] - fq) if (fq / depth[i] > 0.4) else fq
 
-    return None
+    tot_units = sum(depth.values())
+    len_cons = le - lb
+    print(f"consensus taken: {tot_units}\t{len_cons}\t{nm}\t{nm/(tot_units-len_cons):.2f}")
+    
+    return HOR_Read(
+        name = "anything", length = (le-lb)*12*171, ori = "+",
+        mons = [ AssignedMonomer(begin = 12*171*(i-lb) + 171*ki, end = 12*171*(i-lb)+171, ori = "+",
+            monomer = Monomer(name = "*", snvs = [ s for s, fq in cons_snvs[i][ki].items() if fq/depth[i] > 0.4 ])) # TODO: fix threshold
+            for i in range(lb, le) for ki in range(12) ],
+        hors = [ (i*12, 12, "~") for i in range(lb, le) ])
+
+# TODO: some function to map shorter reads into layouts/components to enrich data.
 
 def print_layout(layout, bits_dict):
 
@@ -364,6 +378,7 @@ def iterative_layout(alns_dict, bits_dict, nodes):
 
         print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True) ; print(seed_layout)
 
+
         next_e = [ e for e in edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
 
         if next_e:
@@ -408,6 +423,8 @@ def iterative_layout(alns_dict, bits_dict, nodes):
                 next_e = [ e for e in edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
 
                 print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True); print(seed_layout)
+                layout_consensus(seed_layout) # TODO: temporary?
+
                 if next_e:
                     print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
                     best = next_e[0][4][0]
@@ -427,6 +444,8 @@ def iterative_layout(alns_dict, bits_dict, nodes):
         #print(seed_layout)
         #print_layout(seed_layout, bits_dict)
         nodes -= set(visited)
+
+        layout_consensus(seed_layout) # TODO: temporary?
 
     return result_layouts
 
@@ -508,6 +527,9 @@ def layout(alns_dict = None):
     good_nodes = { comp[0] for comp in slippies if len(comp) == 1 }
     layouts = iterative_layout(alns_dict, bits_dict, good_nodes)
 
+    for l in layouts:
+        layout_consensus(l)
+
     print(f"{len(layouts)} layouts obtained for non-slippery parts: " +\
           f"{sum([ len(l.reads) for l in layouts ])} nodes, "+\
           f"{sum([ l.end - l.begin for l in layouts ])} units long.")
@@ -526,13 +548,13 @@ def layout(alns_dict = None):
 
         # alignment locally, using global SNVs 
         alns_dict_original = all_vs_all_aln(comp, bits_dict)
-        print("alns in original SNVs")
-        stats_alns_dict(alns_dict_original)
+        #print("alns in original SNVs")
+        #stats_alns_dict(alns_dict_original)
 
         # alignment locally in the component, using new SNVs
         alns_dict_local = all_vs_all_aln(comp, bits_dict_local)
-        print("alns in updated SNVs")
-        stats_alns_dict(alns_dict_local)
+        #print("alns in updated SNVs")
+        #stats_alns_dict(alns_dict_local)
 
         """
         describe_alns_dict(alns_dict_local, bits_dict_local, alns_dict, bits_dict)
@@ -543,10 +565,16 @@ def layout(alns_dict = None):
               f"{sum([ len(l.reads) for l in layouts ])} (/ {len(comp)}) nodes, "+\
               f"{sum([ l.end - l.begin for l in layouts ])} (/ {len(units_in_comp)}) units long.")
 
+        for l in layouts:
+            layout_consensus(l)
+
         layouts = iterative_layout(alns_dict_local, bits_dict_local, set(comp))
         print(f"Using  updated SNVs, {len(layouts)} layouts obtained for slippery component No.{ic}: " +\
               f"{sum([ len(l.reads) for l in layouts ])} (/ {len(comp)}) nodes, "+\
               f"{sum([ l.end - l.begin for l in layouts ])} (/ {len(units_in_comp)}) units long.")
+
+        for l in layouts:
+            layout_consensus(l)
 
     #import sys
     #sys.exit()
