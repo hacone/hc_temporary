@@ -1,8 +1,8 @@
 # This is evolved from Alignments.py, which is then evolved from SNV_distribution.py
 from scipy.stats import binom
 from collections import Counter
+import hashlib
 from collections import namedtuple
-
 import numpy as np
 import pickle
 
@@ -30,7 +30,7 @@ class Assembly:
     """ The assembly class holds all data you need to perform assembly.
         Currently, those would be HOR encoded reads, consecutive units in them, and tentative layouts. """
 
-    def __init__(hers, arrs = None):
+    def __init__(self, hers, arrs = None):
 
         self.hers = hers # HOR encoded reads
 
@@ -38,18 +38,37 @@ class Assembly:
         """ `arrs` is valid consecutive regions after filling up 22/23/24-mons or 33/34/35-mons gaps:
             the format is { ri : [[mi, mi, mi, ...], [mi, mi, ...]] } (mi = -1 for masked) """
         if not arrs:
-            self.arrs = get_consecutive_units(self.hers)
+            self.arrs = self.get_consecutive_units(self.hers)
         else:
             self.arrs = arrs
 
-    def get_consecutive_units(hers)
+        self.c_00 = 0.1
+        self.c_ms = 1.5
+
+    def __hash__(self):
+        m = hashlib.sha256()
+        #m.update(frozenset(self.hers))
+        #m.update(frozenset(self.arrs))
+        #return m.hexdigest()
+        return 0
+
+    def get_consecutive_units(self, hers):
         regs = {}
         for i, her in enumerate(hers):
             regs[i], ai, lh = [], -1, -36
+
             for h, _, t in her.hors:
-                if t != "~":
+
+                if t not in ["~", "D39", "D28", "22U"]:
                     continue
-                if h == lh + 12:
+
+                if t in ["D39", "D28"] and h == lh + 5:
+                    regs[i][ai] += [-1]
+                elif t == "22U" and h == lh + 22:
+                    regs[i][ai] += [-1,-1]
+                elif t != "~":
+                    continue
+                elif h == lh + 12:
                     regs[i][ai] += [h]
                 elif h in [lh + 22, lh + 23, lh + 24]:
                     regs[i][ai] += [-1, h]
@@ -62,7 +81,7 @@ class Assembly:
             regs[i] = [ l for l in regs[i] if l ] # remove if empty
         return { k : v for k, v in regs.items() if v } # remove if empty
 
-    def get_variants(units, err_rate = 0.03, fq_upper_bound = 0.75):
+    def get_variants(self, units, err_rate = 0.03, fq_upper_bound = 0.75):
         """ define SNVs over `units`. Currently, SNV is dict with following keys: k, p, b, f, c, binom_p """
 
         assert units, "trying to call variants over nothing. abort."
@@ -78,7 +97,7 @@ class Assembly:
         snvs = [ s for s in snvs if s["binom_p"]*(171*10*3) < 1.0 ]
         return snvs
 
-    def get_bits_dict(snvs, regs):
+    def get_bits_dict(self, snvs, regs):
         """ construct bit vectors in dict """
 
         # NOTE: don't you think this is too operational?
@@ -93,25 +112,7 @@ class Assembly:
             bits_dict[(i, ai)] = np.array(v).reshape(len(l), len(snvs))
         return bits_dict
 
-class Alignment:
-    # only reads vs reads, or accept layouts?
-
-    def __init__(ctx, bits = None):
-        self.ctx = ctx
-        self.c_00 = 0.1
-        self.c_ms = 1.5
-        # c_00, c_ms = 0.4735, 1.5 # with good theory 
-        # c_00, c_ms = 0.0, 1.0 # ignoring 00
-
-        if bits:
-            self.n_units = 0 # TODO: reduce with the shapes of bits? OK?
-            self.bits = bits
-        else:
-            all_units = [ (ri, h) for ri, er in enumerate(self.ctx.hers) for h, _, t in er.hors if t == "~" ]
-            self.n_units = len(all_units) # NOTE: do I need this here?
-            self.bits = ctx.get_variants(all_units)
-
-    def mismatX(i, ai, j, aj, k, bits_dict = self.bits):
+    def mismatX(self, i, ai, j, aj, k, bits_dict):
         """ aux func returning stats of matches and mismatches
             eventually, this could be a mismatch matrix X
         """
@@ -140,10 +141,10 @@ class Alignment:
         return dict(li = li, lj = lj, len_ovlp = len_ovlp, eff_ovlp = eff_ovlp,
                 n11 = n11, n00 = n00, match = np.sum(match), mismatch = mismatch)
 
-    def calc_align(i, ai, j, aj, k, bits_dict = self.bits):
+    def calc_align(self, i, ai, j, aj, k, bits_dict):
         """ calculate alignment for a pair; in a specified configuration """
 
-        X = mismatX(i, ai, j, aj, k, bits_dict)
+        X = self.mismatX(i, ai, j, aj, k, bits_dict = bits_dict)
         score = 1000 * (X["n11"] + self.c_00 * X["n00"]) / (0.01 + X["n11"] + self.c_00 * X["n00"] + self.c_ms * X["mismatch"]) # per-mille !
 
         return Aln(i = i, ai = ai, li = X["li"], j = j, aj = aj, lj = X["lj"], k = k,
@@ -151,7 +152,7 @@ class Alignment:
             f_ext = max(0, k+X["lj"]-X["li"]), r_ext = max(0, -k),
             n00 = X["n00"], nmis = X["mismatch"], n11 = X["n11"])
 
-    def calc_align_layout(l1, l2, k, bits_dict = self.bits):
+    def calc_align_layout(self, l1, l2, k, bits_dict):
         """ calculate alignment between two layouts; in a specified (by displacement k) configuration """
 
         t_ovlp, t_eff_ovlp = 0, 0
@@ -159,7 +160,7 @@ class Alignment:
 
         for (i, ai), di in l1.reads:
             for (j, aj), dj in l2.reads:
-                X = mismatX(i, ai, j, aj, dj-di+k, bits_dict)
+                X = self.mismatX(i, ai, j, aj, dj-di+k, bits_dict = bits_dict)
                 t_ovlp += X["len_ovlp"]; t_eff_ovlp += X["eff_ovlp"]
                 t_n11 += X["n11"]
                 t_n00 += X["n00"]
@@ -170,343 +171,59 @@ class Alignment:
         return LoAln(l1 = l1, l2 = l2, k = k, len_ovlp = t_ovlp, eff_ovlp = t_eff_ovlp,
                 n00 = t_n00, nmis = t_mis, n11 = t_n11, score = score)
 
-class Layout:
-    """ The layout is essentially a set of reads with their relative configurations specified.
-        Reads are represented as (rid, aid) tuple, so the layout must point to the context where it was defined. """
+    def some_vs_some_alignment(self, targets, queries, bits_dict): # TODO: bits_dict might be adaptive (local w.r.t. targets?)
+        """ calculate some-vs-some alignments among reads(regions), returning dict of alns. """
+        # TODO: i won't need all_vs_all_aln anymore?
+
+        alns_dict = dict()
+        n = 0
+
+        for i, ai in targets:
+            n += 1
+            print(f"aligning {i} - {ai}. {n} / {len(targets)}")
+            alns_dict[(i, ai)] = dict()
+            for j, aj in [ (j, aj) for j, aj in queries if not (j, aj) == (i, ai)]:
+                li, lj = bits_dict[(i, ai)].shape[0], bits_dict[(j, aj)].shape[0]
+                # with at least 2 units in overlap
+                alns = [ self.calc_align(i, ai, j, aj, k, bits_dict = bits_dict) for k in range(-lj+2, li-2) ]
+                alns = [ aln for aln in alns if aln.score > T_dag - 100 and aln.eff_ovlp > 4 ] # NOTE: threshold depends on scoring scheme.
+                if alns:
+                    alns_dict[(i, ai)][(j, aj)] = sorted(alns, key = lambda x: -1 * x.score)
+            l = f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag -100 and aln.eff_ovlp > 4 ]) } targets found for saving. "
+            l += f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag and aln.eff_ovlp > 4 ]) } targets above T_dag = {T_dag}."
+            print(l, flush = True)
+
+        return alns_dict
+
+    def get_all_vs_all_aln(self):
+
+        units = [ (ri, h) for ri, er in enumerate(self.hers) for h, _, t in er.hors if t == "~" ]
+        n_units = len(units) # NOTE: do I need this here?
+        snvs = self.get_variants(units)
+
+        regs = [ (i, ai) for i, a in self.arrs.items() for ai, l in enumerate(a) if len(l) > 6 ]
+        bits_dict = self.get_bits_dict(snvs, regs)
+
+        alns_dict = self.some_vs_some_alignment(regs, regs, bits_dict)
+
+        # FIXME how I realize params consistency!
+        return Alignment(alignments = alns_dict, ctx_hash = 0, snv_hash = 0, c_00 = self.c_00, c_ms = self.c_ms)
+
+class Alignment:
+
+    def __init__(self, alignments, ctx_hash, snv_hash, c_00, c_ms):
+        # alignments :: alns_dict
+        self.alignments = alignments
+        self.ctx_hash = ctx_hash
+        self.snv_hash = snv_hash
+        self.c_00 = c_00
+        self.c_ms = c_ms
+        # c_00, c_ms = 0.4735, 1.5 # with good theory 
+        # c_00, c_ms = 0.0, 1.0 # ignoring 00
+
+    def __hash__(self):
+        return 1234 # TODO
 
-    def __init__(ctx, reads, begin, end):
-        # TODO: check the type of ctx is the class Assembly
-        self.ctx = ctx
-        self.reads = reads
-        self.begin = begin # NOTE: could be calculated on the fly?
-        self.end = end
-        self.consensus = None # lazy consensus
-
-    def get_consensus(): # TODO: make tidy here.
-        """ construct a consensus read out of a layout / compute minimal-mismatches to evaluate layout
-            returns a new HOR encoded read and an associated array. """
-
-        min_variant_freq = 0.3 # freq of mismatches required to be considered as true variants
-
-        if self.consensus:
-            return self.consensus
-
-        lb, le = self.begin, self.end
-        cons_snvs = dict() # NOTE: i can be negative, thus it must be dict.
-        depth = dict()
-        for i in range(lb, le): # NOTE: this is not really efficient, but hope it's not bottleneck.
-            cons_snvs[i] = [ Counter() for ki in range(12) ]
-            depth[i] = 0
-            # i-th unit.
-            for (ri, rai), k in self.reads:
-                l = self.ctx.arrs[ri][rai]
-                if k > i or k + len(l) <= i:
-                    continue
-                if l[i-k] == -1:
-                    continue
-                else: # if i[i-k] is canonical unit
-                    for ki in range(2, 12): # NOTE: the first two mons should be ignored?
-                        cons_snvs[i][ki].update([ (s.pos, s.base) for s in self.ctx.hers[ri].mons[l[i-k]+ki].monomer.snvs ])
-                    depth[i] += 1
-
-        nm = 0 # NOTE: for now, this excludes the first 2 (wrong) monomers
-        for i in range(lb, le):
-            for ki in range(2,12):
-                for s, fq in cons_snvs[i][ki].items():
-                    # FIXME: it allows >1 snvs at the same position !! 
-                    nm += (depth[i] - fq) if (fq / depth[i] > min_variant_freq) else fq
-
-        tot_units = sum(depth.values())
-        len_cons = le - lb
-        print(f"consensus taken: {len(self.reads)}\t{tot_units} => {len_cons}\t{nm}\t{nm/(tot_units-len_cons):.2f}")
-        
-        self.consensus = HOR_Read(
-            name = "anything", length = (le-lb)*12*171, ori = "+",
-            mons = [ AssignedMonomer(begin = 12*171*(i-lb) + 171*ki, end = 12*171*(i-lb)+171, ori = "+",
-                monomer = Monomer(name = "*", snvs = [ SNV(pos = p, base = b) for (p, b), fq in cons_snvs[i][ki].items() if fq/depth[i] > min_variant_freq ])) # TODO: fix threshold
-                for i in range(lb, le) for ki in range(12) ],
-            hors = [ (i*12, 12, "~") if depth[i] > 0 else (i*12, 12, "*") for i in range(lb, le) ])
-
-        # arr = [[ i*12 if depth[i] > 0 else -1 for i in range(lb, le) ]] # is this what I'd get ?
-        return self.consensus
-
-    #FIXME: implement them
-    def define_local_variants():
-        """ returns layout-wide locally-defined variants. """
-        return None
-
-    def prune():
-        """ remove any reads slippery w.r.t. consensus. """
-        return None
-
-    def enrich():
-        """ enrich with shorter reads and returns a resulted new layout,
-            which will then be used for defining new variants or consensus. """
-        return None
-
-    def describe(): # TODO TODO no short aligns, fix the loc
-        """ describe layout's consistency (stability with local mask?). This should work fine for medium-size layout. """
-
-        # cons_her, cons_arr = layout_consensus(layout)
-
-        rds = [ self.get_consensus() ] + self.reads
-        ars = self.ctx.get_consecutive_units(rds) # FIXME TODO type is wrong.
-
-        newpool = Pool(hers = [cons_her] + [ pool.hers[i] for (i, ai), k in layout.reads ], arrs = { 0 : cons_arr })
-
-        newpool.arrs.update([ (en+1, pool.arrs[i]) for en, ((i, ai), k) in enumerate(layout.reads) ])
-        regs = [ (i, ai) for i, a in newpool.arrs.items() for ai, l in enumerate(a) if len(l) > 4 ]
-
-        units_in_layout = [ (i, mi) for i, ai in regs for mi in newpool.arrs[i][ai] if mi > -1 and i > 0 ]
-        print(f"{len(units_in_layout)} units found in desc layout")
-        layout_local_snvs = detect_snvs(units_in_layout, alt_pool = newpool)
-        print(f"{len(layout_local_snvs)} SNVs found in desc layout")
-
-        layout_local_bits_dict = get_bits_dict(layout_local_snvs, regs, alt_pool = newpool)
-
-        l0 = layout_local_bits_dict[(0, 0)].shape[0] # layout's length
-        for j, aj in regs:
-            if j == 0:
-                continue
-            lj = layout_local_bits_dict[(j, aj)].shape[0]
-            # with at least 2 units in overlap
-            k_in_l = layout.reads[j-1][1]
-            alns = [ calc_align(0, 0, j, aj, k, bits_dict = layout_local_bits_dict) for k in range(-lj+2, l0-2) ]
-            print(f"lj={lj}\t" + "\t".join([f"*{aln.score/10:.1f}" if aln.k == k_in_l - 2*layout.begin else f"{aln.score/10:.1f}" for aln in alns]) + " $\n")
-
-# 1 - First, Detect variants # NOTE: deprecated
-def detect_snvs(units, alt_pool = None):
-    """
-    input: [(read id, mon id of the head of the HOR unit)]
-    return: [(monomer index in unit, position in monomer, alt. base, relative frequency)]
-    """
-
-    err_rate = 0.03
-
-    if not units:
-        return []
-    if not alt_pool:
-        alt_pool = pool
-
-    counter = Counter()
-    for ri, i in units:
-        for j in range(2, 12): # I'm skipping the first 2 monomers, where assignment is always wrong
-            counter.update([ (j, s.pos, s.base) for s in alt_pool.hers[ri].mons[i+j].monomer.snvs ])
-
-    # remove too frequent ones
-    snvs = [ (k, p, b, c / len(units), c) for (k, p, b), c in counter.most_common() if c / len(units) < 0.75 ]
-    snvs = [ dict(k = k, p = p, b = b, f = c/len(units), c = c, binom_p = 1 - binom.cdf(c, len(units), err_rate)) for k, p, b, f, c in snvs ]
-
-    # allow <1 false positives
-    snvs = [ s for s in snvs if s["binom_p"]*(171*10*3) < 1.0 ]
-
-    return snvs
-
-def print_snvs(snvs, alt_snvs = None):
-    lines = "  k\t  p\tb\t    c\t   f\t   p-val\t c.f.d.\t f.gl\n"
-    for s in sorted(snvs, key = lambda x: -x["c"]):
-        k, p, b, c, f, pv = s["k"], s["p"], s["b"], s["c"], s["f"], s["binom_p"]
-        if alt_snvs:
-            alt_f = [ a["f"] for a in alt_snvs if (k, p, b) == (a["k"], a["p"], a["b"]) ]
-            alt_info = f"{100*alt_f[0]:>5.2f}" if alt_f else "    *"
-            lines += f"{k:>3}\t{p:>3}\t{b}\t{c:>5}\t{100*f:.2f}\t{pv:.2e}\t{pv*171*10*3:>7.2f}\t{alt_info}\n"
-        else:
-            lines += f"{k:>3}\t{p:>3}\t{b}\t{c:>5}\t{100*f:.2f}\t{pv:.2e}\t{pv*171*10*3:>7.2f}\n"
-    print(lines)
-
-# 2 and 3 - filling up gaps, get continuous regions. # NOTE: deprecated
-def valid_read_regions(hers):
-    """
-        get valid consecutive regions after filling up 22/23/24-mons or 33/34/35-mons gaps
-        this is a version for hor encoded reads, instead of a bitvector matrix
-        return { ri : [[mi, mi, mi, ...], [mi, mi, ...]] } (mi = -1 for masked)
-    """
-
-    regs = {}
-    for i, her in enumerate(hers):
-        regs[i], ai, lh = [], -1, -36
-        for h, _, t in her.hors:
-            if t != "~":
-                continue
-            if h == lh + 12:
-                regs[i][ai] += [h]
-            elif h in [lh + 22, lh + 23, lh + 24]:
-                regs[i][ai] += [-1, h]
-            elif h in [lh + 33, lh + 34, lh + 35]:
-                regs[i][ai] += [-1, -1, h]
-            else:
-                regs[i] += [[h]]
-                ai += 1
-            lh = h
-        regs[i] = [ l for l in regs[i] if l ] # remove if empty
-    return { k : v for k, v in regs.items() if v } # remove if empty
-
-def get_bits_dict(snvs, regions, alt_pool = None): # NOTE: deprecated
-    """ construct bit vectors in dict """
-
-    if not alt_pool:
-        alt_pool = pool
-
-    bits_dict = {}
-    for i, ai, l in [ (i, ai, alt_pool.arrs[i][ai]) for i, ai in regions ]:
-        v = []
-        for h in l:
-            if h == -1:
-                v += [0] * len(snvs)
-            else:
-                # NOTE: Was snv a dict ? # TODO: cleanup
-                v += [ 1 if any([ (sp.pos, sp.base) == (s["p"], s["b"]) for sp in alt_pool.hers[i].mons[h+s["k"]].monomer.snvs ]) else -1 for s in snvs ]
-        bits_dict[(i, ai)] = np.array(v).reshape(len(l), len(snvs))
-    return bits_dict
-
-
-
-def print_align(aln, bits_dict):
-
-    pair_to_char = {
-            ( 1, 1): "#", ( 1, 0): "0", ( 1, -1): ".",
-            ( 0, 1): "0", ( 0, 0): "@", ( 0, -1): "0",
-            (-1, 1): ",", (-1, 0): "0", (-1, -1): "_"}
-
-    bit_to_char = { 1: "x", 0: "o", -1: " "}
-
-    r, q = bits_dict[(aln.i, aln.ai)], bits_dict[(aln.j, aln.aj)]
-    rs, qs = max(0, aln.k), max(-aln.k, 0)
-    re, qe = rs + aln.len_ovlp, qs + aln.len_ovlp
-
-    #if is_top:
-    print(f"\n*\tri\tqi\trs\tre\trl\tqs\tqe\tql\tidt.\tovlp\teff.ovlp")
-    print(f"ALIGN\t{aln.i}\t{aln.j}\t{rs}\t{re}\t{aln.li}\t{qs}\t{qe}\t{aln.lj}\t{aln.score/10:.1f}\t{aln.len_ovlp}\t{aln.eff_ovlp}\n")
-
-    n_snvs = r.shape[1]
-    _l = f"== {n_snvs} SNVs =="
-    lines = ("  i\t{0:^" + f"{n_snvs}" + "}\tj  ").format(_l)
-
-    # dangling part if any
-    for i in range(rs):
-        lines += f"\n{i:>3}\t" + "".join([ bit_to_char[e] for e in r[i,:] ]) + f"\t***"
-    for i in range(qs):
-        lines += f"\n***\t" + "".join([ bit_to_char[e] for e in q[i,:] ]) + f"\t{i:<3}"
-
-    # the aligned part
-    for i in range(re-rs):
-        lines += f"\n{rs+i:>3}\t" + "".join([ pair_to_char[(e, d)] for e, d in zip(r[rs+i,:], q[qs+i,:]) ]) + f"\t{qs+i:<3}"
-
-    # the remaining dangling part if any
-    for i in range(re, aln.li):
-        lines += f"\n{i:>3}\t" + "".join([ bit_to_char[e] for e in r[i,:] ]) + f"\t***"
-    for i in range(qe, aln.lj):
-        lines += f"\n***\t" + "".join([ bit_to_char[e] for e in q[i,:] ]) + f"\t{i:<3}"
-
-    print(lines)
-
-def describe_alns_dict(alns_dict, bits_dict, alt_alns_dict = None, alt_bits_dict = None):
-    """ visualize alns_dict in text """
-
-    T_print = 650
-    
-    for (i, ai), d in alns_dict.items(): 
-        targets = sorted([ (j, aj, alns) for (j, aj), alns in d.items() if alns[0].score > T_print ], key = lambda x: -x[2][0].score)
-        if targets:
-            print("\n--------------------------------------------------")
-            n11, n00 = targets[0][2][0].n11, targets[0][2][0].n00
-            print(f"Alignments for read {i} region {ai}...: {100*n11/(n11+n00):.2f} " + " ".join([f"{alns[0].score/10:.3f}" for j, aj, alns in targets[:10]]))
-        for j, aj, alns in targets[:10]: # for the first 10 reads
-            print(f"\nFrom read {i}, {ai} To read {j}, {aj}...")
-            print("alt.confs: " + " ".join([ f"{s.score/10:.2f}~({s.k})" for s in alns[:10] ]))
-            print_align(alns[0], bits_dict)
-
-            if alt_alns_dict and alt_bits_dict and (i, ai) in alt_alns_dict and (j, aj) in alt_alns_dict[(i, ai)]:
-                alt_alns = alt_alns_dict[(i, ai)][(j, aj)]
-                print("\noriginal alt.confs: " + " ".join([ f"{s.score/10:.2f}~({s.k})" for s in alt_alns[:10] ]))
-                alt_alns = [ alt_aln for alt_aln in alt_alns if alt_aln.k == alns[0].k ]
-                if alt_alns:
-                    print_align(alt_alns[0], alt_bits_dict)
-                else:
-                    print("\nNo corresponding alignment in original setting.")
-
-def stats_alns_dict(alns_dict): # NOTE: I'm not using this, but leave it here for later reference
-    """ empirical score distribution for plotting """
-    # (score, gap, n11/n11+n00, eff_ovlp, rank)
-    print("i\tj\tscore\tscoreGap\tvars_frac\teff_ovlp\trank")
-    for (i, ai), d in alns_dict.items():
-        for rank, (j, aj, alns) in enumerate(
-                sorted([ (j, aj, alns) for (j, aj), alns in d.items() if (j, aj) != (i, ai) ], key = lambda x: -1.0 * x[2][0].score)[:10]):
-            scoreGap = alns[0].score - alns[1].score if len(alns) > 1 else alns[0].score - (T_dag-100)
-            vars_frac = alns[0].n11 / (alns[0].n11 + alns[0].n00) # n11/(n11+n00)
-            line = f"{i}\t{j}\t{alns[0].score/10:.2f}\t{scoreGap/10:.2f}\t{100*vars_frac:.2f}\t{alns[0].eff_ovlp}\t{rank}"
-            print(line)
-
-# TODO: def plot_scoreGap_distr(), or any other equivalent
-
-def all_vs_all_aln(regs, bits_dict):
-    """ calculate all-vs-all alignments among reads, returning dict of alns. """
-    # TODO: need all-vs-all alignments among layouts?
-
-    alns_dict = dict()
-    n = 0
-
-    for i, ai in regs:
-        n += 1
-        print(f"aligning {i} - {ai}. {n} / {len(regs)}")
-        alns_dict[(i, ai)] = dict()
-        for j, aj in [ (j, aj) for j, aj in regs if not (j, aj) == (i, ai)]:
-            li, lj = bits_dict[(i, ai)].shape[0], bits_dict[(j, aj)].shape[0]
-            # with at least 2 units in overlap to be calculated
-            alns = [ calc_align(i, ai, j, aj, k, bits_dict = bits_dict) for k in range(-lj+2, li-2) ]
-            alns = [ aln for aln in alns if aln.score > T_dag - 100 and aln.eff_ovlp > 4 ] # NOTE: threshold depends on scoring scheme.
-            if alns:
-                alns_dict[(i, ai)][(j, aj)] = sorted(alns, key = lambda x: -1 * x.score)
-        l = f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag -100 and aln.eff_ovlp > 4 ]) } targets found for saving. "
-        l += f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag and aln.eff_ovlp > 4 ]) } targets above T_dag = {T_dag}."
-        print(l, flush = True)
-
-    return alns_dict
-
-
-# TODO: some function to map shorter reads into layouts/components to enrich data.
-
-
-def some_vs_some_alignment(targets, queries, bits_dict): # TODO: bits_dict might be adaptive (local w.r.t. targets?)
-
-    """ calculate some-vs-some alignments among reads(regions), returning dict of alns. """
-    # TODO: i won't need all_vs_all_aln anymore?
-
-    alns_dict = dict()
-    n = 0
-
-    for i, ai in targets:
-        n += 1
-        print(f"aligning {i} - {ai}. {n} / {len(targets)}")
-        alns_dict[(i, ai)] = dict()
-        for j, aj in [ (j, aj) for j, aj in queries if not (j, aj) == (i, ai)]:
-            li, lj = bits_dict[(i, ai)].shape[0], bits_dict[(j, aj)].shape[0]
-            # with at least 2 units in overlap
-            alns = [ calc_align(i, ai, j, aj, k, bits_dict = bits_dict) for k in range(-lj+2, li-2) ]
-            alns = [ aln for aln in alns if aln.score > T_dag - 100 and aln.eff_ovlp > 4 ] # NOTE: threshold depends on scoring scheme.
-            if alns:
-                alns_dict[(i, ai)][(j, aj)] = sorted(alns, key = lambda x: -1 * x.score)
-        l = f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag -100 and aln.eff_ovlp > 4 ]) } targets found for saving. "
-        l += f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag and aln.eff_ovlp > 4 ]) } targets above T_dag = {T_dag}."
-        print(l, flush = True)
-
-    return alns_dict
-
-def print_layout(layout, bits_dict):
-
-    def is_in(i, j, aj, d):
-        lj = bits_dict[(j, aj)].shape[0]
-        return d <= i and i < d + lj
-
-    print("\n   i\t>  >  >  reads  <  <  <")
-    for i in range(layout.begin, layout.end):
-        # NOTE: you want to sort by starting coordinate?
-        #line = f"{i-layout.begin:<4}\t" + "".join([ "|" if is_in(i, j, aj, d) else " " for (j, aj), d in sorted(layout.reads, key=lambda x: x[1]) ])
-        line = f"{i-layout.begin:<4}\t" + "".join([ "|" if is_in(i, j, aj, d) else " " for (j, aj), d in layout.reads ])
-        print(line)
-    print("----\t" + "-" * len(layout.reads))
-
-    return None
 
 def iterative_layout(alns_dict, bits_dict, nodes):
     """ for nodes and alns_dict, perform iterative layout process and returns list of obtained layout
@@ -659,11 +376,223 @@ def double_edge_component(alns_dict):
 
     return components
 
+
+class Layout:
+    """ The layout is essentially a set of reads with their relative configurations specified.
+        Reads are represented as (rid, aid) tuple, so the layout must point to the context where it was defined. """
+
+    def __init__(self, ctx_hash, reads, begin, end):
+        # TODO: check the consistency of ctx
+        self.ctx_hash = ctx_hash
+        self.reads = reads
+        self.begin = begin # NOTE: could be calculated on the fly?
+        self.end = end
+        self.consensus = None # lazy consensus
+
+    def get_consensus(): # TODO: make tidy here.
+        """ construct a consensus read out of a layout / compute minimal-mismatches to evaluate layout
+            returns a new HOR encoded read and an associated array. """
+
+        min_variant_freq = 0.3 # freq of mismatches required to be considered as true variants
+
+        if self.consensus:
+            return self.consensus
+
+        lb, le = self.begin, self.end
+        cons_snvs = dict() # NOTE: i can be negative, thus it must be dict.
+        depth = dict()
+        for i in range(lb, le): # NOTE: this is not really efficient, but hope it's not bottleneck.
+            cons_snvs[i] = [ Counter() for ki in range(12) ]
+            depth[i] = 0
+            # i-th unit.
+            for (ri, rai), k in self.reads:
+                l = self.ctx.arrs[ri][rai]
+                if k > i or k + len(l) <= i:
+                    continue
+                if l[i-k] == -1:
+                    continue
+                else: # if i[i-k] is canonical unit
+                    for ki in range(2, 12): # NOTE: the first two mons should be ignored?
+                        cons_snvs[i][ki].update([ (s.pos, s.base) for s in self.ctx.hers[ri].mons[l[i-k]+ki].monomer.snvs ])
+                    depth[i] += 1
+
+        nm = 0 # NOTE: for now, this excludes the first 2 (wrong) monomers
+        for i in range(lb, le):
+            for ki in range(2,12):
+                for s, fq in cons_snvs[i][ki].items():
+                    # FIXME: it allows >1 snvs at the same position !! 
+                    nm += (depth[i] - fq) if (fq / depth[i] > min_variant_freq) else fq
+
+        tot_units = sum(depth.values())
+        len_cons = le - lb
+        print(f"consensus taken: {len(self.reads)}\t{tot_units} => {len_cons}\t{nm}\t{nm/(tot_units-len_cons):.2f}")
+        
+        self.consensus = HOR_Read(
+            name = "anything", length = (le-lb)*12*171, ori = "+",
+            mons = [ AssignedMonomer(begin = 12*171*(i-lb) + 171*ki, end = 12*171*(i-lb)+171, ori = "+",
+                monomer = Monomer(name = "*", snvs = [ SNV(pos = p, base = b) for (p, b), fq in cons_snvs[i][ki].items() if fq/depth[i] > min_variant_freq ])) # TODO: fix threshold
+                for i in range(lb, le) for ki in range(12) ],
+            hors = [ (i*12, 12, "~") if depth[i] > 0 else (i*12, 12, "*") for i in range(lb, le) ])
+
+        # arr = [[ i*12 if depth[i] > 0 else -1 for i in range(lb, le) ]] # is this what I'd get ?
+        # check here if such arr is the same as what'd be obtained by ctx.valid_read_regions() ??
+
+        return self.consensus
+
+    #FIXME: implement them
+    def define_local_variants():
+        """ returns layout-wide locally-defined variants. """
+        return None
+
+    def prune():
+        """ remove any reads slippery w.r.t. consensus. """
+        return None
+
+    def enrich():
+        """ enrich with shorter reads and returns a resulted new layout,
+            which will then be used for defining new variants or consensus. """
+        return None
+
+    def describe(): # TODO TODO no short aligns, fix the loc
+        """ describe layout's consistency (stability with local mask?). This should work fine for medium-size layout. """
+
+        # cons_her, cons_arr = layout_consensus(layout)
+
+        rds = [ self.get_consensus() ] + self.reads
+        ars = self.ctx.get_consecutive_units(rds) # FIXME TODO type is wrong.
+
+        newpool = Pool(hers = [cons_her] + [ pool.hers[i] for (i, ai), k in layout.reads ], arrs = { 0 : cons_arr })
+
+        newpool.arrs.update([ (en+1, pool.arrs[i]) for en, ((i, ai), k) in enumerate(layout.reads) ])
+        regs = [ (i, ai) for i, a in newpool.arrs.items() for ai, l in enumerate(a) if len(l) > 4 ]
+
+        units_in_layout = [ (i, mi) for i, ai in regs for mi in newpool.arrs[i][ai] if mi > -1 and i > 0 ]
+        print(f"{len(units_in_layout)} units found in desc layout")
+        layout_local_snvs = detect_snvs(units_in_layout, alt_pool = newpool)
+        print(f"{len(layout_local_snvs)} SNVs found in desc layout")
+
+        layout_local_bits_dict = get_bits_dict(layout_local_snvs, regs, alt_pool = newpool)
+
+        l0 = layout_local_bits_dict[(0, 0)].shape[0] # layout's length
+        for j, aj in regs:
+            if j == 0:
+                continue
+            lj = layout_local_bits_dict[(j, aj)].shape[0]
+            # with at least 2 units in overlap
+            k_in_l = layout.reads[j-1][1]
+            alns = [ calc_align(0, 0, j, aj, k, bits_dict = layout_local_bits_dict) for k in range(-lj+2, l0-2) ]
+            print(f"lj={lj}\t" + "\t".join([f"*{aln.score/10:.1f}" if aln.k == k_in_l - 2*layout.begin else f"{aln.score/10:.1f}" for aln in alns]) + " $\n")
+
+def print_snvs(snvs, alt_snvs = None):
+    lines = "  k\t  p\tb\t    c\t   f\t   p-val\t c.f.d.\t f.gl\n"
+    for s in sorted(snvs, key = lambda x: -x["c"]):
+        k, p, b, c, f, pv = s["k"], s["p"], s["b"], s["c"], s["f"], s["binom_p"]
+        if alt_snvs:
+            alt_f = [ a["f"] for a in alt_snvs if (k, p, b) == (a["k"], a["p"], a["b"]) ]
+            alt_info = f"{100*alt_f[0]:>5.2f}" if alt_f else "    *"
+            lines += f"{k:>3}\t{p:>3}\t{b}\t{c:>5}\t{100*f:.2f}\t{pv:.2e}\t{pv*171*10*3:>7.2f}\t{alt_info}\n"
+        else:
+            lines += f"{k:>3}\t{p:>3}\t{b}\t{c:>5}\t{100*f:.2f}\t{pv:.2e}\t{pv*171*10*3:>7.2f}\n"
+    print(lines)
+
+def print_align(aln, bits_dict):
+
+    pair_to_char = {
+            ( 1, 1): "#", ( 1, 0): "0", ( 1, -1): ".",
+            ( 0, 1): "0", ( 0, 0): "@", ( 0, -1): "0",
+            (-1, 1): ",", (-1, 0): "0", (-1, -1): "_"}
+
+    bit_to_char = { 1: "x", 0: "o", -1: " "}
+
+    r, q = bits_dict[(aln.i, aln.ai)], bits_dict[(aln.j, aln.aj)]
+    rs, qs = max(0, aln.k), max(-aln.k, 0)
+    re, qe = rs + aln.len_ovlp, qs + aln.len_ovlp
+
+    #if is_top:
+    print(f"\n*\tri\tqi\trs\tre\trl\tqs\tqe\tql\tidt.\tovlp\teff.ovlp")
+    print(f"ALIGN\t{aln.i}\t{aln.j}\t{rs}\t{re}\t{aln.li}\t{qs}\t{qe}\t{aln.lj}\t{aln.score/10:.1f}\t{aln.len_ovlp}\t{aln.eff_ovlp}\n")
+
+    n_snvs = r.shape[1]
+    _l = f"== {n_snvs} SNVs =="
+    lines = ("  i\t{0:^" + f"{n_snvs}" + "}\tj  ").format(_l)
+
+    # dangling part if any
+    for i in range(rs):
+        lines += f"\n{i:>3}\t" + "".join([ bit_to_char[e] for e in r[i,:] ]) + f"\t***"
+    for i in range(qs):
+        lines += f"\n***\t" + "".join([ bit_to_char[e] for e in q[i,:] ]) + f"\t{i:<3}"
+
+    # the aligned part
+    for i in range(re-rs):
+        lines += f"\n{rs+i:>3}\t" + "".join([ pair_to_char[(e, d)] for e, d in zip(r[rs+i,:], q[qs+i,:]) ]) + f"\t{qs+i:<3}"
+
+    # the remaining dangling part if any
+    for i in range(re, aln.li):
+        lines += f"\n{i:>3}\t" + "".join([ bit_to_char[e] for e in r[i,:] ]) + f"\t***"
+    for i in range(qe, aln.lj):
+        lines += f"\n***\t" + "".join([ bit_to_char[e] for e in q[i,:] ]) + f"\t{i:<3}"
+
+    print(lines)
+
+def describe_alns_dict(alns_dict, bits_dict, alt_alns_dict = None, alt_bits_dict = None):
+    """ visualize alns_dict in text """
+
+    T_print = 650
+    
+    for (i, ai), d in alns_dict.items(): 
+        targets = sorted([ (j, aj, alns) for (j, aj), alns in d.items() if alns[0].score > T_print ], key = lambda x: -x[2][0].score)
+        if targets:
+            print("\n--------------------------------------------------")
+            n11, n00 = targets[0][2][0].n11, targets[0][2][0].n00
+            print(f"Alignments for read {i} region {ai}...: {100*n11/(n11+n00):.2f} " + " ".join([f"{alns[0].score/10:.3f}" for j, aj, alns in targets[:10]]))
+        for j, aj, alns in targets[:10]: # for the first 10 reads
+            print(f"\nFrom read {i}, {ai} To read {j}, {aj}...")
+            print("alt.confs: " + " ".join([ f"{s.score/10:.2f}~({s.k})" for s in alns[:10] ]))
+            print_align(alns[0], bits_dict)
+
+            if alt_alns_dict and alt_bits_dict and (i, ai) in alt_alns_dict and (j, aj) in alt_alns_dict[(i, ai)]:
+                alt_alns = alt_alns_dict[(i, ai)][(j, aj)]
+                print("\noriginal alt.confs: " + " ".join([ f"{s.score/10:.2f}~({s.k})" for s in alt_alns[:10] ]))
+                alt_alns = [ alt_aln for alt_aln in alt_alns if alt_aln.k == alns[0].k ]
+                if alt_alns:
+                    print_align(alt_alns[0], alt_bits_dict)
+                else:
+                    print("\nNo corresponding alignment in original setting.")
+
+def stats_alns_dict(alns_dict): # NOTE: I'm not using this, but leave it here for later reference
+    """ empirical score distribution for plotting """
+    # (score, gap, n11/n11+n00, eff_ovlp, rank)
+    print("i\tj\tscore\tscoreGap\tvars_frac\teff_ovlp\trank")
+    for (i, ai), d in alns_dict.items():
+        for rank, (j, aj, alns) in enumerate(
+                sorted([ (j, aj, alns) for (j, aj), alns in d.items() if (j, aj) != (i, ai) ], key = lambda x: -1.0 * x[2][0].score)[:10]):
+            scoreGap = alns[0].score - alns[1].score if len(alns) > 1 else alns[0].score - (T_dag-100)
+            vars_frac = alns[0].n11 / (alns[0].n11 + alns[0].n00) # n11/(n11+n00)
+            line = f"{i}\t{j}\t{alns[0].score/10:.2f}\t{scoreGap/10:.2f}\t{100*vars_frac:.2f}\t{alns[0].eff_ovlp}\t{rank}"
+            print(line)
+
+# TODO: def plot_scoreGap_distr(), or any other equivalent
+# TODO: some function to map shorter reads into layouts/components to enrich data.
+
+def print_layout(layout, bits_dict):
+
+    def is_in(i, j, aj, d):
+        lj = bits_dict[(j, aj)].shape[0]
+        return d <= i and i < d + lj
+
+    print("\n   i\t>  >  >  reads  <  <  <")
+    for i in range(layout.begin, layout.end):
+        # NOTE: you want to sort by starting coordinate?
+        #line = f"{i-layout.begin:<4}\t" + "".join([ "|" if is_in(i, j, aj, d) else " " for (j, aj), d in sorted(layout.reads, key=lambda x: x[1]) ])
+        line = f"{i-layout.begin:<4}\t" + "".join([ "|" if is_in(i, j, aj, d) else " " for (j, aj), d in layout.reads ])
+        print(line)
+    print("----\t" + "-" * len(layout.reads))
+
+    return None
+
+'''
 def layout(alns_dict = None, ctx = None):
     """ implementing layout idea """
-
-    # setup contexts
-    global pool
 
     bag_of_units = [ (ri, h) for ri, er in enumerate(pool.hers) for h, _, t in er.hors if t == "~" ]
     n_units = len(bag_of_units)
@@ -807,6 +736,7 @@ def layout(alns_dict = None, ctx = None):
     layout_of_layouts = iterative_layout(layouts_alns_dict, bits_dict_local, set(regs))
     for l in layout_of_layouts:
         print_layout(l, bits_dict_local)
+'''
 
 if __name__ == '__main__':
 
@@ -817,21 +747,36 @@ if __name__ == '__main__':
     parser.add_argument('--alns', dest='alns', help='pickled alignments')
     args = parser.parse_args()
 
-    global pool # NOTE: to be deprecated soon
+    # global pool # NOTE: to be deprecated soon
 
-    if args.action == "layout":
+    if args.action == "align":
+
         assert args.hors, "need HOR-encoded reads"
+
         hers = pickle.load(open(args.hors, "rb"))
-
-        pool = Pool(hers = hers, arrs = None) # NOTE: I wanted to express global variables ... # NOTE: to be deprecated soon
-
         assembly = Assembly(hers)
+        alns = assembly.get_all_vs_all_aln()
+        with open("calign.pickle", "wb") as f:
+            pickle.dump(alns, f)
+
+    elif args.action == "layout":
+
+        assert args.hors, "need HOR-encoded reads"
+        #hers = pickle.load(open(args.hors, "rb"))
+        # pool = Pool(hers = hers, arrs = None) # NOTE: I wanted to express global variables ... # NOTE: to be deprecated soon
+        #assembly = Assembly(hers)
 
         if args.alns:
             # TODO: how I make sure the alignments are consistent with context?
-            alns_dict = pickle.load(open(args.alns, "rb"))
-            layout(alns_dict, ctx = assembly)
+            #alignments = Load_alignments_from_pickle(args.alns, assembly)
+            #alns_dict = pickle.load(open(args.alns, "rb"))
+            #layout(alignments, ctx = assembly)
+            pass
         else:
-            layout(ctx = assembly)
+            # TODO: perform alignments and save. Then proceed.
+            hers = pickle.load(open(args.hors, "rb"))
+            assembly = Assembly(hers)
+            alns = assembly.get_all_vs_all_aln()
+            #layout(alns, ctx = assembly)
     else:
         assert None, "invalid action."
