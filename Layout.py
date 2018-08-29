@@ -9,7 +9,7 @@ import pickle
 from EncodedRead import *
 from HOR_segregation import *
 
-Pool = namedtuple("Pool", ("hers", "arrs")) # simple class for the context; hor encoded reads, layouts, ...
+# Pool = namedtuple("Pool", ("hers", "arrs")) # simple class for the context; hor encoded reads, layouts, ...
 # TODO: this is not what i wanted. for now, let us accept overriding (hers, arrs) wherever possible, falling back to default pool if it's not specified.
 
 # a record for an alignment (for reads, and for layouts).
@@ -55,7 +55,7 @@ class Assembly:
     def get_consecutive_units(self, hers):
         regs = {}
         for i, her in enumerate(hers):
-            regs[i], ai, lh = [], -1, -36
+            regs[i], ai, lh = [], -1, 0.5
 
             for h, _, t in her.hors:
 
@@ -66,18 +66,17 @@ class Assembly:
                     regs[i][ai] += [-1]
                 elif t == "22U" and h == lh + 22:
                     regs[i][ai] += [-1,-1]
-                elif t != "~":
-                    continue
-                elif h == lh + 12:
+                elif t == "~" and h == lh + 12:
                     regs[i][ai] += [h]
-                elif h in [lh + 22, lh + 23, lh + 24]:
+                elif t == "~" and h in [lh + 22, lh + 23, lh + 24]:
                     regs[i][ai] += [-1, h]
-                elif h in [lh + 33, lh + 34, lh + 35]:
+                elif t == "~" and h in [lh + 33, lh + 34, lh + 35]:
                     regs[i][ai] += [-1, -1, h]
                 else:
                     regs[i] += [[h]]
                     ai += 1
                 lh = h
+
             regs[i] = [ l for l in regs[i] if l ] # remove if empty
         return { k : v for k, v in regs.items() if v } # remove if empty
 
@@ -225,7 +224,7 @@ class Alignment:
         return 1234 # TODO
 
 
-def iterative_layout(alns_dict, bits_dict, nodes):
+def iterative_layout(alns_dict, bits_dict, nodes, asm):
     """ for nodes and alns_dict, perform iterative layout process and returns list of obtained layout
         nodes :: [(i, ai)]
     """
@@ -267,7 +266,6 @@ def iterative_layout(alns_dict, bits_dict, nodes):
 
         print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True) ; print(seed_layout)
 
-
         next_e = [ e for e in edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
 
         if next_e:
@@ -284,13 +282,13 @@ def iterative_layout(alns_dict, bits_dict, nodes):
 
             if (best.i, best.ai) in visited:
                 ll = best.lj
-                lo_alns = [ calc_align_layout(seed_layout,
+                lo_alns = [ asm.calc_align_layout(seed_layout,
                     Layout(reads = [((best.j, best.aj), 0)], begin = 0, end = best.lj), k, bits_dict)
                     for k in range(seed_layout.begin - best.lj + 2, seed_layout.end - 2 + 1) ]
 
             elif (best.j, best.aj) in visited:
                 ll = best.li
-                lo_alns = [ calc_align_layout(seed_layout,
+                lo_alns = [ asm.calc_align_layout(seed_layout,
                     Layout(reads = [((best.i, best.ai), 0)], begin = 0, end = best.li), k, bits_dict)
                     for k in range(seed_layout.begin - best.li + 2, seed_layout.end - 2 + 1) ]
 
@@ -319,7 +317,7 @@ def iterative_layout(alns_dict, bits_dict, nodes):
                 next_e = [ e for e in next_e if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
 
                 print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True); print(seed_layout)
-                layout_consensus(seed_layout) # TODO: temporary?
+                # layout_consensus(seed_layout) # TODO: temporary?
 
                 if next_e:
                     print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
@@ -341,7 +339,9 @@ def iterative_layout(alns_dict, bits_dict, nodes):
         #print_layout(seed_layout, bits_dict)
         nodes -= set(visited)
 
-        layout_consensus(seed_layout) # TODO: temporary?
+        # layout_consensus(seed_layout) # TODO: temporary?
+        seed_layout.describe(asm)
+        print_layout(seed_layout, bits_dict)
 
     return result_layouts
 
@@ -381,15 +381,16 @@ class Layout:
     """ The layout is essentially a set of reads with their relative configurations specified.
         Reads are represented as (rid, aid) tuple, so the layout must point to the context where it was defined. """
 
-    def __init__(self, ctx_hash, reads, begin, end):
+    #def __init__(self, ctx_hash, reads, begin, end):
+    def __init__(self, reads = None, begin = None, end = None):
         # TODO: check the consistency of ctx
-        self.ctx_hash = ctx_hash
+        #self.ctx_hash = ctx_hash
         self.reads = reads
         self.begin = begin # NOTE: could be calculated on the fly?
         self.end = end
         self.consensus = None # lazy consensus
 
-    def get_consensus(): # TODO: make tidy here.
+    def get_consensus(self, ctx): # TODO: make tidy here.
         """ construct a consensus read out of a layout / compute minimal-mismatches to evaluate layout
             returns a new HOR encoded read and an associated array. """
 
@@ -406,14 +407,14 @@ class Layout:
             depth[i] = 0
             # i-th unit.
             for (ri, rai), k in self.reads:
-                l = self.ctx.arrs[ri][rai]
+                l = ctx.arrs[ri][rai]
                 if k > i or k + len(l) <= i:
                     continue
                 if l[i-k] == -1:
                     continue
                 else: # if i[i-k] is canonical unit
                     for ki in range(2, 12): # NOTE: the first two mons should be ignored?
-                        cons_snvs[i][ki].update([ (s.pos, s.base) for s in self.ctx.hers[ri].mons[l[i-k]+ki].monomer.snvs ])
+                        cons_snvs[i][ki].update([ (s.pos, s.base) for s in ctx.hers[ri].mons[l[i-k]+ki].monomer.snvs ])
                     depth[i] += 1
 
         nm = 0 # NOTE: for now, this excludes the first 2 (wrong) monomers
@@ -440,48 +441,47 @@ class Layout:
         return self.consensus
 
     #FIXME: implement them
-    def define_local_variants():
+    def define_local_variants(self, ctx):
         """ returns layout-wide locally-defined variants. """
-        return None
 
-    def prune():
+        newpool = Assembly(hers = [ ctx.hers[i] for (i, ai), k in self.reads ])
+        regs = [ (i, ai) for i, a in newpool.arrs.items() for ai, l in enumerate(a) if len(l) > 4 ]
+        units_in_layout = [ (i, mi) for i, ai in regs for mi in newpool.arrs[i][ai] if mi > -1 ]
+        print(f"{len(units_in_layout)} units found in desc layout")
+        return newpool.get_variants(units_in_layout)
+
+    def prune(self):
         """ remove any reads slippery w.r.t. consensus. """
         return None
 
-    def enrich():
+    def enrich(self):
         """ enrich with shorter reads and returns a resulted new layout,
             which will then be used for defining new variants or consensus. """
         return None
 
-    def describe(): # TODO TODO no short aligns, fix the loc
+    def describe(self, ctx): # TODO TODO no short aligns, fix the loc
         """ describe layout's consistency (stability with local mask?). This should work fine for medium-size layout. """
 
-        # cons_her, cons_arr = layout_consensus(layout)
-
-        rds = [ self.get_consensus() ] + self.reads
-        ars = self.ctx.get_consecutive_units(rds) # FIXME TODO type is wrong.
-
-        newpool = Pool(hers = [cons_her] + [ pool.hers[i] for (i, ai), k in layout.reads ], arrs = { 0 : cons_arr })
-
-        newpool.arrs.update([ (en+1, pool.arrs[i]) for en, ((i, ai), k) in enumerate(layout.reads) ])
+        newpool = Assembly(hers = [self.get_consensus(ctx)] + [ ctx.hers[i] for (i, ai), k in self.reads ])
         regs = [ (i, ai) for i, a in newpool.arrs.items() for ai, l in enumerate(a) if len(l) > 4 ]
+        layout_local_snvs = self.define_local_variants(ctx)
+        layout_local_bits_dict = newpool.get_bits_dict(layout_local_snvs, regs)
+        l0 = layout_local_bits_dict[regs[0]].shape[0] # layout's length
 
-        units_in_layout = [ (i, mi) for i, ai in regs for mi in newpool.arrs[i][ai] if mi > -1 and i > 0 ]
-        print(f"{len(units_in_layout)} units found in desc layout")
-        layout_local_snvs = detect_snvs(units_in_layout, alt_pool = newpool)
-        print(f"{len(layout_local_snvs)} SNVs found in desc layout")
-
-        layout_local_bits_dict = get_bits_dict(layout_local_snvs, regs, alt_pool = newpool)
-
-        l0 = layout_local_bits_dict[(0, 0)].shape[0] # layout's length
-        for j, aj in regs:
-            if j == 0:
-                continue
+        i, ai = regs[0]
+        for j, aj in regs[1:]:
             lj = layout_local_bits_dict[(j, aj)].shape[0]
+            k_in_l = self.reads[j-1][1] - self.begin # ?
+
             # with at least 2 units in overlap
-            k_in_l = layout.reads[j-1][1]
-            alns = [ calc_align(0, 0, j, aj, k, bits_dict = layout_local_bits_dict) for k in range(-lj+2, l0-2) ]
-            print(f"lj={lj}\t" + "\t".join([f"*{aln.score/10:.1f}" if aln.k == k_in_l - 2*layout.begin else f"{aln.score/10:.1f}" for aln in alns]) + " $\n")
+            #alns = [ newpool.calc_align(i, ai, j, aj, k, bits_dict = layout_local_bits_dict) for k in range(-lj+2, l0-2) ]
+            alns = [ newpool.calc_align(i, ai, j, aj, k, bits_dict = layout_local_bits_dict) for k in range(-lj-5, l0+5) ]
+            print(f"lj={lj}:{k_in_l}\t" + " ".join([f"*{aln.score/10:.1f}/{aln.eff_ovlp}@{aln.k}"
+                if aln.k == k_in_l else f"{aln.score/10:.1f}/{aln.eff_ovlp}@{aln.k}" for aln in reversed(alns) if aln.eff_ovlp > 4]) + " $\n")
+
+            alns = sorted(alns, key = lambda x: -x.score)
+            diff = (alns[0].score - alns[1].score)/10
+            print(f"{diff}" + "\n")
 
 def print_snvs(snvs, alt_snvs = None):
     lines = "  k\t  p\tb\t    c\t   f\t   p-val\t c.f.d.\t f.gl\n"
@@ -578,58 +578,64 @@ def print_layout(layout, bits_dict):
 
     def is_in(i, j, aj, d):
         lj = bits_dict[(j, aj)].shape[0]
-        return d <= i and i < d + lj
+        if d <= i and i < d + lj:
+            if bits_dict[(j, aj)][i-d,0] == 0:
+                return "*"
+            else:
+                return "|"
+        else:
+            return " "
 
-    print("\n   i\t>  >  >  reads  <  <  <")
+    print("\n   i:  i2\t>  >  >  reads  <  <  <")
     for i in range(layout.begin, layout.end):
         # NOTE: you want to sort by starting coordinate?
         #line = f"{i-layout.begin:<4}\t" + "".join([ "|" if is_in(i, j, aj, d) else " " for (j, aj), d in sorted(layout.reads, key=lambda x: x[1]) ])
-        line = f"{i-layout.begin:<4}\t" + "".join([ "|" if is_in(i, j, aj, d) else " " for (j, aj), d in layout.reads ])
+        line = f"{i:<4}:{i-layout.begin:<4}\t" + "".join([ is_in(i, j, aj, d) for (j, aj), d in layout.reads ])
         print(line)
-    print("----\t" + "-" * len(layout.reads))
+    print("----:----\t" + "-" * len(layout.reads) + ";")
 
     return None
 
-'''
-def layout(alns_dict = None, ctx = None):
+def layout(alns_dict = None, ctx = None, layouts = None):
     """ implementing layout idea """
 
-    bag_of_units = [ (ri, h) for ri, er in enumerate(pool.hers) for h, _, t in er.hors if t == "~" ]
-    n_units = len(bag_of_units)
-    print(f"{n_units} units found in {len(pool.hers)} reads.")
+    assert alns_dict, "needs Alignment."
+    assert ctx, "needs Assembly as a context"
 
-    snv_sites = detect_snvs(bag_of_units)
+    bag_of_units = [ (ri, h) for ri, er in enumerate(ctx.hers) for h, _, t in er.hors if t == "~" ]
+    n_units = len(bag_of_units)
+    print(f"{n_units} units found in {len(ctx.hers)} reads.")
+
+    snv_sites = ctx.get_variants(bag_of_units)
     #snv_sites = detect_snvs(bag_of_units)[:40] # force 40?
     print(f"{len(snv_sites)} SNV sites defined globally.")
     print_snvs(snv_sites)
 
-    arrs = valid_read_regions(pool.hers)
-    print(f"{len(arrs)} read has an array to be aligned.")
-    print(f"{ sum([ len(v) for k, v in arrs.items() ]) } units-long in total.")
-
-    pool = Pool(hers = hers, arrs = arrs) # NOTE: I wanted to express global variables ...
-    n_raw_hers = len(pool.hers)
+    n_raw_hers = len(ctx.hers)
 
     # bits vectors are constructed for all regions, on SNVs defined globally.
-    regs = [ (i, ai) for i, a in pool.arrs.items() for ai, l in enumerate(a) if len(l) > 4 ]
-    bits_dict = get_bits_dict(snv_sites, regs)
+    regs = [ (i, ai) for i, a in ctx.arrs.items() for ai, l in enumerate(a) if len(l) > 4 ]
+    bits_dict = ctx.get_bits_dict(snv_sites, regs)
 
     # calculate alignments globally
-    long_arrays = [ (i, ai) for i, a in pool.arrs.items() for ai, l in enumerate(a) if len(l) > 9 ]
-
-    # TODO: once again abstract the logic to calc all-vs-all alns_dict for subset of reads (i mean, slippy parts).
-    if not alns_dict:
-        alns_dict = all_vs_all_aln(long_arrays, bits_dict)
-        pickle.dump(alns_dict, open(f"alns_dict.{len(snv_sites)}snvs.10u.{T_dag-100}-4.robust.pickle", "wb"))
+    long_arrays = [ (i, ai) for i, a in ctx.arrs.items() for ai, l in enumerate(a) if len(l) > 6 ]
 
     #describe_alns_dict(alns_dict, bits_dict) 
     #stats_alns_dict(alns_dict)
 
     # NOTE: I'm trying to see what if layout with all nodes
-    layouts = iterative_layout(alns_dict, bits_dict, set(long_arrays))
-    print(f"{len(layouts)} layouts obtained from all {len(long_arrays)} long (>9u) arrays")
-    for il, l in enumerate(layouts):
-        describe_layout(l)
+    if not layouts:
+        layouts = iterative_layout(alns_dict, bits_dict, set(long_arrays), ctx)
+        with open("layouts.pickle", "wb") as f:
+            pickle.dump(layouts, f)
+
+    print(f"{len(layouts)} layouts obtained from all {len(long_arrays)} long (>6u) arrays")
+
+    for il, l in enumerate(sorted(layouts, key = lambda x: -len(x.reads))):
+        if len(l.reads) < 3:
+            continue
+        print_layout(l, bits_dict)
+        l.describe(ctx)
 
     import sys
     sys.exit()
@@ -736,7 +742,6 @@ def layout(alns_dict = None, ctx = None):
     layout_of_layouts = iterative_layout(layouts_alns_dict, bits_dict_local, set(regs))
     for l in layout_of_layouts:
         print_layout(l, bits_dict_local)
-'''
 
 if __name__ == '__main__':
 
@@ -745,6 +750,7 @@ if __name__ == '__main__':
     parser.add_argument('action', metavar='action', type=str, help='action to perform: layout, ...')
     parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads')
     parser.add_argument('--alns', dest='alns', help='pickled alignments')
+    parser.add_argument('--layouts', dest='layouts', help='pickled layouts; it\'s your job to take care of consistency with alns...')
     args = parser.parse_args()
 
     # global pool # NOTE: to be deprecated soon
@@ -762,21 +768,17 @@ if __name__ == '__main__':
     elif args.action == "layout":
 
         assert args.hors, "need HOR-encoded reads"
-        #hers = pickle.load(open(args.hors, "rb"))
-        # pool = Pool(hers = hers, arrs = None) # NOTE: I wanted to express global variables ... # NOTE: to be deprecated soon
-        #assembly = Assembly(hers)
+        assert args.alns, "need alignments"
+        hers = pickle.load(open(args.hors, "rb"))
+        assembly = Assembly(hers)
+        alns = pickle.load(open(args.alns, "rb"))
 
-        if args.alns:
-            # TODO: how I make sure the alignments are consistent with context?
-            #alignments = Load_alignments_from_pickle(args.alns, assembly)
-            #alns_dict = pickle.load(open(args.alns, "rb"))
-            #layout(alignments, ctx = assembly)
-            pass
+        # TODO: check consistency here
+        if args.layouts:
+            layouts = pickle.load(open(args.layouts, "rb"))
+            layout(alns.alignments, ctx = assembly, layouts = layouts)
         else:
-            # TODO: perform alignments and save. Then proceed.
-            hers = pickle.load(open(args.hors, "rb"))
-            assembly = Assembly(hers)
-            alns = assembly.get_all_vs_all_aln()
-            #layout(alns, ctx = assembly)
+            layout(alns.alignments, ctx = assembly)
+
     else:
         assert None, "invalid action."
