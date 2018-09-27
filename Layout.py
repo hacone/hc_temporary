@@ -46,13 +46,6 @@ class Assembly:
         self.c_00 = 0.1
         self.c_ms = 1.5
 
-    def __hash__(self):
-        m = hashlib.sha256()
-        #m.update(frozenset(self.hers))
-        #m.update(frozenset(self.arrs))
-        #return m.hexdigest()
-        return 0
-
     def get_consecutive_units(self, hers):
         regs = {}
         c_5u, c_22u, c_d1, c_d12, c_lo = 0, 0, 0, 0, 0
@@ -396,9 +389,8 @@ def double_edge_component(alns_dict):
 
 class Layout:
     """ The layout is essentially a set of reads with their relative configurations specified.
-        Reads are represented as (rid, aid) tuple, so the layout must point to the context where it was defined. """
+        Reads are represented as ((rid, aid), rpos) tuple, so the layout must point to the context where it was defined. """
 
-    #def __init__(self, ctx_hash, reads, begin, end):
     def __init__(self, reads = None, begin = None, end = None):
         # TODO: check the consistency of ctx
         #self.ctx_hash = ctx_hash
@@ -451,29 +443,82 @@ class Layout:
                 monomer = Monomer(name = "*", snvs = [ SNV(pos = p, base = b) for (p, b), fq in cons_snvs[i+lb][ki].items() if fq/depth[i+lb] > min_variant_freq ])) # TODO: fix threshold
                 for i in range(le-lb) for ki in range(12) ],
             hors = [ (i*12, 12, "~") if depth[lb+i] > 0 else (i*12, 12, "@LO") for i in range(le-lb) ])
-
         return self.consensus
 
-    #FIXME: implement them
+
     def define_local_variants(self, ctx):
         """ returns layout-wide locally-defined variants. """
-
         newpool = Assembly(hers = [ ctx.hers[i] for (i, ai), k in self.reads ])
         regs = [ (i, ai) for i, a in newpool.arrs.items() for ai, l in enumerate(a) if len(l) > 4 ]
         units_in_layout = [ (i, mi) for i, ai in regs for mi in newpool.arrs[i][ai] if mi >= 0 ]
         print(f"{len(units_in_layout)} units found in desc layout")
         return newpool.get_variants(units_in_layout)
 
-    def prune(self):
+    # TODO test
+    def define_ends_variants(self, ctx, plusend = True):
+        """ returns variants locally-defined at ends of the layout"""
+        newpool = Assembly(hers = [ ctx.hers[i] for (i, ai), k in self.reads ])
+        regs = [ (i, ai)
+            for i, a in newpool.arrs.items()
+            for ai, l in enumerate(a)
+            if len(l) > 4 ]
+
+        units_in_layout = [ ((i, mi), self.end - k + p)
+            for (i, ai), k in self.reads
+            for p, mi in enumerate(newpool.arrs[i][ai])
+            if mi >= 0 ]
+        units_in_end = sorted(units_in_layout,
+            key = lambda x: (1 if plusend else -1) * x[1])
+
+        print(f"{len(units_in_layout)} units found in desc layout")
+        return newpool.get_variants(units_in_layout)
+
+    def prune(self, ctx):
+
         """ remove any reads slippery w.r.t. consensus. """
-        return None
+        # rd = ((rid, aid), rpos)
+        def leave_one_out_consensus(rd):
+            reads_except_me = [ r for r in self.reads if r != rd ]
+            b = min([ rpos for (rid, aid), rpos in reads_except_me ])
+            e = max([ rpos + len(ctx.arrs[rid][aid]) for (rid, aid), rpos in reads_except_me ])
+            loo_layout = Layout(reads_except_me, b, e)
+            loo_consensus = loo_layout.get_consensus(ctx)
+            return loo_consensus
 
-    def enrich(self):
-        """ enrich with shorter reads and returns a resulted new layout,
-            which will then be used for defining new variants or consensus. """
-        return None
+        llsnvs = self.define_local_variants(ctx)
 
-    def describe(self, ctx): # TODO TODO no short aligns, fix the loc
+        def if_uniquely_align(ccs, read):
+            np = Assembly(hers = [ccs] + ctx.hers[read[0]])
+            np_regs = [ (i, ai) 
+                for i, a in np.arrs.items()
+                for ai, l in enumerate(a) if len(l) > 4 ]
+            ccs_parts = len([ r for r in np_regs if r[0] == 0 ]) 
+            if ccs_parts > 1:
+                print(f"consensus is fluctured into {ccs_parts}.")
+                return True # TODO: can I do that?
+            # TODO: alignment actually.
+            llbd = np.get_bits_dict(llsnvs, np_regs)
+            i, ai = np_regs[0]
+            j, aj = read[0]
+            li = llbd[(i, ai)].shape[0]
+            lj = llbd[(j, aj)].shape[0]
+            alns = [ np.calc_align(i, ai, j, aj, k, bits_dict = llbd) for k in range(-lj-5, li+5) ]
+            alns = [ aln for aln in sorted(alns, key = lambda x: -x.score) if aln.eff_ovlp > 4 ]
+            return (aln[0].score - aln[1].score) > 15.0
+
+
+        goods = [ rd for rd in self.reads
+            if if_uniquely_align(leave_one_out_consensus(rd), rd) ]
+        print(f"Pruned; {len(goods)} passed out of {len(self.reads)} reads.")
+
+        # making layout!
+        b = min([ rpos for (rid, aid), rpos in goods ])
+        e = max([ rpos + len(ctx.arrs[rid][aid]) for (rid, aid), rpos in goods ])
+        pruned_layout = Layout(goods, b, e)
+        return pruned_layout
+
+
+    def describe(self, ctx):
         """ describe layout's consistency (stability with local mask?). This should work fine for medium-size layout. """
 
         #newpool = Assembly(hers = [self.get_consensus(ctx)] + [ ctx.hers[i] for (i, ai), k in self.reads ])
