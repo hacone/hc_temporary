@@ -15,6 +15,7 @@
 *.npy
 *.ser
 *.svg
+*.png
 *.tmp
 *.swp
 *.tgz
