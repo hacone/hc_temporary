@@ -78,20 +78,26 @@ def var(reads, units = None, err_rate = 0.03, fq_upper_bound = 0.75):
     _nt_vars = [ dict(k = k, p = p, b = b, f = c/len(units), c = c, binom_p = 1 - binom.cdf(c, len(units), err_rate)) for k, p, b, f, c in _tmp ]
     return [ s for s in _nt_vars if s["binom_p"]*(171*10*3) < 1.0 ]
 
-class Assembly: # TODO: rename this!!
-    """ The assembly class holds all data you need to perform assembly.
-        Currently, those would be HOR encoded reads, consecutive units in them, and tentative layouts. """
+class Alignment: # TODO: rename this!!
+    """
+        The Alignment class, initialized with a set of HOR encoded reads,
+        holds relevant data such as induced (chopped) array, default global variants, matrix representation,
+        and other utility methods to perform alignment (all-vs-all or specific).
+    """
 
-    def __init__(self, hers, arrs = None):
+    def __init__(self, hers, arrs = None, variants = None):
         self.hers = hers # HOR encoded reads
         self.arrs = chopx(self.hers) if not arrs else arrs
-        self.c_00 = 0.1
-        self.c_ms = 1.5
-        # NOTE: let me check if this won't cause performance issue.
-        self.variants = var(hers)
+        self.variants = var(hers) if not variants else variants
+
+        # NOTE: self.bits can be reconstructed from vars and arrs, so depend on them essentially.
         self.bits = self.get_bits_dict(self.variants, self.longer_than(0))
 
-    def longer_than(self, tl)
+        # NOTE: I won't change them never?
+        self.c_00 = 0.1
+        self.c_ms = 1.5
+
+    def longer_than(self, tl):
         return [ (i, ai) for i, a in self.arrs.items() for ai, l in enumerate(a) if len(l) > tl ]
 
     # TODO: NOTE: deprecated!
@@ -188,7 +194,6 @@ class Assembly: # TODO: rename this!!
 
         alns_dict = dict()
         n = 0
-
         for i, ai in targets:
             n += 1
             print(f"aligning {i} - {ai}. {n} / {len(targets)}")
@@ -216,35 +221,44 @@ class Assembly: # TODO: rename this!!
         # regs = [ (i, ai) for i, a in self.arrs.items() for ai, l in enumerate(a) if len(l) > 6 ]
         regs = self.longer_than(6)
 
-        # return Alignment(alignments = alns_dict, ctx_hash = 0, snv_hash = 0, c_00 = self.c_00, c_ms = self.c_ms)
-        return Alignment(
+        return AlignmentStore(
             reads = self.hers,
             arrays = self.arrs,
             variants = variants,
-            alignments = self.some_vs_some_alignment(regs, regs, bits)
+            alignments = self.some_vs_some_alignment(regs, regs, bits),
             c_00 = self.c_00,
             c_ms = self.c_ms)
 
-class Alignment:
-    # storing the results of all-vs-all alignments with parameters being used,
-    # which include: reads, arrays, variants. 
-    # NOTE: usually, arrays doesn't change for a set of reads (but it could).
-    # NOTE: bit matrix representation is (must be) fully determined by these, thus is not stored explicitly.
+class AlignmentStore:
+    """"
+    storing the results of all-vs-all alignments with parameters being used,
+    which include: reads, arrays, variants. 
+    NOTE: usually, arrays doesn't change for a set of reads (but it could).
+    NOTE: bit matrix representation is (must be) fully determined by these, thus is not stored explicitly.
+    """
     def __init__(self, reads, arrays, variants, alignments, c_00, c_ms):
         # alignments :: alns_dict
         self.reads = reads
         self.arrays = arrays
         self.variants = variants
         self.alignments = alignments
-        self.ctx_hash = ctx_hash
-        self.snv_hash = snv_hash
         self.c_00 = c_00
         self.c_ms = c_ms
 
-def iterative_layout(alns_dict, bits_dict, nodes, asm):
-    """ for nodes and alns_dict, perform iterative layout process and returns list of obtained layout
+# TODO: I'll get AlignmentStore as an input. check all the caller.
+# TODO: make this readable.
+#def iterative_layout(alns_dict, bits_dict, nodes, asm = None):
+
+def iterative_layout(alignmentstore, nodes):
+    """
+        Perform iterative layout process and returns list of obtained layout.
+        Alignments and other contexts are given as `alignmentstore`. Only `nodes` specified are used.
         nodes :: [(i, ai)]
     """
+
+    # TODO: this is for backwards compat.
+    asm = Alignment(ast.reads, ast.arrays, ast.variants)
+    alns_dict = ast.alignments
 
     result_layouts = [] # this accumulates the results.
     n_iter = 0
@@ -263,13 +277,7 @@ def iterative_layout(alns_dict, bits_dict, nodes, asm):
         edges = sorted(edges, key = lambda x: -x[4][0].score) # sorted with the best score for the pair
 
         if not edges:
-            #print("No Good edges any more.")
             break
-        else:
-            #print(f"{len(edges)} edges available.") 
-            #print("\n".join([ f"{x[4][0]}" for x in edges[:10] ]))
-            pass
-
 
         # TODO: maybe check for internal consistency, ... then final iterative assembly procedure.
         # TODO: assert the size of edges
@@ -283,7 +291,6 @@ def iterative_layout(alns_dict, bits_dict, nodes, asm):
         visited = [ (i, ai) for (i, ai), d in seed_layout.reads ]
 
         #print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True) ; print(seed_layout)
-
         next_e = [ e for e in edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
 
         if next_e:
@@ -456,7 +463,7 @@ class Layout:
 
     def define_local_variants(self, ctx):
         """ returns layout-wide locally-defined variants. """
-        newpool = Assembly(hers = [ ctx.hers[i] for (i, ai), k in self.reads ])
+        newpool = Alignment(hers = [ ctx.hers[i] for (i, ai), k in self.reads ])
         regs = [ (i, ai) for i, a in newpool.arrs.items() for ai, l in enumerate(a) if len(l) > 4 ]
         units_in_layout = [ (i, mi) for i, ai in regs for mi in newpool.arrs[i][ai] if mi >= 0 ]
         #return newpool.get_variants(units_in_layout)
@@ -465,7 +472,7 @@ class Layout:
     # TODO test
     def define_ends_variants(self, ctx, plusend = True):
         """ returns variants locally-defined at ends of the layout"""
-        newpool = Assembly(hers = [ ctx.hers[i] for (i, ai), k in self.reads ])
+        newpool = Alignment(hers = [ ctx.hers[i] for (i, ai), k in self.reads ])
         regs = [ (i, ai)
             for i, a in newpool.arrs.items()
             for ai, l in enumerate(a)
@@ -495,7 +502,7 @@ class Layout:
         llsnvs = self.define_local_variants(ctx)
 
         def if_uniquely_align(ccs, read):
-            np = Assembly(hers = [ccs] + ctx.hers[read[0]])
+            np = Alignment(hers = [ccs] + ctx.hers[read[0]])
             np_regs = [ (i, ai) 
                 for i, a in np.arrs.items()
                 for ai, l in enumerate(a) if len(l) > 4 ]
@@ -528,8 +535,8 @@ class Layout:
     def describe(self, ctx):
         """ describe layout's consistency (stability with local mask?). This should work fine for medium-size layout. """
 
-        #newpool = Assembly(hers = [self.get_consensus(ctx)] + [ ctx.hers[i] for (i, ai), k in self.reads ])
-        newpool = Assembly(hers = [self.get_consensus(ctx)] + [ ctx.hers[i] for (i, ai), k in sorted(self.reads, key=lambda x: x[1]) ])
+        #newpool = Alignment(hers = [self.get_consensus(ctx)] + [ ctx.hers[i] for (i, ai), k in self.reads ])
+        newpool = Alignment(hers = [self.get_consensus(ctx)] + [ ctx.hers[i] for (i, ai), k in sorted(self.reads, key=lambda x: x[1]) ])
         regs = [ (i, ai) for i, a in newpool.arrs.items() for ai, l in enumerate(a) if len(l) > 4 ]
         layout_local_snvs = self.define_local_variants(ctx)
         print_snvs(layout_local_snvs)
@@ -710,7 +717,7 @@ def layout(alns_dict = None, ctx = None, layouts = None):
     """ implementing layout idea """
 
     assert alns_dict, "needs Alignment."
-    assert ctx, "needs Assembly as a context"
+    assert ctx, "needs Alignment as a context"
 
     bag_of_units = [ (ri, h) for ri, er in enumerate(ctx.hers) for h, _, t in er.hors if t == "~" ]
     n_units = len(bag_of_units)
@@ -896,7 +903,7 @@ def layout_to_json(alns_dict = None, ctx = None, layouts = None):
     import json
 
     assert alns_dict, "needs Alignment."
-    assert ctx, "needs Assembly as a context"
+    assert ctx, "needs Alignment as a context"
 
     def horUnits(hers, target):
         return [ (ri, h) for ri, er in enumerate(hers) for h, _, t in er.hors if t == target ]
@@ -944,7 +951,7 @@ if __name__ == '__main__':
         assert args.hors, "need HOR-encoded reads"
 
         hers = pickle.load(open(args.hors, "rb"))
-        assembly = Assembly(hers)
+        assembly = Alignment(hers)
         alns = assembly.get_all_vs_all_aln()
         with open("calign.pickle", "wb") as f:
             pickle.dump(alns, f)
@@ -954,7 +961,7 @@ if __name__ == '__main__':
         assert args.hors, "need HOR-encoded reads"
         assert args.alns, "need alignments"
         hers = pickle.load(open(args.hors, "rb"))
-        assembly = Assembly(hers)
+        assembly = Alignment(hers)
         alns = pickle.load(open(args.alns, "rb"))
 
         # TODO: check consistency here
@@ -970,7 +977,7 @@ if __name__ == '__main__':
         assert args.alns, "need alignments"
         assert args.layouts, "need layouts"
         hers = pickle.load(open(args.hors, "rb"))
-        assembly = Assembly(hers)
+        assembly = Alignment(hers)
         alns = pickle.load(open(args.alns, "rb"))
         layouts = pickle.load(open(args.layouts, "rb"))
         layout_to_json(alns.alignments, ctx = assembly, layouts = layouts)
