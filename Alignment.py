@@ -110,12 +110,6 @@ class Alignment: # TODO: rename this!!
         """ helper function to return region indices for later use. """
         return [ (i, ai) for i, a in self.arrs.items() for ai, l in enumerate(a) if len(l) > tl ]
 
-    # TODO: NOTE: deprecated!
-    def get_variants(self, units, err_rate = 0.03, fq_upper_bound = 0.75):
-        """ define SNVs over `units`. Currently, SNV is dict with following keys: k, p, b, f, c, binom_p """
-        assert units, "trying to call variants over nothing. abort."
-        return var(self.hers, units)
-
     def get_bits_dict(self, snvs, regs):
         """ construct bit array representation as dict """
 
@@ -240,21 +234,6 @@ class Alignment: # TODO: rename this!!
             c_00 = self.c_00,
             c_ms = self.c_ms)
 
-class AlignmentStore:
-    """
-    storing the results of all-vs-all alignments with parameters being used,
-    which include: reads, arrays, variants. 
-    NOTE: usually, arrays doesn't change for a set of reads (but it could).
-    NOTE: bit matrix representation is (must be) fully determined by these, thus is not stored explicitly.
-    """
-    def __init__(self, reads, arrays, variants, alignments, c_00, c_ms):
-        self.reads = reads
-        self.arrays = arrays
-        self.variants = variants
-        self.alignments = alignments
-        self.c_00 = c_00
-        self.c_ms = c_ms
-
 def print_snvs(snvs, alt_snvs = None):
     """ Show SNVs """
     lines = "  k\t  p\tb\t    c\t   f\t   p-val\t c.f.d.\t f.gl\n"
@@ -307,30 +286,51 @@ def print_align(aln, bits_dict):
 
     print(lines)
 
-def describe_alns_dict(alns_dict, bits_dict, alt_alns_dict = None, alt_bits_dict = None):
-    """ visualize alns_dict in text """
+class AlignmentStore:
+    """
+    storing the results of all-vs-all alignments with parameters being used,
+    which include: reads, arrays, variants. 
+    NOTE: usually, arrays doesn't change for a set of reads (but it could).
+    NOTE: bit matrix representation is (must be) fully determined by these, thus is not stored explicitly.
+    """
+    def __init__(self, reads, arrays, variants, alignments, c_00, c_ms):
+        self.reads = reads
+        self.arrays = arrays
+        self.variants = variants
+        self.alignments = alignments
+        self.c_00 = c_00
+        self.c_ms = c_ms
 
-    T_print = 650
-    
-    for (i, ai), d in alns_dict.items(): 
-        targets = sorted([ (j, aj, alns) for (j, aj), alns in d.items() if alns[0].score > T_print ], key = lambda x: -x[2][0].score)
-        if targets:
-            print("\n--------------------------------------------------")
-            n11, n00 = targets[0][2][0].n11, targets[0][2][0].n00
-            print(f"Alignments for read {i} region {ai}...: {100*n11/(n11+n00):.2f} " + " ".join([f"{alns[0].score/10:.3f}" for j, aj, alns in targets[:10]]))
-        for j, aj, alns in targets[:10]: # for the first 10 reads
-            print(f"\nFrom read {i}, {ai} To read {j}, {aj}...")
-            print("alt.confs: " + " ".join([ f"{s.score/10:.2f}~({s.k})" for s in alns[:10] ]))
-            print_align(alns[0], bits_dict)
+    def describe(self, bits_dict, alt_alns_dict = None, alt_bits_dict = None):
+        """ visualize alns_dict in text """
 
-            if alt_alns_dict and alt_bits_dict and (i, ai) in alt_alns_dict and (j, aj) in alt_alns_dict[(i, ai)]:
-                alt_alns = alt_alns_dict[(i, ai)][(j, aj)]
-                print("\noriginal alt.confs: " + " ".join([ f"{s.score/10:.2f}~({s.k})" for s in alt_alns[:10] ]))
-                alt_alns = [ alt_aln for alt_aln in alt_alns if alt_aln.k == alns[0].k ]
-                if alt_alns:
-                    print_align(alt_alns[0], alt_bits_dict)
-                else:
-                    print("\nNo corresponding alignment in original setting.")
+        T_print = 650
+
+        # TODO: for backports
+        alns_dict = self.alignments
+        
+        for (i, ai), d in alns_dict.items(): 
+            targets = sorted([ (j, aj, alns) for (j, aj), alns in d.items() if alns[0].score > T_print ], key = lambda x: -x[2][0].score)
+            if targets:
+                print("\n--------------------------------------------------")
+                n11, n00 = targets[0][2][0].n11, targets[0][2][0].n00
+                print(f"Alignments for read {i} region {ai}...: {100*n11/(n11+n00):.2f} " + " ".join([f"{alns[0].score/10:.3f}" for j, aj, alns in targets[:10]]))
+
+            for j, aj, alns in targets[:10]: # for the first 10 reads
+                print(f"\nFrom read {i}, {ai} To read {j}, {aj}...")
+                print("alt.confs: " + " ".join([ f"{s.score/10:.2f}~({s.k})" for s in alns[:10] ]))
+                print_align(alns[0], bits_dict)
+
+                """
+                if alt_alns_dict and alt_bits_dict and (i, ai) in alt_alns_dict and (j, aj) in alt_alns_dict[(i, ai)]:
+                    alt_alns = alt_alns_dict[(i, ai)][(j, aj)]
+                    print("\noriginal alt.confs: " + " ".join([ f"{s.score/10:.2f}~({s.k})" for s in alt_alns[:10] ]))
+                    alt_alns = [ alt_aln for alt_aln in alt_alns if alt_aln.k == alns[0].k ]
+                    if alt_alns:
+                        print_align(alt_alns[0], alt_bits_dict)
+                    else:
+                        print("\nNo corresponding alignment in original setting.")
+                """
 
 def stats_alns_dict(alns_dict): # NOTE: I'm not using this, but leave it here for later reference
     """ empirical score distribution for plotting (deprecated?) """
@@ -349,8 +349,9 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='perform pair-wise alignment among HOR encoded reads on SNV data, again')
     parser.add_argument('action', metavar='action', type=str, help='action to perform: align, ...')
-    parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads (required)')
-    parser.add_argument('-o', dest='outfile', help='the file to be output (required)')
+    parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads (required for align)')
+    parser.add_argument('--alignments', dest='alns', help='pickled AlignmentStore (required for print)')
+    parser.add_argument('-o', dest='outfile', help='the file to be output (required for align)')
     args = parser.parse_args()
 
     if args.action == "align":
@@ -360,10 +361,17 @@ if __name__ == '__main__':
         hers = pickle.load(open(args.hors, "rb"))
         alignment = Alignment(hers)
         store = alignment.get_all_vs_all_aln()
-
         with open(args.outfile, "wb") as f:
             pickle.dump(store, f)
         print("done.")
+
+    if args.action == "print":
+        assert args.alns, "specify pickled alignment file"
+
+        with open(args.alns, "rb") as f:
+            store = pickle.load(f)
+            alignment = Alignment(store.reads, arrs = store.arrays, variants = store.variants)
+            store.describe(alignment.bits)
 
     else:
         assert False, "invalid action."

@@ -72,8 +72,6 @@ parameters&nbsp;are&nbsp;default,&nbsp;induced&nbsp;from&nbsp;the&nbsp;contextua
 
 <dl><dt><a name="Alignment-get_bits_dict"><strong>get_bits_dict</strong></a>(self, snvs, regs)</dt><dd><tt>construct&nbsp;bit&nbsp;array&nbsp;representation&nbsp;as&nbsp;dict</tt></dd></dl>
 
-<dl><dt><a name="Alignment-get_variants"><strong>get_variants</strong></a>(self, units, err_rate=0.03, fq_upper_bound=0.75)</dt><dd><tt>define&nbsp;SNVs&nbsp;over&nbsp;`units`.&nbsp;Currently,&nbsp;SNV&nbsp;is&nbsp;dict&nbsp;with&nbsp;following&nbsp;keys:&nbsp;k,&nbsp;p,&nbsp;b,&nbsp;f,&nbsp;c,&nbsp;binom_p</tt></dd></dl>
-
 <dl><dt><a name="Alignment-longer_than"><strong>longer_than</strong></a>(self, tl)</dt><dd><tt>helper&nbsp;function&nbsp;to&nbsp;return&nbsp;region&nbsp;indices&nbsp;for&nbsp;later&nbsp;use.</tt></dd></dl>
 
 <dl><dt><a name="Alignment-mismatX"><strong>mismatX</strong></a>(self, i, ai, j, aj, k, bits_dict)</dt><dd><tt>aux&nbsp;func&nbsp;returning&nbsp;stats&nbsp;of&nbsp;matches&nbsp;and&nbsp;mismatches<br>
@@ -104,6 +102,8 @@ NOTE:&nbsp;bit&nbsp;matrix&nbsp;representation&nbsp;is&nbsp;(must&nbsp;be)&nbsp;
 <tr><td>&nbsp;</td>
 <td width="100%">Methods defined here:<br>
 <dl><dt><a name="AlignmentStore-__init__"><strong>__init__</strong></a>(self, reads, arrays, variants, alignments, c_00, c_ms)</dt><dd><tt>Initialize&nbsp;self.&nbsp;&nbsp;See&nbsp;help(type(self))&nbsp;for&nbsp;accurate&nbsp;signature.</tt></dd></dl>
+
+<dl><dt><a name="AlignmentStore-describe"><strong>describe</strong></a>(self, bits_dict, alt_alns_dict=None, alt_bits_dict=None)</dt><dd><tt>visualize&nbsp;alns_dict&nbsp;in&nbsp;text</tt></dd></dl>
 
 <hr>
 Data descriptors defined here:<br>
@@ -435,7 +435,6 @@ Raises&nbsp;ValueError&nbsp;if&nbsp;the&nbsp;value&nbsp;is&nbsp;not&nbsp;present
 <td width="100%"><dl><dt><a name="-chopx"><strong>chopx</strong></a>(reads)</dt><dd><tt>chop&nbsp;HOR-encoded&nbsp;reads&nbsp;from&nbsp;X,&nbsp;return&nbsp;`{&nbsp;rid&nbsp;:&nbsp;[[mids,&nbsp;...],&nbsp;...]&nbsp;}`<br>
 Specifically,&nbsp;they're&nbsp;valid&nbsp;consecutive&nbsp;regions&nbsp;after&nbsp;22/23/24-mons&nbsp;or&nbsp;33/34/35-mons&nbsp;gaps&nbsp;are&nbsp;filled.<br>
 the&nbsp;format&nbsp;is&nbsp;{&nbsp;ri&nbsp;:&nbsp;[[mi,&nbsp;mi,&nbsp;mi,&nbsp;...],&nbsp;[mi,&nbsp;mi,&nbsp;...]]&nbsp;}&nbsp;(mi&nbsp;&lt;&nbsp;0&nbsp;for&nbsp;masked)</tt></dd></dl>
- <dl><dt><a name="-describe_alns_dict"><strong>describe_alns_dict</strong></a>(alns_dict, bits_dict, alt_alns_dict=None, alt_bits_dict=None)</dt><dd><tt>visualize&nbsp;alns_dict&nbsp;in&nbsp;text</tt></dd></dl>
  <dl><dt><a name="-print_align"><strong>print_align</strong></a>(aln, bits_dict)</dt><dd><tt>Visualize&nbsp;an&nbsp;alignment&nbsp;in&nbsp;text&nbsp;to&nbsp;clarify&nbsp;the&nbsp;overlap.</tt></dd></dl>
  <dl><dt><a name="-print_snvs"><strong>print_snvs</strong></a>(snvs, alt_snvs=None)</dt><dd><tt>Show&nbsp;SNVs</tt></dd></dl>
  <dl><dt><a name="-stats_alns_dict"><strong>stats_alns_dict</strong></a>(alns_dict)</dt><dd><tt>empirical&nbsp;score&nbsp;distribution&nbsp;for&nbsp;plotting&nbsp;(deprecated?)</tt></dd></dl>
