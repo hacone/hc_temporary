@@ -38,24 +38,28 @@ def chopx(reads):
         for h, s, t in hors:
             if t not in ["~", "@LO", "D39", "D28", "22U", "D1", "D12"]:
                 continue
+
             if t in ["@LO"] and h == lh: # special element to facilitate non-canonical units in layout!
                 ret[ai] += [-1]
-            elif t in ["D39", "D28"] and h == lh:
-                ret[ai] += [-5]
+            elif t == "D39" and h == lh:
+                ret[ai] += [-2]
+            elif t == "D28" and h == lh:
+                ret[ai] += [-3]
             elif t == "D1" and h == lh:
-                ret[ai] += [-11]
+                ret[ai] += [-4]
             elif t == "D12" and h == lh:
-                ret[ai] += [-10]
+                ret[ai] += [-5]
             elif t == "22U" and h == lh:
-                ret[ai] += [-11,-11]
+                ret[ai] += [-6,-6]
+
             elif t == "~" and h == lh:
                 ret[ai] += [h] # NOTE: positivity matters
             elif t == "~" and h in [lh + 10, lh + 11, lh + 12]:
-                ret[ai] += [-0.1, h]
+                ret[ai] += [-0.5, h]
             elif t == "~" and h in [lh + 21, lh + 22, lh + 23]:
-                ret[ai] += [-0.1, -0.1, h]
+                ret[ai] += [-0.5, -0.5, h]
             else:
-                ret += [[h]]
+                ret += [[h]] if t == "~" else [[-0.5]] # TODO logic!!
                 ai += 1
             lh = h + s
 
@@ -63,7 +67,7 @@ def chopx(reads):
         return [ l for l in ret if l ]
 
     # return with removing empty items
-    regs = { i : _chop(her.hors) for i, her in enumerate(reads) }
+    regs = { i : _chopx(her.hors) for i, her in enumerate(reads) }
     return { k : v for k, v in regs.items() if v }
 
 def var(reads, units = None, err_rate = 0.03, fq_upper_bound = 0.75):
@@ -129,10 +133,9 @@ class Alignment: # TODO: rename this!!
             """ bit array for a single array """
             l = arrs[i][ai]
             v = [ [0] * len(snvs) if h < 0 else vec(i, h) for h in l ]
-
             return np.array(v).reshape(len(l), len(snvs))
 
-        return { (i, ai) : _ba(self.hers, self.arrs, snvs, i, ai) for i, ai in regs } 
+        return { (i, ai) : _ba(i, ai) for i, ai in regs } 
 
     def mismatX(self, i, ai, j, aj, k, bits_dict):
         """ aux func returning stats of matches and mismatches
@@ -355,10 +358,10 @@ if __name__ == '__main__':
         assert args.outfile, "specify output file"
 
         hers = pickle.load(open(args.hors, "rb"))
-        alignment = Alignment(hers[:100])
+        alignment = Alignment(hers)
         store = alignment.get_all_vs_all_aln()
 
-        with open(outfile, "wb") as f:
+        with open(args.outfile, "wb") as f:
             pickle.dump(store, f)
         print("done.")
 
