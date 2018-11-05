@@ -3,13 +3,13 @@ from Alignment import *
 
 from scipy.stats import binom
 from collections import Counter
-import hashlib
 from collections import namedtuple
 import numpy as np
 import pickle
 from underscore import _ as us
 from EncodedRead import *
 from HOR_segregation import *
+from Alignment import *
 
 # I need total length for calc overlap length
 Layout = namedtuple("Layout", ("reads", "begin", "end"))
@@ -20,8 +20,7 @@ T_dag = 600 # disagree score threshold. alignments with scores below this are co
 
 # TODO: I'll get AlignmentStore as an input. check all the caller.
 # TODO: make this readable.
-#def iterative_layout(alns_dict, bits_dict, nodes, asm = None):
-def iterative_layout(alignmentstore, nodes):
+def iterative_layout(alignmentstore, nodes = None):
     """
         Perform iterative layout process and returns list of obtained layout.
         Alignments and other contexts are given as `alignmentstore`. Only `nodes` specified are used.
@@ -29,17 +28,15 @@ def iterative_layout(alignmentstore, nodes):
     """
 
     # TODO: this is for backwards compat.
-    asm = Alignment(alignmentstore.reads, alignmentstore.arrays, alignmentstore.variants)
-    alns_dict = ast.alignments
-    bits_dict = asm.bits
+    ast = Alignment(alignmentstore.reads, alignmentstore.arrays, alignmentstore.variants)
+    alns_dict = alignmentstore.alignments
+    bits_dict = ast.bits
+    remaining_nodes = nodes if nodes else alignmentstore.alignments.keys()
 
     result_layouts = [] # this accumulates the results.
-    n_iter = 0
 
-    while len(nodes) > 1:
-
-        n_iter += 1
-        print(f"\n{len(nodes)} nodes are to be layout. Layout No.{n_iter}.")
+    def one_layout(nodes):
+        """ generage a possible layout. """
 
         def valid_edges(nodes):
             """ return non-slippy, valid edges (alignments) among nodes. """
@@ -58,8 +55,9 @@ def iterative_layout(alignmentstore, nodes):
             return sorted(edges, key = lambda x: -x[4][0].score)
 
         edges = valid_edges(nodes)
+
         if not edges:
-            break
+            return None
 
         # TODO: maybe check for internal consistency, ... then final iterative assembly procedure.
         # TODO: assert the size of edges
@@ -75,17 +73,9 @@ def iterative_layout(alignmentstore, nodes):
         #print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True) ; print(seed_layout)
         next_e = [ e for e in edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
 
-        if next_e:
-            #print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
-            best = next_e[0][4][0]
-        else:
-            #print(f"\nNo initial extention: FINAL LAYOUT with {len(seed_layout.reads)} reads, {seed_layout.end - seed_layout.begin} units:")
-            #print(seed_layout)
-            result_layouts += [seed_layout]
-            nodes -= set(visited)
-            continue
+        #print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
 
-        while True:
+        while next_e:
 
             def align_to_current_layout(best, origin):
                 """ just returns the set of alignments from best edges to the current layout collectively. """
@@ -94,68 +84,78 @@ def iterative_layout(alignmentstore, nodes):
                     i, ai, li = best.j, best.aj, best.lj
                 else:
                     i, ai, li = best.i, best.ai, best.li
+                target = Layout(reads = [((i, ai), 0)], begin = 0, end = li)
                 return us([ k for k in range(seed_layout.begin - li + 2, seed_layout.end - 2 + 1) ]).chain() \
-                    .map(lambda k, *a: asm.calc_align_layout(seed_layout, Layout(reads = [((i, ai), 0)], begin = 0, end = li), k, asm.bits)) \
+                    .map(lambda k, *a: ast.calc_align_layout(seed_layout, target, k, ast.bits)) \
                     .filter(lambda al, *a: al.eff_ovlp > 4) \
                     .sortBy(lambda al, *a: -al.score).value()
 
             def admittable_pairwise_align(alns):
-                # like this
-                # if best_ext_aln.score > T_dag and (best_ext_aln.score - lo_alns[1].score) > T_gap:
-                return True
+                if len(alns) == 1:
+                    return True # TODO: can I do this?
+                return alns[0].score > T_dag and (alns[0].score - alns[1].score) > T_gap
 
-            lo_alns = align_to_current_layout(best, visited)
+            best = next_e[0][4][0]
+            alns = align_to_current_layout(best, visited)
 
-            best_ext_aln = lo_alns[0]
-            best_ext_i, best_ext_ai = best_ext_aln.l2.reads[0][0]
+            if not admittable_pairwise_align(alns):
+                next_e = next_e[1:]
+                continue
 
-            #print(f"\na read {best_ext_aln.l2.reads[0][0][0]} aligned to the current layout.\nscr\t  k\teol")
-            #print("\n".join([ f"{lo_aln.score}\t{lo_aln.k}\t{lo_aln.eff_ovlp}" for lo_aln in lo_alns[:3] ]))
-
-            if best_ext_aln.score > T_dag and (best_ext_aln.score - lo_alns[1].score) > T_gap:
-                # add new node into layout
-                visited += [(best_ext_i, best_ext_ai)]
-                seed_layout = Layout(
-                        reads = seed_layout.reads + [((best_ext_i, best_ext_ai), best_ext_aln.k)],
-                        begin = min(seed_layout.begin, best_ext_aln.k), end = max(seed_layout.end, best_ext_aln.k + ll))
-
-                #next_e = [ e for e in edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
-
-                # NOTE: this should be faster
-                next_e = next_e + [ e for e in edges if 
-                           (((e[4][0].i, e[4][0].ai) == (best_ext_i, best_ext_ai)) & ((e[4][0].j, e[4][0].aj) not in visited))
-                         | (((e[4][0].j, e[4][0].aj) == (best_ext_i, best_ext_ai)) & ((e[4][0].i, e[4][0].ai) not in visited))]
-                next_e = [ e for e in next_e if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
-
-                #print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True); print(seed_layout)
-                # layout_consensus(seed_layout) # TODO: temporary?
-
-                if next_e:
-                    #print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
-                    best = next_e[0][4][0]
-                else:
-                    break
+            if (best.i, best.ai) in visited:
+                j, aj, lj = best.j, best.aj, best.lj
             else:
-                #print(f"\nBad alignment; current layout has {len(seed_layout.reads)} reads:", flush = True)# ; print(seed_layout)
-                if len(next_e) > 1:
-                    next_e = next_e[1:]
-                    #print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
-                    best = next_e[0][4][0]
-                else:
-                    break
+                j, aj, lj = best.i, best.ai, best.li
+            print(".", end="", flush=True)
 
-        #print(f"\nNo additional extention: FINAL LAYOUT with {len(seed_layout.reads)} reads, {seed_layout.end - seed_layout.begin} units:")
-        result_layouts += [seed_layout]
-        #print(seed_layout)
-        #print_layout(seed_layout, bits_dict)
-        nodes -= set(visited)
+            # add new node into layout
+            visited += [(j, aj)]
+            seed_layout = Layout(
+                    reads = seed_layout.reads + [((j, aj), alns[0].k)],
+                    begin = min(seed_layout.begin, alns[0].k), end = max(seed_layout.end, alns[0].k + lj)) # TODO
 
-        # layout_consensus(seed_layout) # TODO: temporary?
-        seed_layout.describe(asm)
-        print_layout(seed_layout, asm.bits)
+            # update the set of extending edges
+            # this is a slower implementation
+            #next_e = [ e for e in edges if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
+            next_e = next_e + [ e for e in edges if 
+                       (((e[4][0].i, e[4][0].ai) == (j, aj)) & ((e[4][0].j, e[4][0].aj) not in visited))
+                     | (((e[4][0].j, e[4][0].aj) == (j, aj)) & ((e[4][0].i, e[4][0].ai) not in visited))]
+            next_e = [ e for e in next_e if bool((e[4][0].i, e[4][0].ai) in visited) ^ bool((e[4][0].j, e[4][0].aj) in visited) ]
+
+            #print(f"\ncurrent layout has {len(seed_layout.reads)} reads:", flush = True); print(seed_layout)
+            # layout_consensus(seed_layout) # TODO: temporary?
+            #print("nexts:"); print("\n".join([ f"{x[4][0]}" for x in next_e[:5] ]))
+
+        return dict(layout = seed_layout, remaining_nodes = nodes - set(visited))
+
+    n = 0
+    while len(remaining_nodes) > 1:
+        print(f"\n{len(remaining_nodes)} nodes remaining...") 
+        r = one_layout(remaining_nodes)
+        if not r:
+            break
+        result_layouts += [ r["layout"] ]
+        remaining_nodes = r["remaining_nodes"]
+
+        if len(r["layout"].reads) > 2:
+            print("\n", end="")
+            print_layout(r["layout"], bits_dict)
+        print(f"{sum([ len(l.reads) for l in result_layouts ])} nodes in layout.")
+        print(f"{sum([ l.end - l.begin for l in result_layouts ])} units long in total.")
+
 
     return result_layouts
 
+        #print(f"\nNo additional extention: FINAL LAYOUT with {len(seed_layout.reads)} reads, {seed_layout.end - seed_layout.begin} units:")
+        #print(seed_layout)
+        #print_layout(seed_layout, bits_dict)
+        #layout_consensus(seed_layout) # TODO: temporary?
+        #seed_layout.describe(asm)
+        #print_layout(seed_layout, asm.bits)
+
+
+
+# TODO: change signature to use alignmentstore obj
 def double_edge_component(alns_dict):
     """
     obtain so called slippy component, whose elements are connected by multi-edges.
@@ -636,39 +636,46 @@ def layout_to_json(alns_dict = None, ctx = None, layouts = None):
 if __name__ == '__main__':
 
     import argparse
-    parser = argparse.ArgumentParser(description='perform pair-wise alignment among HOR encoded reads on SNV data, again') # TODO: explain
+    parser = argparse.ArgumentParser(description='generate layout from alignment results.')
     parser.add_argument('action', metavar='action', type=str, help='action to perform: layout, ...')
-    parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads')
-    parser.add_argument('--alns', dest='alns', help='pickled alignments')
+    # parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads')
+    parser.add_argument('--alignments', dest='alns', help='pickled alignments')
     parser.add_argument('--layouts', dest='layouts', help='pickled layouts; it\'s your job to take care of consistency with alns...')
     args = parser.parse_args()
 
-
     if args.action == "layout":
 
-        assert args.hors, "need HOR-encoded reads"
-        assert args.alns, "need alignments"
-        hers = pickle.load(open(args.hors, "rb"))
-        assembly = Alignment(hers)
-        alns = pickle.load(open(args.alns, "rb"))
+        # assert args.hors, "need HOR-encoded reads"
+        # hers = pickle.load(open(args.hors, "rb"))
+        # assembly = Alignment(hers)
 
-        # TODO: check consistency here
+        assert args.alns, "need alignments"
+        alignments = pickle.load(open(args.alns, "rb"))
+        layouts = iterative_layout(alignments)
+        print(f"{len(layouts)} layouts found. done.")
+
+        # layout(alignments)
+
+        # TODO: deprecated
+        """
         if args.layouts:
             layouts = pickle.load(open(args.layouts, "rb"))
             layout(alns.alignments, ctx = assembly, layouts = layouts)
         else:
             layout(alns.alignments, ctx = assembly)
+        """
 
-    elif args.action == "layout_to_json":
-
-        assert args.hors, "need HOR-encoded reads"
-        assert args.alns, "need alignments"
-        assert args.layouts, "need layouts"
-        hers = pickle.load(open(args.hors, "rb"))
-        assembly = Alignment(hers)
-        alns = pickle.load(open(args.alns, "rb"))
-        layouts = pickle.load(open(args.layouts, "rb"))
-        layout_to_json(alns.alignments, ctx = assembly, layouts = layouts)
+        """
+        elif args.action == "layout_to_json":
+            assert args.hors, "need HOR-encoded reads"
+            assert args.alns, "need alignments"
+            assert args.layouts, "need layouts"
+            hers = pickle.load(open(args.hors, "rb"))
+            assembly = Alignment(hers)
+            alns = pickle.load(open(args.alns, "rb"))
+            layouts = pickle.load(open(args.layouts, "rb"))
+            layout_to_json(alns.alignments, ctx = assembly, layouts = layouts)
+        """
 
     else:
-        assert None, "invalid action."
+        assert False, "invalid action."
