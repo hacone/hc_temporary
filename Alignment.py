@@ -197,9 +197,13 @@ class Alignment: # TODO: rename this!!
 
         alns_dict = dict()
         n = 0
+
+        print(f"aligning for {len(targets)}")
+        print("[P]", end = "", flush = True)
         for i, ai in targets:
-            n += 1
-            print(f"aligning {i} - {ai}. {n} / {len(targets)}")
+            print(".", end = "", flush = True)
+            #n += 1
+            #print(f"aligning {i} - {ai}. {n} / {len(targets)}")
             alns_dict[(i, ai)] = dict()
             for j, aj in [ (j, aj) for j, aj in queries if not (j, aj) == (i, ai)]:
                 li, lj = bits_dict[(i, ai)].shape[0], bits_dict[(j, aj)].shape[0]
@@ -208,23 +212,26 @@ class Alignment: # TODO: rename this!!
                 alns = [ aln for aln in alns if aln.score > T_dag - 100 and aln.eff_ovlp > 4 ] # NOTE: threshold depends on scoring scheme.
                 if alns:
                     alns_dict[(i, ai)][(j, aj)] = sorted(alns, key = lambda x: -1 * x.score)
-            l = f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag -100 and aln.eff_ovlp > 4 ]) } targets found for saving. "
-            l += f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag and aln.eff_ovlp > 4 ]) } targets above T_dag = {T_dag}."
-            print(l, flush = True)
+            #l = f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag -100 and aln.eff_ovlp > 4 ]) } targets found for saving. "
+            #l += f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag and aln.eff_ovlp > 4 ]) } targets above T_dag = {T_dag}."
+            #print(l, flush = True)
 
         return alns_dict
 
-    def get_all_vs_all_aln(self):
+    def get_all_vs_all_aln(self, regs = None, variants = None):
         """ calculate all-vs-all alignments among reads(regions), returning dict of alns.
             parameters are default, induced from the contextual object. (cf. some_vs_some_alignment) """
-        # NOTE: I've already  initialized them?
-        # variants = var(self.hers)
-        # bits = self.get_bits_dict(snvs, self.longer_than(0))
-        variants, bits = self.variants, self.bits
+
+        regs = regs if regs else self.longer_than(6)
+
+        if variants:
+            bits = self.get_bits_dict(variants, regs)
+        else: 
+            variants = self.variants
+            bits = self.bits
 
         # NOTE: following 2 are equivalent
         # regs = [ (i, ai) for i, a in self.arrs.items() for ai, l in enumerate(a) if len(l) > 6 ]
-        regs = self.longer_than(6)
 
         return AlignmentStore(
             reads = self.hers,

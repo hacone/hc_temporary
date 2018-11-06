@@ -18,6 +18,52 @@ T_agr = 700 # agree score threshold. alignment with score above this can be ...
 T_gap = 100 # required score gap between best one vs 2nd best one.
 T_dag = 600 # disagree score threshold. alignments with scores below this are considered false.
 
+def read_cover(alignmentstore, radius = 20, thres = 650):
+    """ overlapping cover of reads to define locally valid SNVs.
+        returns :: [[reg]] """
+
+    ast = alignmentstore # alias
+    reads = ast.reads
+    all_nodes = set(ast.alignments.keys())
+    remaining_nodes = set(ast.alignments.keys())
+
+    def one_cover(centroid, nodes):
+        """ generage a possible cover. """
+
+        assert len(nodes) > 0, "calculating a cover for an empty set of nodes"
+
+        next_n = set([ (centroid, 0) ])
+        seen = set()
+
+        while len(next_n) > 0:
+            reg, k = next_n.pop()
+            seen |= set([reg])
+            alns = sorted(ast.alignments[reg].items(), key = lambda x: -x[1][0].score)[:5]
+
+            # print(f"seen = {len(seen)} : next_n = {len(next_n)} : k = {k}")
+
+            next_n |= set([ ((j, aj), k + aln[0].k) for (j, aj), aln in alns \
+                if (j, aj) not in seen and aln[0].score > thres and k + aln[0].k < radius and k + aln[0].k > -radius ])
+
+        return seen
+
+    result_covers = []
+    print(f"\n{len(remaining_nodes)} nodes remaining...") 
+    while len(remaining_nodes) > 1:
+        cent = remaining_nodes.pop()
+        s = one_cover(cent, all_nodes - set([cent]))
+        if not s:
+            break
+        remaining_nodes -= s
+        if len(s) > 9:
+            result_covers += [s]
+            print(f"\n{cent} covered with {len(s)} nodes; {len(remaining_nodes)} nodes remaining...")
+        else:
+            print(".", end="", flush=True)
+
+    print(f"{len(result_covers)} good covers found.")
+    return result_covers
+
 # TODO: I'll get AlignmentStore as an input. check all the caller.
 # TODO: make this readable.
 def iterative_layout(alignmentstore, nodes = None):
@@ -58,9 +104,6 @@ def iterative_layout(alignmentstore, nodes = None):
 
         if not edges:
             return None
-
-        # TODO: maybe check for internal consistency, ... then final iterative assembly procedure.
-        # TODO: assert the size of edges
 
         # make a seed
         best = edges[0][4][0]
@@ -650,9 +693,36 @@ if __name__ == '__main__':
         # assembly = Alignment(hers)
 
         assert args.alns, "need alignments"
-        alignments = pickle.load(open(args.alns, "rb"))
-        layouts = iterative_layout(alignments)
-        print(f"{len(layouts)} layouts found. done.")
+        ast = pickle.load(open(args.alns, "rb"))
+        context = Alignment(ast.reads, arrs = ast.arrays, variants = ast.variants)
+
+        # TODO: this is working well
+        #layouts = iterative_layout(alignments)
+        #print(f"{len(layouts)} layouts found. done.")
+
+        covers = read_cover(ast)
+
+        n = 0
+        for cover in [ c for c in covers if len(c) > 9 ]:
+
+            print(f"\n### {len(cover)} nodes in Cover {n} ###")
+            print(cover)
+
+            rds = [ ast.reads[i] for i in set([ ri for ri, rai in cover ]) ]
+            snvs = var(rds)
+            print(f"\n--- {len(snvs)} variants. ---")
+            print_snvs(snvs)
+
+            local_ast = context.get_all_vs_all_aln(cover, snvs)
+            los = iterative_layout(local_ast)
+            print(f"\n--- inside {len(los)} layouts for Cover {n} ---")
+            for il, lo in enumerate(los):
+                print("\n" + "\n".join([ f"{n}\t{il}\t{i}:{ai}\t{k}" for (i, ai), k in lo.reads ]))
+            n += 1
+
+            #cover_local_ctx =  Alignment(ast.reads, arrs = ast.arrays, variants = snvs)
+
+            # Alignment(reads = [ alignments.reads[i] for i in set() # NOTE: do not spawn new variatble space!!!!!
 
         # layout(alignments)
 
