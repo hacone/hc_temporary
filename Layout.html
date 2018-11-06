@@ -1,0 +1,105 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html><head><title>Python: module Layout</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+</head><body bgcolor="#f0f0f8">
+
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="heading">
+<tr bgcolor="#7799ee">
+<td valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial">&nbsp;<br><big><big><strong>Layout</strong></big></big></font></td
+><td align=right valign=bottom
+><font color="#ffffff" face="helvetica, arial"><a href=".">index</a><br><a href="file:/home/hacone/Source/human_centromeres/Layout.py">/home/hacone/Source/human_centromeres/Layout.py</a></font></td></tr></table>
+    <p><tt>#&nbsp;Generates&nbsp;and&nbsp;refines&nbsp;layouts&nbsp;of&nbsp;hor&nbsp;encoded&nbsp;reads.</tt></p>
+<p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#aa55cc">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Modules</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#aa55cc"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><table width="100%" summary="list"><tr><td width="25%" valign=top><a href="hashlib.html">hashlib</a><br>
+<a href="numpy.html">numpy</a><br>
+</td><td width="25%" valign=top><a href="os.html">os</a><br>
+<a href="pickle.html">pickle</a><br>
+</td><td width="25%" valign=top><a href="pysam.html">pysam</a><br>
+<a href="re.html">re</a><br>
+</td><td width="25%" valign=top><a href="svgwrite.html">svgwrite</a><br>
+<a href="sys.html">sys</a><br>
+</td></tr></table></td></tr></table><p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#ee77aa">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Classes</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#ee77aa"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><dl>
+<dt><font face="helvetica, arial"><a href="builtins.html#object">builtins.object</a>
+</font></dt><dd>
+<dl>
+<dt><font face="helvetica, arial"><a href="Layout.html#Layout">Layout</a>
+</font></dt></dl>
+</dd>
+</dl>
+ <p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#ffc8d8">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#000000" face="helvetica, arial"><a name="Layout">class <strong>Layout</strong></a>(<a href="builtins.html#object">builtins.object</a>)</font></td></tr>
+    
+<tr bgcolor="#ffc8d8"><td rowspan=2><tt>&nbsp;&nbsp;&nbsp;</tt></td>
+<td colspan=2><tt>The&nbsp;layout&nbsp;is&nbsp;essentially&nbsp;a&nbsp;set&nbsp;of&nbsp;reads&nbsp;with&nbsp;their&nbsp;relative&nbsp;configurations&nbsp;specified.<br>
+Reads&nbsp;are&nbsp;represented&nbsp;as&nbsp;((rid,&nbsp;aid),&nbsp;rpos)&nbsp;tuple,&nbsp;so&nbsp;the&nbsp;layout&nbsp;must&nbsp;point&nbsp;to&nbsp;the&nbsp;context&nbsp;where&nbsp;it&nbsp;was&nbsp;defined.<br>&nbsp;</tt></td></tr>
+<tr><td>&nbsp;</td>
+<td width="100%">Methods defined here:<br>
+<dl><dt><a name="Layout-__init__"><strong>__init__</strong></a>(self, reads=None, begin=None, end=None)</dt><dd><tt>Initialize&nbsp;self.&nbsp;&nbsp;See&nbsp;help(type(self))&nbsp;for&nbsp;accurate&nbsp;signature.</tt></dd></dl>
+
+<dl><dt><a name="Layout-define_ends_variants"><strong>define_ends_variants</strong></a>(self, ctx, plusend=True)</dt><dd><tt>returns&nbsp;variants&nbsp;locally-defined&nbsp;at&nbsp;ends&nbsp;of&nbsp;the&nbsp;layout</tt></dd></dl>
+
+<dl><dt><a name="Layout-define_local_variants"><strong>define_local_variants</strong></a>(self, ctx)</dt><dd><tt>returns&nbsp;layout-wide&nbsp;locally-defined&nbsp;variants.</tt></dd></dl>
+
+<dl><dt><a name="Layout-describe"><strong>describe</strong></a>(self, ctx)</dt><dd><tt>describe&nbsp;layout's&nbsp;consistency&nbsp;(stability&nbsp;with&nbsp;local&nbsp;mask?).&nbsp;This&nbsp;should&nbsp;work&nbsp;fine&nbsp;for&nbsp;medium-size&nbsp;layout.</tt></dd></dl>
+
+<dl><dt><a name="Layout-get_consensus"><strong>get_consensus</strong></a>(self, ctx)</dt><dd><tt>construct&nbsp;a&nbsp;consensus&nbsp;read&nbsp;out&nbsp;of&nbsp;a&nbsp;layout&nbsp;/&nbsp;compute&nbsp;minimal-mismatches&nbsp;to&nbsp;evaluate&nbsp;layout<br>
+returns&nbsp;a&nbsp;new&nbsp;HOR&nbsp;encoded&nbsp;read&nbsp;and&nbsp;an&nbsp;associated&nbsp;array.</tt></dd></dl>
+
+<dl><dt><a name="Layout-prune"><strong>prune</strong></a>(self, ctx)</dt><dd><tt>remove&nbsp;any&nbsp;reads&nbsp;slippery&nbsp;w.r.t.&nbsp;consensus.</tt></dd></dl>
+
+<hr>
+Data descriptors defined here:<br>
+<dl><dt><strong>__dict__</strong></dt>
+<dd><tt>dictionary&nbsp;for&nbsp;instance&nbsp;variables&nbsp;(if&nbsp;defined)</tt></dd>
+</dl>
+<dl><dt><strong>__weakref__</strong></dt>
+<dd><tt>list&nbsp;of&nbsp;weak&nbsp;references&nbsp;to&nbsp;the&nbsp;object&nbsp;(if&nbsp;defined)</tt></dd>
+</dl>
+</td></tr></table></td></tr></table><p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#eeaa77">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Functions</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#eeaa77"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><dl><dt><a name="-double_edge_component"><strong>double_edge_component</strong></a>(alns_dict)</dt><dd><tt>obtain&nbsp;so&nbsp;called&nbsp;slippy&nbsp;component,&nbsp;whose&nbsp;elements&nbsp;are&nbsp;connected&nbsp;by&nbsp;multi-edges.</tt></dd></dl>
+ <dl><dt><a name="-iterative_layout"><strong>iterative_layout</strong></a>(alignmentstore, nodes=None)</dt><dd><tt>Perform&nbsp;iterative&nbsp;layout&nbsp;process&nbsp;and&nbsp;returns&nbsp;list&nbsp;of&nbsp;obtained&nbsp;layout.<br>
+Alignments&nbsp;and&nbsp;other&nbsp;contexts&nbsp;are&nbsp;given&nbsp;as&nbsp;`alignmentstore`.&nbsp;Only&nbsp;`nodes`&nbsp;specified&nbsp;are&nbsp;used.<br>
+nodes&nbsp;::&nbsp;[(i,&nbsp;ai)]</tt></dd></dl>
+ <dl><dt><a name="-layout"><strong>layout</strong></a>(alns_dict=None, ctx=None, layouts=None)</dt><dd><tt>implementing&nbsp;layout&nbsp;idea</tt></dd></dl>
+ <dl><dt><a name="-layout_to_json"><strong>layout_to_json</strong></a>(alns_dict=None, ctx=None, layouts=None)</dt><dd><tt>converting&nbsp;the&nbsp;layout&nbsp;pickle&nbsp;into&nbsp;json;&nbsp;temporary</tt></dd></dl>
+ <dl><dt><a name="-print_layout"><strong>print_layout</strong></a>(layout, bits_dict)</dt></dl>
+</td></tr></table><p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#55aa55">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Data</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#55aa55"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><strong>T_agr</strong> = 700<br>
+<strong>T_dag</strong> = 600<br>
+<strong>T_gap</strong> = 100<br>
+<strong>binom</strong> = &lt;scipy.stats._discrete_distns.binom_gen object&gt;<br>
+<strong>l</strong> = array(['horID_0.mon_0', 'horID_0.mon_1', 'horID_....mon_0',
+       'horID_121.mon_1'], dtype='&lt;U20')<br>
+<strong>mon_to_id</strong> = {'horID_0.mon_0': 0, 'horID_0.mon_1': 1, 'horID_0.mon_2': 2, 'horID_0.mon_5': 3, 'horID_10.mon_0': 41, 'horID_10.mon_2': 42, 'horID_10.mon_3': 43, 'horID_10.mon_4': 44, 'horID_10.mon_5': 45, 'horID_101.mon_0': 489, ...}<br>
+<strong>nmons</strong> = 562<br>
+<strong>us</strong> = &lt;Underscore Object&gt;</td></tr></table>
+</body></html>
