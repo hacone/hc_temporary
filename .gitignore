@@ -16,7 +16,7 @@
 *.ser
 *.svg
 *.png
-*.tmp
+*.tmp*
 *.swp
 *.tgz
 *.pickle
