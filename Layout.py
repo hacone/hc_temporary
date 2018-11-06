@@ -55,7 +55,7 @@ def read_cover(alignmentstore, radius = 20, thres = 650):
         if not s:
             break
         remaining_nodes -= s
-        if len(s) > 9:
+        if len(s) > 0:
             result_covers += [s]
             print(f"\n{cent} covered with {len(s)} nodes; {len(remaining_nodes)} nodes remaining...")
         else:
@@ -703,6 +703,12 @@ if __name__ == '__main__':
         covers = read_cover(ast)
 
         n = 0
+        layouts = []
+
+        fluct = set([ r for c in covers for r in c if len(c) <= 9 ])
+
+        print(f"{len(fluct)} reads in fluctured covers.")
+
         for cover in [ c for c in covers if len(c) > 9 ]:
 
             print(f"\n### {len(cover)} nodes in Cover {n} ###")
@@ -713,16 +719,21 @@ if __name__ == '__main__':
             print(f"\n--- {len(snvs)} variants. ---")
             print_snvs(snvs)
 
-            local_ast = context.get_all_vs_all_aln(cover, snvs)
+            local_ast = context.get_all_vs_all_aln(cover | fluct, snvs)
             los = iterative_layout(local_ast)
             print(f"\n--- inside {len(los)} layouts for Cover {n} ---")
             for il, lo in enumerate(los):
                 print("\n" + "\n".join([ f"{n}\t{il}\t{i}:{ai}\t{k}" for (i, ai), k in lo.reads ]))
+
             n += 1
+            layouts += los
 
             #cover_local_ctx =  Alignment(ast.reads, arrs = ast.arrays, variants = snvs)
 
             # Alignment(reads = [ alignments.reads[i] for i in set() # NOTE: do not spawn new variatble space!!!!!
+
+        with open("layouts-for-covers.pickle", "wb") as f:
+            pickle.dump(layouts, f)
 
         # layout(alignments)
 
