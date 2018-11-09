@@ -12,7 +12,7 @@ from HOR_segregation import *
 from Alignment import *
 
 # I need total length for calc overlap length
-Layout = namedtuple("Layout", ("reads", "begin", "end"))
+# Layout = namedtuple("Layout", ("reads", "begin", "end"))
 
 T_agr = 700 # agree score threshold. alignment with score above this can be ...
 T_gap = 100 # required score gap between best one vs 2nd best one.
@@ -769,20 +769,54 @@ if __name__ == '__main__':
             cand_offset = Counter([ kj - ki for ri, ki in l.reads for rj, kj in m.reads if ri == rj ])
             if cand_offset:
                 nmatch = cand_offset.most_common(1)[0][1]
+                # TODO: you can't remove if two are the same !!!
                 return  ([i] if len(l.reads) == nmatch else []) + ([j] if len(m.reads) == nmatch else [])
             else:
                 return []
 
+        def enrich(layouts):
+            """ sort out the set of leyouts as follows; pick the longest layout, check if it covers others, then merge them into it. """
+            layouts = sorted(layouts, key = lambda x: (x.begin - x.end))
+            result_layouts = []
+            for i, l in enumerate(layouts[:-1]):
+                cl = l # current layout
+
+                for m in layouts[i+1:]:
+                    cand_offset = Counter([ kj - ki for ri, ki in l.reads for rj, kj in m.reads if ri == rj ]).most_common(10)
+                    if len(cand_offset) == 1: # NOTE: if no evident conflict
+                        if cand_offset[0][1] > 1: # NOTE: if supported by at least two reads
+                            offset = cand_offset[0][0]
+                            if l.begin <= m.begin-offset and m.end-offset <= l.end:
+                                cl = Layout(reads = cl.reads + [ ((mi, mai), mk - offset) for (mi, mai), mk in m.reads ], begin = cl.begin, end = cl.end)
+
+                cl = Layout(reads = list(set(cl.reads)), begin = cl.begin, end = cl.end)
+                print(f"{i} {len(l.reads)} => {len(cl.reads)}", flush=True)
+                result_layouts += [cl]
+
+            return result_layouts
+
+        # first iter
         non_essentials = { n for lsn in [ submerge(l, m, i, j) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i < j ] for n in lsn }
-        print(f"{len(non_essentials)} non_essentials &")
-
         essentials = [ i for i in range(len(layouts)) if i not in non_essentials ]
+        essentials = sorted(essentials, key = lambda i: (layouts[i].begin - layouts[i].end))
+        print(f"{len(non_essentials)} non_essentials &")
         print(f"{len(essentials)} essentials found...", flush = True)
+        enriched = enrich([ layouts[i] for i in essentials ])
 
-        t = [ merge(layouts[i], layouts[j], i, j) for i in essentials for j in essentials if i != j ]
+        layouts = enriched
+        # second iter
+        non_essentials = { n for lsn in [ submerge(l, m, i, j) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i < j ] for n in lsn }
+        essentials = [ i for i in range(len(layouts)) if i not in non_essentials ]
+        essentials = sorted(essentials, key = lambda i: (layouts[i].begin - layouts[i].end))
+        print(f"{len(non_essentials)} non_essentials &")
+        print(f"{len(essentials)} essentials found...", flush = True)
+        enriched = enrich([ layouts[i] for i in essentials ])
 
+
+        t = [ merge(l, m, i, j) for i, l in enumerate(enriched) for j, m in enumerate(enriched) if i != j]
+
+        # t = [ merge(layouts[i], layouts[j], i, j) for i in essentials for j in essentials if i != j ]
         # t = [ (i, j, merge(l, m, i, j)) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i < j ]
-
         #for i, j, c in t:
         #    print(f"{i}\t{j}\t{c.most_common(10)}")
 
