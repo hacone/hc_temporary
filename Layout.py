@@ -764,15 +764,24 @@ if __name__ == '__main__':
             return cand_offset
             # print(cand_offset.most_common())
 
-        def submerge(l, m, i, j):
-            """ returns idx if it's for a non-essential layout contained in another """
-            cand_offset = Counter([ kj - ki for ri, ki in l.reads for rj, kj in m.reads if ri == rj ])
-            if cand_offset:
-                nmatch = cand_offset.most_common(1)[0][1]
-                # TODO: you can't remove if two are the same !!!
-                return  ([i] if len(l.reads) == nmatch else []) + ([j] if len(m.reads) == nmatch else [])
-            else:
-                return []
+        def ovlp(l, m): 
+            return Counter([ kj - ki for ri, ki in l.reads for rj, kj in m.reads if ri == rj ]).most_common(10)
+
+        def filter_non_essentials(layouts):
+            """ returns only essential layouts, which are not contained in another. """
+            non_essentials = set()
+            for i, j, l, m in [ (i, j, l, m) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i < j ]:
+                cand_offset = ovlp(l, m)
+                if not cand_offset:
+                    continue
+                nmatch = cand_offset[0][1]
+                if len(l.reads) == nmatch and len(m.reads) == nmatch:
+                    non_essentials |= set([j])
+                elif len(l.reads) == nmatch:
+                    non_essentials |= set([i])
+                elif len(m.reads) == nmatch:
+                    non_essentials |= set([j])
+            return [ l for i, l in enumerate(layouts) if i not in non_essentials ]
 
         def enrich(layouts):
             """ sort out the set of leyouts as follows; pick the longest layout, check if it covers others, then merge them into it. """
@@ -795,25 +804,17 @@ if __name__ == '__main__':
 
             return result_layouts
 
+        print(f"From {len(layouts)} layouts...")
         # first iter
-        non_essentials = { n for lsn in [ submerge(l, m, i, j) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i < j ] for n in lsn }
-        essentials = [ i for i in range(len(layouts)) if i not in non_essentials ]
-        essentials = sorted(essentials, key = lambda i: (layouts[i].begin - layouts[i].end))
-        print(f"{len(non_essentials)} non_essentials &")
+        essentials = sorted(filter_non_essentials(layouts), key = lambda l: l.begin - l.end)
         print(f"{len(essentials)} essentials found...", flush = True)
-        enriched = enrich([ layouts[i] for i in essentials ])
-
-        layouts = enriched
+        layouts = enrich(essentials)
         # second iter
-        non_essentials = { n for lsn in [ submerge(l, m, i, j) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i < j ] for n in lsn }
-        essentials = [ i for i in range(len(layouts)) if i not in non_essentials ]
-        essentials = sorted(essentials, key = lambda i: (layouts[i].begin - layouts[i].end))
-        print(f"{len(non_essentials)} non_essentials &")
+        essentials = sorted(filter_non_essentials(layouts), key = lambda l: l.begin - l.end)
         print(f"{len(essentials)} essentials found...", flush = True)
-        enriched = enrich([ layouts[i] for i in essentials ])
+        layouts = enrich(essentials)
 
-
-        t = [ merge(l, m, i, j) for i, l in enumerate(enriched) for j, m in enumerate(enriched) if i != j]
+        t = [ merge(l, m, i, j) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i != j]
 
         # t = [ merge(layouts[i], layouts[j], i, j) for i in essentials for j in essentials if i != j ]
         # t = [ (i, j, merge(l, m, i, j)) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i < j ]
