@@ -318,7 +318,7 @@ class Layout:
 
     def prune(self, ctx):
 
-        """ remove any reads slippery w.r.t. consensus. """
+        """ remove any reads slippery w.r.t. consensus, under layout-local variants definition """
         # rd = ((rid, aid), rpos)
         def leave_one_out_consensus(rd):
             reads_except_me = [ r for r in self.reads if r != rd ]
@@ -786,35 +786,48 @@ if __name__ == '__main__':
         def enrich(layouts):
             """ sort out the set of leyouts as follows; pick the longest layout, check if it covers others, then merge them into it. """
             layouts = sorted(layouts, key = lambda x: (x.begin - x.end))
-            result_layouts = []
+            result_layouts = [layouts[-1]]
             for i, l in enumerate(layouts[:-1]):
                 cl = l # current layout
 
                 for m in layouts[i+1:]:
                     cand_offset = Counter([ kj - ki for ri, ki in l.reads for rj, kj in m.reads if ri == rj ]).most_common(10)
                     if len(cand_offset) == 1: # NOTE: if no evident conflict
-                        if cand_offset[0][1] > 1: # NOTE: if supported by at least two reads
+                        #if cand_offset[0][1] > 1: # NOTE: if supported by at least two reads
+                        if True: 
                             offset = cand_offset[0][0]
-                            if l.begin <= m.begin-offset and m.end-offset <= l.end:
-                                cl = Layout(reads = cl.reads + [ ((mi, mai), mk - offset) for (mi, mai), mk in m.reads ], begin = cl.begin, end = cl.end)
+                            # if l.begin <= m.begin-offset and m.end-offset <= l.end:
+                            cl = Layout(reads = cl.reads + [ ((mi, mai), mk - offset) for (mi, mai), mk in m.reads ],
+                                    begin = min(cl.begin, m.begin-offset),
+                                    end = max(cl.end, m.end-offset))
 
                 cl = Layout(reads = list(set(cl.reads)), begin = cl.begin, end = cl.end)
-                print(f"{i} {len(l.reads)} => {len(cl.reads)}", flush=True)
+                # print(f"{i} {len(l.reads)} => {len(cl.reads)}", flush=True)
                 result_layouts += [cl]
 
             return result_layouts
 
         print(f"From {len(layouts)} layouts...")
-        # first iter
-        essentials = sorted(filter_non_essentials(layouts), key = lambda l: l.begin - l.end)
-        print(f"{len(essentials)} essentials found...", flush = True)
-        layouts = enrich(essentials)
-        # second iter
-        essentials = sorted(filter_non_essentials(layouts), key = lambda l: l.begin - l.end)
-        print(f"{len(essentials)} essentials found...", flush = True)
-        layouts = enrich(essentials)
 
-        t = [ merge(l, m, i, j) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i != j]
+        # first iter
+        n = 100000
+        while len(layouts) < n:
+            n = len(layouts)
+            essentials = sorted(filter_non_essentials(layouts), key = lambda l: l.begin - l.end)
+            print(f"{len(essentials)} essentials found...", flush = True)
+            layouts = enrich(essentials)
+
+        print("\nLayouts:")
+        print("i\tnreads\tbegin\tend\tlength")
+        print("\n".join([ f"{i}\t{len(l.reads)}\t{l.begin}\t{l.end}\t{l.end-l.begin}" for i, l in enumerate(layouts) ]))
+
+        print("\nIncidence:")
+        t = [ (i, j, ovlp(l, m)) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i < j ]
+        t = sorted(t, key = lambda x: -x[2][0][1] if x[2] else 0)
+
+        print("i\tj\tnreads_i\tnreads_j\tbest_shared\tbest_offset\tsb_shared\tsb_offset\tratio_1_2")
+        print("\n".join([ f"{i}\t{j}\t{len(layouts[i].reads)}\t{len(layouts[j].reads)}\t{o[0][1]}\t{o[0][0]}" +\
+                (f"\t{o[1][1]}\t{o[1][0]}\t{o[0][1]/(o[0][1]+o[1][1]):.3f}" if len(o) > 1 else "\t*\t*") for i, j, o in t if o ]))
 
         # t = [ merge(layouts[i], layouts[j], i, j) for i in essentials for j in essentials if i != j ]
         # t = [ (i, j, merge(l, m, i, j)) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i < j ]
