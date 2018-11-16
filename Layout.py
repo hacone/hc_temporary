@@ -741,7 +741,7 @@ if __name__ == '__main__':
             layouts = pickle.load(f)
 
         # print(f"{len(layouts)} layouts loaded.")
-        print("l\tl.nr\tl.b\tl.e\tl.l\t.\tm\tm.nr\tm.b\tm.e\tm.l\tstatus\trext\tfext\toffsets")
+        # print("l\tl.nr\tl.b\tl.e\tl.l\t.\tm\tm.nr\tm.b\tm.e\tm.l\tstatus\trext\tfext\toffsets")
 
         def merge(l, m, i, j):
             """ tries to merge two layouts. ?? """
@@ -767,7 +767,7 @@ if __name__ == '__main__':
         def ovlp(l, m): 
             return Counter([ kj - ki for ri, ki in l.reads for rj, kj in m.reads if ri == rj ]).most_common(10)
 
-        def filter_non_essentials(layouts):
+        def filter_non_essentials(layouts, min_ratio = 1.0):
             """ returns only essential layouts, which are not contained in another. """
             non_essentials = set()
             for i, j, l, m in [ (i, j, l, m) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i < j ]:
@@ -775,31 +775,39 @@ if __name__ == '__main__':
                 if not cand_offset:
                     continue
                 nmatch = cand_offset[0][1]
-                if len(l.reads) == nmatch and len(m.reads) == nmatch:
-                    non_essentials |= set([j])
+                if nmatch / len(l.reads) >= min_ratio and nmatch / len(m.reads) >= min_ratio:
+                    if len(l.reads) > len(m.reads): # take larger
+                        non_essentials |= set([j])
+                    else:
+                        non_essentials |= set([i])
                 elif len(l.reads) == nmatch:
                     non_essentials |= set([i])
                 elif len(m.reads) == nmatch:
                     non_essentials |= set([j])
+
             return [ l for i, l in enumerate(layouts) if i not in non_essentials ]
 
-        def enrich(layouts):
+        def enrich(layouts, min_ratio = 1.0):
             """ sort out the set of leyouts as follows; pick the longest layout, check if it covers others, then merge them into it. """
             layouts = sorted(layouts, key = lambda x: (x.begin - x.end))
-            result_layouts = [layouts[-1]]
-            for i, l in enumerate(layouts[:-1]):
-                cl = l # current layout
+            result_layouts = []
 
-                for m in layouts[i+1:]:
+            for i, l in enumerate(layouts):
+                cl = l # current layout
+                #begin, end = l.begin, l.end
+                #other = Counter()
+                for j, m in [ (j, m) for j, m in enumerate(layouts) if not i == j ]:
                     cand_offset = Counter([ kj - ki for ri, ki in l.reads for rj, kj in m.reads if ri == rj ]).most_common(10)
-                    if len(cand_offset) == 1: # NOTE: if no evident conflict
-                        #if cand_offset[0][1] > 1: # NOTE: if supported by at least two reads
-                        if True: 
-                            offset = cand_offset[0][0]
-                            # if l.begin <= m.begin-offset and m.end-offset <= l.end:
-                            cl = Layout(reads = cl.reads + [ ((mi, mai), mk - offset) for (mi, mai), mk in m.reads ],
-                                    begin = min(cl.begin, m.begin-offset),
-                                    end = max(cl.end, m.end-offset))
+                    if len(cand_offset) == 1 \
+                       or (len(cand_offset) > 1 and (cand_offset[0][1] / (cand_offset[0][1] + cand_offset[1][1])) > min_ratio):
+                        offset = cand_offset[0][0]
+                        #other += Counter([ ((mi, mai), mk - offset) for (mi, mai), mk in m.reads ]) 
+                        #begin = min(begin, m.begin-offset)
+                        #end = max(end, m.end-offset)
+                        cl = Layout(reads = cl.reads + [ ((mi, mai), mk - offset) for (mi, mai), mk in m.reads
+                            if (mi, mai) not in [ clr for clr, clo in cl.reads] ],
+                                begin = min(cl.begin, m.begin-offset),
+                                end = max(cl.end, m.end-offset))
 
                 cl = Layout(reads = list(set(cl.reads)), begin = cl.begin, end = cl.end)
                 # print(f"{i} {len(l.reads)} => {len(cl.reads)}", flush=True)
@@ -810,14 +818,16 @@ if __name__ == '__main__':
         print(f"From {len(layouts)} layouts...")
 
         # first iter
+        essentials = sorted(filter_non_essentials(layouts), key = lambda l: l.begin - l.end)
         n = 100000
-        while len(layouts) < n:
-            n = len(layouts)
-            essentials = sorted(filter_non_essentials(layouts), key = lambda l: l.begin - l.end)
+        while len(essentials) < n:
+            n = len(essentials)
+            layouts = enrich(essentials, 0.9)
+            essentials = sorted(filter_non_essentials(layouts, 0.5), key = lambda l: l.begin - l.end)
             print(f"{len(essentials)} essentials found...", flush = True)
-            layouts = enrich(essentials)
 
-        print("\nLayouts:")
+        layouts = essentials
+        print("\nEssential Layouts:")
         print("i\tnreads\tbegin\tend\tlength")
         print("\n".join([ f"{i}\t{len(l.reads)}\t{l.begin}\t{l.end}\t{l.end-l.begin}" for i, l in enumerate(layouts) ]))
 
