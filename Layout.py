@@ -1,4 +1,3 @@
-# Generates and refines layouts of hor encoded reads.
 from Alignment import *
 
 from scipy.stats import binom
@@ -9,7 +8,11 @@ import pickle
 from underscore import _ as us
 from EncodedRead import *
 from HOR_segregation import *
-from Alignment import *
+
+import seaborn as sns
+import pandas as pd
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 # I need total length for calc overlap length
 # Layout = namedtuple("Layout", ("reads", "begin", "end"))
@@ -154,8 +157,9 @@ def iterative_layout(alignmentstore, nodes = None):
             # add new node into layout
             visited += [(j, aj)]
             seed_layout = Layout(
+                    variants = alignmentstore.variants,
                     reads = seed_layout.reads + [((j, aj), alns[0].k)],
-                    begin = min(seed_layout.begin, alns[0].k), end = max(seed_layout.end, alns[0].k + lj)) # TODO
+                    begin = min(seed_layout.begin, alns[0].k), end = max(seed_layout.end, alns[0].k + lj))
 
             # update the set of extending edges
             # this is a slower implementation
@@ -233,13 +237,13 @@ def double_edge_component(alns_dict):
 
 class Layout:
     """ The layout is essentially a set of reads with their relative configurations specified.
-        Reads are represented as ((rid, aid), rpos) tuple, so the layout must point to the context where it was defined. """
+        Reads are represented as ((rid, aid), rpos) tuple, so the layout must point to the context where it was defined.
+        Also, it would retain relevant variants definition. """
 
-    def __init__(self, reads = None, begin = None, end = None):
-        # TODO: check the consistency of ctx
-        #self.ctx_hash = ctx_hash
+    def __init__(self, reads = None, variants = None, begin = None, end = None):
         self.reads = reads
-        self.begin = begin # NOTE: could be calculated on the fly?
+        self.begin = begin
+        self.variants = variants,
         self.end = end
         self.consensus = None # lazy consensus
 
@@ -282,7 +286,7 @@ class Layout:
         print(f"consensus taken: {len(self.reads)}\t{tot_units} => {len_cons}\t{nm}\t{nm/(tot_units-len_cons):.2f}")
         
         self.consensus = HOR_Read(
-            name = "anything", length = (le-lb)*12*171, ori = "+",
+            name = "consensus", length = (le-lb)*12*171, ori = "+",
             mons = [ AssignedMonomer(begin = 12*171*i + 171*ki, end = 12*171*i+171, ori = "+",
                 monomer = Monomer(name = "*", snvs = [ SNV(pos = p, base = b) for (p, b), fq in cons_snvs[i+lb][ki].items() if fq/depth[i+lb] > min_variant_freq ])) # TODO: fix threshold
                 for i in range(le-lb) for ki in range(12) ],
@@ -360,7 +364,6 @@ class Layout:
         pruned_layout = Layout(goods, b, e)
         return pruned_layout
 
-
     def describe(self, ctx):
         """ describe layout's consistency (stability with local mask?). This should work fine for medium-size layout. """
 
@@ -374,6 +377,7 @@ class Layout:
         l0 = layout_local_bits_dict[regs[0]].shape[0] # layout's length
         print("The structure of the layout:")
         print(newpool.hers[0].hors)
+
 
         def er_to_svs_dp(asm, i, ai, bd):
             # encoded read to self-vs-self dot plot in hor resolution, given snv mask.
@@ -427,6 +431,68 @@ class Layout:
                 print(f"\nScore Gap = {(alns[0].score - 0):.1f} - PASS (ONLY_ALN)")
             if alns:
                 print_align(alns[0], layout_local_bits_dict)
+
+    def visualize(self, context, variants = None, filename = "heatmap.png"):
+        """
+        fully visualize the layout, using leave-one-out consensus vs 
+        There can be two modes: to use the same variants definition for all comparison (when variants are specified),
+        or to use specialized variants definition for each read (when variants are not specified).
+        Returns: len(consensus) * sum(len(reads)) matrix with [0,1] elems, which will then be plotted anyhow.
+        """
+
+        def dotplot(i, ai, j, aj, b):
+            """ returns dotplot matrix for the two reads. Maybe useful in other places? """
+            mi, mj = b[(i, ai)], b[(j, aj)]
+            li, lj = mi.shape[0], mj.shape[0]
+            print((li, lj))
+
+            def _s(x, y):
+                """ helper func to calc score aligning a unit to unit """
+                mx, my = mi[x,:], mj[y,:]
+                mch = np.sum(np.multiply(mx, my) == 1)
+                n11 = np.sum((mx + my) == 2)
+                n00 = np.sum((mx + my) == -2)
+                mis = np.sum(np.multiply(mx, my) == -1)
+                assert mch == n11 + n00, "matrix calculation wrong"
+                return (n11 + context.c_00 * n00) / (0.01 + n11 + context.c_00 * n00 + context.c_ms * mis)
+
+            # return [ (x, y, _s(x, y)) for x in range(li) for y in range(lj) ]
+            # return np.array([ _s(x, y) for x in range(li) for y in range(lj) ]).reshape(li, lj)
+            return [ _s(x, y) for y in range(lj)  for x in range(li) ]
+
+        def leave_one_out_consensus(rd): # ?? NOTE: what if leaving one divide the layout??
+            reads_except_me = [ r for r in self.reads if r != rd ]
+            b = min([ rpos for (rid, aid), rpos in reads_except_me ])
+            e = max([ rpos + len(context.arrs[rid][aid]) for (rid, aid), rpos in reads_except_me ])
+            loo_layout = Layout(reads = reads_except_me, begin = b, end = e)
+            loo_consensus = loo_layout.get_consensus(context)
+            return loo_consensus
+
+        variants = variants if variants else context.variants
+
+        dotplot_data = []
+
+        for (ri, rai), k in self.reads:
+            read = context.hers[ri]
+            aln = Alignment(hers = [leave_one_out_consensus(read), read], variants = variants)
+
+            xi = len(aln.bits[(0,0)][:,0])
+            ast = aln.get_all_vs_all_aln() # TODO: maybe this is not enough
+            loo_bits = aln.bits
+            for (j, aj), alns in ast.alignments[(0,0)].items():
+                dotplot_data += dotplot(0, 0, j, aj, loo_bits)
+            dotplot_data += [ 1.0 for x in range(xi) ]
+
+
+        n = len(dotplot_data)
+        yi = int(n/xi)
+        print(np.array(dotplot_data).reshape(yi, xi))
+        plt.figure(figsize=(yi/4, xi/4))
+        sns.heatmap(np.array(dotplot_data).reshape(yi, xi).transpose(), cmap="Blues")
+        plt.savefig(filename)
+        plt.close('all')
+
+                
 
 
 # TODO: def plot_scoreGap_distr(), or any other equivalent
@@ -696,17 +762,17 @@ if __name__ == '__main__':
         ast = pickle.load(open(args.alns, "rb"))
         context = Alignment(ast.reads, arrs = ast.arrays, variants = ast.variants)
 
-        # TODO: this is working well
-        #layouts = iterative_layout(alignments)
-        #print(f"{len(layouts)} layouts found. done.")
+        # TODO: this is working well; global layouts, this might be too useful to ignore!
+        layouts = iterative_layout(ast)
+        print(f"{len(layouts)} layouts found. done.")
+        with open("layouts-global.pickle", "wb") as f:
+            pickle.dump(layouts, f)
+        sys.exit()
 
         covers = read_cover(ast)
-
         n = 0
         layouts = []
-
         #fluct = set([ r for c in covers for r in c if len(c) <= 9 ])
-
         fluct = set() # NOTE: temporarily ignore fractured ones
         print(f"{len(fluct)} reads in fractured covers.")
 
@@ -721,6 +787,8 @@ if __name__ == '__main__':
             print_snvs(snvs)
 
             local_ast = context.get_all_vs_all_aln(cover | fluct, snvs)
+            #local_ast = context.get_all_vs_all_aln(cover | fluct, snvs)
+
             los = iterative_layout(local_ast)
             print(f"\n--- inside {len(los)} layouts for Cover {n} ---")
             for il, lo in enumerate(los):
@@ -736,9 +804,21 @@ if __name__ == '__main__':
 
     if args.action == "connect":
 
+        # you need this to take consensus of layouts for visualizing it
+        assert args.alns, "need alignments"
+        ast = pickle.load(open(args.alns, "rb"))
+        context = Alignment(ast.reads, arrs = ast.arrays, variants = ast.variants)
+
         assert args.layouts, "need layouts; perform 'layout' first"
         with open(args.layouts, "rb") as f:
             layouts = pickle.load(f)
+
+        for i, l in enumerate(layouts):
+            visual = l.visualize(context, variants = ast.variants, filename = f"images/layouts-{i}.png")
+
+        # print(visual)
+
+        sys.exit()
 
         # print(f"{len(layouts)} layouts loaded.")
         # print("l\tl.nr\tl.b\tl.e\tl.l\t.\tm\tm.nr\tm.b\tm.e\tm.l\tstatus\trext\tfext\toffsets")

@@ -313,10 +313,7 @@ class AlignmentStore:
 
         T_print = 650
 
-        # TODO: for backports
-        alns_dict = self.alignments
-        
-        for (i, ai), d in alns_dict.items(): 
+        for (i, ai), d in self.alignments.items():
             targets = sorted([ (j, aj, alns) for (j, aj), alns in d.items() if alns[0].score > T_print ], key = lambda x: -x[2][0].score)
             if targets:
                 print("\n--------------------------------------------------")
