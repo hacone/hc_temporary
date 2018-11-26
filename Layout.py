@@ -318,50 +318,54 @@ class Layout:
 
         return var(newpool.hers, units_in_layout)
 
-    def prune(self, ctx):
-
+    def prune(self, context):
         """ remove any reads slippery w.r.t. consensus, under layout-local variants definition """
-        # rd = ((rid, aid), rpos)
-        def leave_one_out_consensus(rd):
-            reads_except_me = [ r for r in self.reads if r != rd ]
-            b = min([ rpos for (rid, aid), rpos in reads_except_me ])
-            e = max([ rpos + len(ctx.arrs[rid][aid]) for (rid, aid), rpos in reads_except_me ])
-            loo_layout = Layout(reads_except_me, b, e)
-            loo_consensus = loo_layout.get_consensus(ctx)
+
+        layout_local_vars = self.define_local_variants(context)
+
+        # rd = (rid, aid)
+        def leave_one_out_consensus(rd): # NOTE: If leaving one divides the layout, consensus would be still the same size.
+            reads_except_me = [ r for r in self.reads if r[0] != rd ]
+            assert len(reads_except_me) == len(self.reads) - 1, "wrong number of reads!"
+            loo_layout = Layout(reads = reads_except_me, begin = self.begin, end = self.end, variants = layout_local_vars)
+            loo_consensus = loo_layout.get_consensus(context)
             return loo_consensus
 
-        llsnvs = self.define_local_variants(ctx)
+        # TODO rewrite below
+        # NOTE pruning might result in dividing the layout. so this should return a list of layouts begot
+        goods = []
 
-        def if_uniquely_align(ccs, read):
-            np = Alignment(hers = [ccs] + ctx.hers[read[0]])
-            np_regs = [ (i, ai) 
-                for i, a in np.arrs.items()
-                for ai, l in enumerate(a) if len(l) > 4 ]
-            ccs_parts = len([ r for r in np_regs if r[0] == 0 ]) 
-            if ccs_parts > 1:
-                print(f"consensus is fluctured into {ccs_parts}.")
-                return True # TODO: can I do that?
-            # TODO: alignment actually.
-            llbd = np.get_bits_dict(llsnvs, np_regs)
-            i, ai = np_regs[0]
-            j, aj = read[0]
-            li = llbd[(i, ai)].shape[0]
-            lj = llbd[(j, aj)].shape[0]
-            alns = [ np.calc_align(i, ai, j, aj, k, bits_dict = llbd) for k in range(-lj-5, li+5) ]
-            alns = [ aln for aln in sorted(alns, key = lambda x: -x.score) if aln.eff_ovlp > 4 ]
-            return (aln[0].score - aln[1].score) > 15.0
+        for (ri, rai), k in sorted(self.reads, key = lambda r: r[1]):
+            read = context.hers[ri]
+            aln = Alignment(hers = [leave_one_out_consensus((ri, rai)), read], variants = layout_local_vars)
+            #xi = len(aln.bits[(0,0)][:,0])
+            ast = aln.get_all_vs_all_aln()
 
+            if ((0, 0) in ast.alignments.keys()) and ((1,rai) in ast.alignments[(0, 0)].keys()):
+                alns = [ a for a in sorted(ast.alignments[(0,0)][(1,rai)], key = lambda x: -x.score) if a.eff_ovlp > 4 ]
+            else:
+                alns = []
 
-        goods = [ rd for rd in self.reads
-            if if_uniquely_align(leave_one_out_consensus(rd), rd) ]
-        print(f"Pruned; {len(goods)} passed out of {len(self.reads)} reads.")
+            if not alns:
+                pass
+                #return 0
+            elif len(alns) == 1:
+                if (alns[0].score - 50.0) > 15.0:
+                    goods += [ ((ri, rai), alns[0].k) ]
+                #return alns[0].score - 50.0 # NOTE: OK?
+            elif len(alns) > 1:
+                if (alns[0].score - alns[1].score) > 15.0:
+                    goods += [ ((ri, rai), alns[0].k) ]
+                #return (alns[0].score - alns[1].score)
 
         # making layout!
         b = min([ rpos for (rid, aid), rpos in goods ])
-        e = max([ rpos + len(ctx.arrs[rid][aid]) for (rid, aid), rpos in goods ])
-        pruned_layout = Layout(goods, b, e)
-        return pruned_layout
+        e = max([ rpos + len(context.arrs[rid][aid]) for (rid, aid), rpos in goods ])
 
+        print(f"Pruned; {len(goods)} good reads out of {len(self.reads)} reads, making l of {e-b} units long")
+        return Layout(reads = goods, begin = b, end = e, variants = layout_local_vars)
+
+    # TODO: update this implementation
     def describe(self, ctx):
         """ describe layout's consistency (stability with local mask?). This should work fine for medium-size layout. """
 
@@ -458,15 +462,10 @@ class Layout:
             # return np.array([ _s(x, y) for x in range(li) for y in range(lj) ]).reshape(li, lj)
             return [ _s(x, y) for y in range(lj)  for x in range(li) ]
 
-        def leave_one_out_consensus(rd): # ?? NOTE: what if leaving one divide the layout??
+        def leave_one_out_consensus(rd): # NOTE: If leaving one divides the layout, consensus would be still the same size.
             reads_except_me = [ r for r in self.reads if r[0] != rd ]
             assert len(reads_except_me) == len(self.reads) - 1, "wrong number of reads!"
-
-            #b = min([ rpos for (rid, aid), rpos in reads_except_me ])
-            #e = max([ rpos + len(context.arrs[rid][aid]) for (rid, aid), rpos in reads_except_me ])
-            #loo_layout = Layout(reads = reads_except_me, begin = b, end = e, variants = variants)
             loo_layout = Layout(reads = reads_except_me, begin = self.begin, end = self.end, variants = variants)
-
             loo_consensus = loo_layout.get_consensus(context)
             return loo_consensus
 
@@ -478,8 +477,8 @@ class Layout:
             read = context.hers[ri]
             aln = Alignment(hers = [leave_one_out_consensus((ri, rai)), read], variants = variants)
             xi = len(aln.bits[(0,0)][:,0])
-
             ast = aln.get_all_vs_all_aln() # TODO: maybe this is not enough
+
             loo_bits = aln.bits
             for (j, aj), alns in ast.alignments[(0,0)].items():
                 dotplot_data += dotplot(0, 0, j, aj, loo_bits)
@@ -817,8 +816,9 @@ if __name__ == '__main__':
                 continue
 
             lv = l.define_local_variants(context)
-            l.visualize(context, variants = ast.variants, filename = f"images/layouts-{i}.png")
-            l.visualize(context, variants = lv, filename = f"images/layouts-{i}-lv.png")
+            #l.visualize(context, variants = ast.variants, filename = f"images/layouts-{i}.png")
+            #l.visualize(context, variants = lv, filename = f"images/layouts-{i}-lv.png")
+            l.prune(context)
 
             # print(l.variants[0]) # TODO; I don't know why but it's tuple...
             #l.visualize(context, variants = l.variants[0], filename = f"images/layouts-{i}-lv.png")
