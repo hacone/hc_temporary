@@ -283,7 +283,7 @@ class Layout:
 
         tot_units = sum(depth.values())
         len_cons = le - lb
-        print(f"consensus taken: {len(self.reads)}\t{tot_units} => {len_cons}\t{nm}\t{nm/(tot_units-len_cons):.2f}")
+        #print(f"consensus taken: {len(self.reads)}\t{tot_units} => {len_cons}\t{nm}\t{nm/(tot_units-len_cons):.2f}")
         
         self.consensus = HOR_Read(
             name = "consensus", length = (le-lb)*12*171, ori = "+",
@@ -294,15 +294,13 @@ class Layout:
         return self.consensus
 
 
-    def define_local_variants(self, ctx):
+    def define_local_variants(self, context):
         """ returns layout-wide locally-defined variants. """
-        newpool = Alignment(hers = [ ctx.hers[i] for (i, ai), k in self.reads ])
-        regs = [ (i, ai) for i, a in newpool.arrs.items() for ai, l in enumerate(a) if len(l) > 4 ]
-        units_in_layout = [ (i, mi) for i, ai in regs for mi in newpool.arrs[i][ai] if mi >= 0 ]
-        #return newpool.get_variants(units_in_layout)
-        return var(newpool.hers, units_in_layout)
+        aln = Alignment(hers = [context.hers[ri] for (ri, rai), k in self.reads])
+        return aln.variants
 
     # TODO test
+    # TODO: rewrite, do I need this ??
     def define_ends_variants(self, ctx, plusend = True):
         """ returns variants locally-defined at ends of the layout"""
         newpool = Alignment(hers = [ ctx.hers[i] for (i, ai), k in self.reads ])
@@ -461,10 +459,14 @@ class Layout:
             return [ _s(x, y) for y in range(lj)  for x in range(li) ]
 
         def leave_one_out_consensus(rd): # ?? NOTE: what if leaving one divide the layout??
-            reads_except_me = [ r for r in self.reads if r != rd ]
-            b = min([ rpos for (rid, aid), rpos in reads_except_me ])
-            e = max([ rpos + len(context.arrs[rid][aid]) for (rid, aid), rpos in reads_except_me ])
-            loo_layout = Layout(reads = reads_except_me, begin = b, end = e)
+            reads_except_me = [ r for r in self.reads if r[0] != rd ]
+            assert len(reads_except_me) == len(self.reads) - 1, "wrong number of reads!"
+
+            #b = min([ rpos for (rid, aid), rpos in reads_except_me ])
+            #e = max([ rpos + len(context.arrs[rid][aid]) for (rid, aid), rpos in reads_except_me ])
+            #loo_layout = Layout(reads = reads_except_me, begin = b, end = e, variants = variants)
+            loo_layout = Layout(reads = reads_except_me, begin = self.begin, end = self.end, variants = variants)
+
             loo_consensus = loo_layout.get_consensus(context)
             return loo_consensus
 
@@ -472,11 +474,11 @@ class Layout:
 
         dotplot_data = []
 
-        for (ri, rai), k in self.reads:
+        for (ri, rai), k in sorted(self.reads, key = lambda r: r[1]):
             read = context.hers[ri]
-            aln = Alignment(hers = [leave_one_out_consensus(read), read], variants = variants)
-
+            aln = Alignment(hers = [leave_one_out_consensus((ri, rai)), read], variants = variants)
             xi = len(aln.bits[(0,0)][:,0])
+
             ast = aln.get_all_vs_all_aln() # TODO: maybe this is not enough
             loo_bits = aln.bits
             for (j, aj), alns in ast.alignments[(0,0)].items():
@@ -486,14 +488,11 @@ class Layout:
 
         n = len(dotplot_data)
         yi = int(n/xi)
-        print(np.array(dotplot_data).reshape(yi, xi))
-        plt.figure(figsize=(yi/4, xi/4))
+        print(f"n={n} xi={xi} yi={yi} xi*yi={xi*yi}")
+        plt.figure(figsize=(yi/8, xi/8))
         sns.heatmap(np.array(dotplot_data).reshape(yi, xi).transpose(), cmap="Blues")
         plt.savefig(filename)
         plt.close('all')
-
-                
-
 
 # TODO: def plot_scoreGap_distr(), or any other equivalent
 # TODO: some function to map shorter reads into layouts/components to enrich data.
@@ -814,7 +813,16 @@ if __name__ == '__main__':
             layouts = pickle.load(f)
 
         for i, l in enumerate(layouts):
-            visual = l.visualize(context, variants = ast.variants, filename = f"images/layouts-{i}.png")
+            if len(l.reads) < 3:
+                continue
+
+            lv = l.define_local_variants(context)
+            l.visualize(context, variants = ast.variants, filename = f"images/layouts-{i}.png")
+            l.visualize(context, variants = lv, filename = f"images/layouts-{i}-lv.png")
+
+            # print(l.variants[0]) # TODO; I don't know why but it's tuple...
+            #l.visualize(context, variants = l.variants[0], filename = f"images/layouts-{i}-lv.png")
+
 
         # print(visual)
 

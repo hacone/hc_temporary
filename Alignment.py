@@ -120,7 +120,8 @@ class Alignment: # TODO: rename this!!
             """ bit array for a single unit, starting at h-th monomers of read i """
             def has_s(s):
                 # i.e., if s in t
-                return any([ (t.pos, t.base) == (s["p"], s["b"]) for t in reads[i].mons[h+s["k"]].monomer.snvs ])
+                #return any([ (t.pos, t.base) == (s["p"], s["b"]) for t in reads[i].mons[h+s["k"]].monomer.snvs ])
+                return any([ (t.pos, t.base) == (int(s["p"]), s["b"]) for t in reads[i].mons[h+int(s["k"])].monomer.snvs ])
             return [ 1 if has_s(s) else -1 for s in snvs ]
 
         def _ba(i, ai):
