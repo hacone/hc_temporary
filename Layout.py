@@ -331,9 +331,9 @@ class Layout:
             loo_consensus = loo_layout.get_consensus(context)
             return loo_consensus
 
-        # TODO rewrite below
         # NOTE pruning might result in dividing the layout. so this should return a list of layouts begot
         goods = []
+        repositioned = 0
 
         for (ri, rai), k in sorted(self.reads, key = lambda r: r[1]):
             read = context.hers[ri]
@@ -352,18 +352,26 @@ class Layout:
             elif len(alns) == 1:
                 if (alns[0].score - 50.0) > 15.0:
                     goods += [ ((ri, rai), alns[0].k) ]
+                    print(f"{alns[0].k} <- {k}, {k-self.begin}")
+                    repositioned += 1 if alns[0].k != k-self.begin else 0
                 #return alns[0].score - 50.0 # NOTE: OK?
             elif len(alns) > 1:
                 if (alns[0].score - alns[1].score) > 15.0:
                     goods += [ ((ri, rai), alns[0].k) ]
+                    print(f"{alns[0].k} <- {k}, {k-self.begin}")
+                    repositioned += 1 if alns[0].k != k-self.begin else 0
                 #return (alns[0].score - alns[1].score)
 
+        # TODO: sometimes all reads gone.
         # making layout!
         b = min([ rpos for (rid, aid), rpos in goods ])
         e = max([ rpos + len(context.arrs[rid][aid]) for (rid, aid), rpos in goods ])
 
-        print(f"Pruned; {len(goods)} good reads out of {len(self.reads)} reads, making l of {e-b} units long")
-        return Layout(reads = goods, begin = b, end = e, variants = layout_local_vars)
+        print(f"Pruned; {len(goods)} good reads out of {len(self.reads)} reads, making l of {e-b} units long, {repositioned} repositioned")
+        if len(goods) == len(self.reads) and repositioned == 0:
+            return None
+        else:
+            return Layout(reads = goods, begin = b, end = e, variants = layout_local_vars)
 
     # TODO: update this implementation
     def describe(self, ctx):
@@ -434,19 +442,19 @@ class Layout:
             if alns:
                 print_align(alns[0], layout_local_bits_dict)
 
-    def visualize(self, context, variants = None, filename = "heatmap.png"):
+    def visualize(self, context, variants = None, other_layouts = None):
         """
         fully visualize the layout, using leave-one-out consensus vs 
         There can be two modes: to use the same variants definition for all comparison (when variants are specified),
         or to use specialized variants definition for each read (when variants are not specified).
-        Returns: len(consensus) * sum(len(reads)) matrix with [0,1] elems, which will then be plotted anyhow.
+        If `other_layouts` is specified, then the layout is to be compared with (consensi of) those layouts.
+        Returns: dict with data and metadata.
         """
 
         def dotplot(i, ai, j, aj, b):
             """ returns dotplot matrix for the two reads. Maybe useful in other places? """
             mi, mj = b[(i, ai)], b[(j, aj)]
             li, lj = mi.shape[0], mj.shape[0]
-            print((li, lj))
 
             def _s(x, y):
                 """ helper func to calc score aligning a unit to unit """
@@ -473,25 +481,31 @@ class Layout:
 
         dotplot_data = []
 
-        for (ri, rai), k in sorted(self.reads, key = lambda r: r[1]):
-            read = context.hers[ri]
-            aln = Alignment(hers = [leave_one_out_consensus((ri, rai)), read], variants = variants)
-            xi = len(aln.bits[(0,0)][:,0])
-            ast = aln.get_all_vs_all_aln() # TODO: maybe this is not enough
-
-            loo_bits = aln.bits
-            for (j, aj), alns in ast.alignments[(0,0)].items():
-                dotplot_data += dotplot(0, 0, j, aj, loo_bits)
-            dotplot_data += [ 1.0 for x in range(xi) ]
-
+        if not other_layouts:
+            for (ri, rai), k in sorted(self.reads, key = lambda r: r[1]):
+                read = context.hers[ri]
+                # NOTE: maybe I could use loo version of variants, but I'll skip that.
+                aln = Alignment(hers = [leave_one_out_consensus((ri, rai)), read], variants = variants)
+                xi = len(aln.bits[(0,0)][:,0])
+                ast = aln.get_all_vs_all_aln()
+                loo_bits = aln.bits
+                for (j, aj), alns in ast.alignments[(0,0)].items(): # there must be only one j
+                    dotplot_data += dotplot(0, 0, j, aj, loo_bits)
+                dotplot_data += [ 1.0 for x in range(xi) ]
+        else:
+            consensus = self.get_consensus
+            for l in other_layouts:
+                aln = Alignment(hers = [consensus, l.get_consensus], variants = variants)
+                xi = len(aln.bits[(0,0)][:,0])
+                ast = aln.get_all_vs_all_aln()
+                for (j, aj), alns in ast.alignments[(0,0)].items(): # there must be only one j
+                    dotplot_data += dotplot(0, 0, j, aj, aln.bits)
+                dotplot_data += [ 1.0 for x in range(xi) ]
 
         n = len(dotplot_data)
         yi = int(n/xi)
-        print(f"n={n} xi={xi} yi={yi} xi*yi={xi*yi}")
-        plt.figure(figsize=(yi/8, xi/8))
-        sns.heatmap(np.array(dotplot_data).reshape(yi, xi).transpose(), cmap="Blues")
-        plt.savefig(filename)
-        plt.close('all')
+        return dict(data = dotplot_data, xi = xi, yi = yi)
+
 
 # TODO: def plot_scoreGap_distr(), or any other equivalent
 # TODO: some function to map shorter reads into layouts/components to enrich data.
@@ -800,7 +814,77 @@ if __name__ == '__main__':
 
         # layout(alignments)
 
-    if args.action == "connect":
+    elif args.action == "extends":
+        # for each (large) layout, take layout-local-vars or layout-ends-vars
+        # and recompute a-v-a align among all reads, which is then used for defining a cover and cover-local-vars
+
+        assert args.alns, "need alignments"
+        ast = pickle.load(open(args.alns, "rb"))
+        context = Alignment(ast.reads, arrs = ast.arrays, variants = ast.variants)
+
+        assert args.layouts, "need layouts; perform 'layout' first"
+        with open(args.layouts, "rb") as f:
+            layouts = pickle.load(f)
+
+        for i, l in enumerate(sorted(layouts, key = lambda l: -1 * len(l.reads))):
+
+            if len(l.reads) < 10:
+                continue
+
+            print(f"Layout {i}: {len(l.reads)} reads, {l.end - l.begin} units-long ~ {2052 * (l.end - l.begin)} bp.")
+
+            # prune it if necessary
+            pruned = l.prune(context)
+            l = pruned if pruned else l
+
+            # calculate layout-local variants, and alignments outwards
+            lv = l.define_local_variants(context)
+            regs = context.longer_than(6)
+            bits = context.get_bits_dict(lv, regs)
+            mines = [ (i, ai) for ((i, ai), k) in l.reads ]
+            yours = [ r for r in regs if r not in mines ]
+
+            print(f"{len(mines)} mines, {len(yours)} yours, {len(regs)} regs.")
+            #alns = context.some_vs_some_alignment(mines, regs, bits)
+
+            ast = AlignmentStore(
+                reads = context.hers,
+                arrays = context.arrs,
+                variants = lv,
+                # alignments = context.some_vs_some_alignment(mines, yours, bits),
+                alignments = context.some_vs_some_alignment(regs, regs, bits),
+                c_00 = context.c_00,
+                c_ms = context.c_ms)
+
+            los = iterative_layout(ast)
+            print(f"got {len(los)} layout for extension")
+
+            los_to_save = []
+            for j, m in enumerate(los):
+                if len(m.reads) < 3:
+                    continue
+                if all([ r[0] not in mines for r in m.reads ]):
+                    # if no overlap between l and m
+                    continue
+
+                cand_offset = Counter([ kj - ki for ri, ki in l.reads for rj, kj in m.reads if ri == rj ])
+                if cand_offset:
+                    print(f"ovlp by {cand_offset.most_common(0)} unit being shifted, layout {i}-{j} with {len(m.reads)} reads")
+                    los_to_save += [m]
+                #d3 = ll.visualize(context, variants = lv)
+                #fig, ax = plt.subplots(3, 1, figsize = ( d1["yi"]/20, 3*d1["xi"]/20 ))
+                #sns.heatmap(np.array(d1["data"]).reshape(d1["yi"], d1["xi"]).transpose(), cmap="Blues", ax = ax[0])
+
+            # TODO
+            with open(f"layouts-extension-{i}.pickle", "wb") as f:
+                pickle.dump(los_to_save, f)
+
+            #alns = context.some_vs_some_alignment(mines, yours, bits)
+            #print(alns)
+
+    elif args.action == "visualize":
+
+        # TODO: what if I use "wrong" variants for visualization??
 
         # you need this to take consensus of layouts for visualizing it
         assert args.alns, "need alignments"
@@ -811,22 +895,33 @@ if __name__ == '__main__':
         with open(args.layouts, "rb") as f:
             layouts = pickle.load(f)
 
-        for i, l in enumerate(layouts):
+        for i, l in enumerate(sorted(layouts, key = lambda l: -1 * len(l.reads))):
             if len(l.reads) < 3:
                 continue
 
             lv = l.define_local_variants(context)
-            #l.visualize(context, variants = ast.variants, filename = f"images/layouts-{i}.png")
-            #l.visualize(context, variants = lv, filename = f"images/layouts-{i}-lv.png")
-            l.prune(context)
+            d1 = l.visualize(context, variants = ast.variants)
+            d2 = l.visualize(context, variants = lv)
+            pruned = l.prune(context)
+
+            if pruned:
+                lvp = pruned.define_local_variants(context)
+                d3 = pruned.visualize(context, variants = lvp)
+                fig, ax = plt.subplots(3, 1, figsize = ( d1["yi"]/20, 3*d1["xi"]/20 ))
+                sns.heatmap(np.array(d1["data"]).reshape(d1["yi"], d1["xi"]).transpose(), cmap="Blues", ax = ax[0])
+                sns.heatmap(np.array(d2["data"]).reshape(d2["yi"], d2["xi"]).transpose(), cmap="Blues", ax = ax[1])
+                sns.heatmap(np.array(d3["data"]).reshape(d3["yi"], d3["xi"]).transpose(), cmap="Blues", ax = ax[2])
+            else:
+                fig, ax = plt.subplots(2, 1, figsize = ( d1["yi"]/20, 2*d1["xi"]/20 ))
+                sns.heatmap(np.array(d1["data"]).reshape(d1["yi"], d1["xi"]).transpose(), cmap="Blues", ax = ax[0])
+                sns.heatmap(np.array(d2["data"]).reshape(d2["yi"], d2["xi"]).transpose(), cmap="Blues", ax = ax[1])
 
             # print(l.variants[0]) # TODO; I don't know why but it's tuple...
             #l.visualize(context, variants = l.variants[0], filename = f"images/layouts-{i}-lv.png")
+            plt.savefig(f"images/layouts-{i}-jux.png")
+            plt.close('all')
 
-
-        # print(visual)
-
-        sys.exit()
+    elif args.action == "connect":
 
         # print(f"{len(layouts)} layouts loaded.")
         # print("l\tl.nr\tl.b\tl.e\tl.l\t.\tm\tm.nr\tm.b\tm.e\tm.l\tstatus\trext\tfext\toffsets")
