@@ -70,9 +70,10 @@ def chopx(reads):
     regs = { i : _chopx(her.hors) for i, her in enumerate(reads) }
     return { k : v for k, v in regs.items() if v }
 
-def var(reads, units = None, err_rate = 0.03, fq_upper_bound = 0.75):
+def var(reads, units = None, err_rate = 0.03, fq_upper_bound = 0.75, comprehensive = False):
     """ Define SNVs over `units` in `reads`. Currently, SNV is dict with following keys: k, p, b, f, c, binom_p
-        If `units` is not specified, it uses all default "~" units. """
+        If `units` is not specified, it uses all default "~" units.
+        It assumes error rate of `err_rate` for calculation of FDR. Too frequent SNVs are ignored as noninformative. """
 
     counter = Counter()
     if not units:
@@ -82,10 +83,15 @@ def var(reads, units = None, err_rate = 0.03, fq_upper_bound = 0.75):
         for j in range(2, 12): # NOTE: specialied for X. skipping the first 2 monomers, where assignment is always wrong
             counter.update([ (j, s.pos, s.base) for s in reads[ri].mons[i+j].monomer.snvs ])
 
+    if comprehensive:
+        return [ dict(k = k, p = p, b = b, f = c/len(units), c = c, binom_p = 1 - binom.cdf(c, len(units), err_rate)) for (k, p, b), c in counter.most_common() ]
+
     # remove too frequent ones, and allow <1 false positives
-    _tmp = [ (k, p, b, c / len(units), c) for (k, p, b), c in counter.most_common() if c / len(units) < fq_upper_bound ]
-    _nt_vars = [ dict(k = k, p = p, b = b, f = c/len(units), c = c, binom_p = 1 - binom.cdf(c, len(units), err_rate)) for k, p, b, f, c in _tmp ]
-    return [ s for s in _nt_vars if s["binom_p"]*(171*10*3) < 1.0 ]
+    if not comprehensive:
+        _tmp = [ (k, p, b, c / len(units), c) for (k, p, b), c in counter.most_common() if c / len(units) < fq_upper_bound ]
+        _nt_vars = [ dict(k = k, p = p, b = b, f = c/len(units), c = c, binom_p = 1 - binom.cdf(c, len(units), err_rate)) for k, p, b, f, c in _tmp ]
+        return [ s for s in _nt_vars if s["binom_p"]*(171*10*3) < 1.0 ]
+        # Here I'll return every detected variants positions!
 
 class Alignment: # TODO: rename this!!
     """
@@ -120,7 +126,8 @@ class Alignment: # TODO: rename this!!
             """ bit array for a single unit, starting at h-th monomers of read i """
             def has_s(s):
                 # i.e., if s in t
-                return any([ (t.pos, t.base) == (s["p"], s["b"]) for t in reads[i].mons[h+s["k"]].monomer.snvs ])
+                #return any([ (t.pos, t.base) == (s["p"], s["b"]) for t in reads[i].mons[h+s["k"]].monomer.snvs ])
+                return any([ (t.pos, t.base) == (int(s["p"]), s["b"]) for t in reads[i].mons[h+int(s["k"])].monomer.snvs ])
             return [ 1 if has_s(s) else -1 for s in snvs ]
 
         def _ba(i, ai):
@@ -190,18 +197,22 @@ class Alignment: # TODO: rename this!!
         return LoAln(l1 = l1, l2 = l2, k = k, len_ovlp = t_ovlp, eff_ovlp = t_eff_ovlp,
                 n00 = t_n00, nmis = t_mis, n11 = t_n11, score = score)
 
-    def some_vs_some_alignment(self, targets, queries, bits_dict): # TODO: bits_dict might be adaptive (local w.r.t. targets?)
+    def some_vs_some_alignment(self, targets, queries, bits_dict, quiet = False): # TODO: bits_dict might be adaptive (local w.r.t. targets?)
         """ calculate some-vs-some alignments among reads(regions), returning dict of alns.
             also you have more control over the parameters (variants to be used) thru bits """
         # TODO: i won't need all_vs_all_aln anymore?
 
         alns_dict = dict()
         n = 0
+         
+        if not quiet:
+            print(f"aligning for {len(targets)}")
+            print("[P]", end = "", flush = True)
 
-        print(f"aligning for {len(targets)}")
-        print("[P]", end = "", flush = True)
         for i, ai in targets:
-            print(".", end = "", flush = True)
+            if not quiet:
+                print(".", end = "", flush = True)
+
             #n += 1
             #print(f"aligning {i} - {ai}. {n} / {len(targets)}")
             alns_dict[(i, ai)] = dict()
@@ -216,6 +227,7 @@ class Alignment: # TODO: rename this!!
             #l += f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag and aln.eff_ovlp > 4 ]) } targets above T_dag = {T_dag}."
             #print(l, flush = True)
 
+        # TODO: wouldn't you return alignment store instead?
         return alns_dict
 
     def get_all_vs_all_aln(self, regs = None, variants = None):
@@ -313,10 +325,7 @@ class AlignmentStore:
 
         T_print = 650
 
-        # TODO: for backports
-        alns_dict = self.alignments
-        
-        for (i, ai), d in alns_dict.items(): 
+        for (i, ai), d in self.alignments.items():
             targets = sorted([ (j, aj, alns) for (j, aj), alns in d.items() if alns[0].score > T_print ], key = lambda x: -x[2][0].score)
             if targets:
                 print("\n--------------------------------------------------")

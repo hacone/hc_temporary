@@ -1,4 +1,3 @@
-# Generates and refines layouts of hor encoded reads.
 from Alignment import *
 
 from scipy.stats import binom
@@ -9,7 +8,11 @@ import pickle
 from underscore import _ as us
 from EncodedRead import *
 from HOR_segregation import *
-from Alignment import *
+
+import seaborn as sns
+import pandas as pd
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 # I need total length for calc overlap length
 # Layout = namedtuple("Layout", ("reads", "begin", "end"))
@@ -154,8 +157,9 @@ def iterative_layout(alignmentstore, nodes = None):
             # add new node into layout
             visited += [(j, aj)]
             seed_layout = Layout(
+                    variants = alignmentstore.variants,
                     reads = seed_layout.reads + [((j, aj), alns[0].k)],
-                    begin = min(seed_layout.begin, alns[0].k), end = max(seed_layout.end, alns[0].k + lj)) # TODO
+                    begin = min(seed_layout.begin, alns[0].k), end = max(seed_layout.end, alns[0].k + lj))
 
             # update the set of extending edges
             # this is a slower implementation
@@ -233,13 +237,13 @@ def double_edge_component(alns_dict):
 
 class Layout:
     """ The layout is essentially a set of reads with their relative configurations specified.
-        Reads are represented as ((rid, aid), rpos) tuple, so the layout must point to the context where it was defined. """
+        Reads are represented as ((rid, aid), rpos) tuple, so the layout must point to the context where it was defined.
+        Also, it would retain relevant variants definition. """
 
-    def __init__(self, reads = None, begin = None, end = None):
-        # TODO: check the consistency of ctx
-        #self.ctx_hash = ctx_hash
+    def __init__(self, reads = None, variants = None, begin = None, end = None):
         self.reads = reads
-        self.begin = begin # NOTE: could be calculated on the fly?
+        self.begin = begin
+        self.variants = variants,
         self.end = end
         self.consensus = None # lazy consensus
 
@@ -279,10 +283,10 @@ class Layout:
 
         tot_units = sum(depth.values())
         len_cons = le - lb
-        print(f"consensus taken: {len(self.reads)}\t{tot_units} => {len_cons}\t{nm}\t{nm/(tot_units-len_cons):.2f}")
+        #print(f"consensus taken: {len(self.reads)}\t{tot_units} => {len_cons}\t{nm}\t{nm/(tot_units-len_cons):.2f}")
         
         self.consensus = HOR_Read(
-            name = "anything", length = (le-lb)*12*171, ori = "+",
+            name = "consensus", length = (le-lb)*12*171, ori = "+",
             mons = [ AssignedMonomer(begin = 12*171*i + 171*ki, end = 12*171*i+171, ori = "+",
                 monomer = Monomer(name = "*", snvs = [ SNV(pos = p, base = b) for (p, b), fq in cons_snvs[i+lb][ki].items() if fq/depth[i+lb] > min_variant_freq ])) # TODO: fix threshold
                 for i in range(le-lb) for ki in range(12) ],
@@ -290,15 +294,13 @@ class Layout:
         return self.consensus
 
 
-    def define_local_variants(self, ctx):
+    def define_local_variants(self, context):
         """ returns layout-wide locally-defined variants. """
-        newpool = Alignment(hers = [ ctx.hers[i] for (i, ai), k in self.reads ])
-        regs = [ (i, ai) for i, a in newpool.arrs.items() for ai, l in enumerate(a) if len(l) > 4 ]
-        units_in_layout = [ (i, mi) for i, ai in regs for mi in newpool.arrs[i][ai] if mi >= 0 ]
-        #return newpool.get_variants(units_in_layout)
-        return var(newpool.hers, units_in_layout)
+        aln = Alignment(hers = [context.hers[ri] for (ri, rai), k in self.reads])
+        return aln.variants
 
     # TODO test
+    # TODO: rewrite, do I need this ??
     def define_ends_variants(self, ctx, plusend = True):
         """ returns variants locally-defined at ends of the layout"""
         newpool = Alignment(hers = [ ctx.hers[i] for (i, ai), k in self.reads ])
@@ -316,51 +318,62 @@ class Layout:
 
         return var(newpool.hers, units_in_layout)
 
-    def prune(self, ctx):
+    def prune(self, context):
+        """ remove any reads slippery w.r.t. consensus, under layout-local variants definition """
 
-        """ remove any reads slippery w.r.t. consensus. """
-        # rd = ((rid, aid), rpos)
-        def leave_one_out_consensus(rd):
-            reads_except_me = [ r for r in self.reads if r != rd ]
-            b = min([ rpos for (rid, aid), rpos in reads_except_me ])
-            e = max([ rpos + len(ctx.arrs[rid][aid]) for (rid, aid), rpos in reads_except_me ])
-            loo_layout = Layout(reads_except_me, b, e)
-            loo_consensus = loo_layout.get_consensus(ctx)
+        layout_local_vars = self.define_local_variants(context)
+
+        # rd = (rid, aid)
+        def leave_one_out_consensus(rd): # NOTE: If leaving one divides the layout, consensus would be still the same size.
+            reads_except_me = [ r for r in self.reads if r[0] != rd ]
+            assert len(reads_except_me) == len(self.reads) - 1, "wrong number of reads!"
+            loo_layout = Layout(reads = reads_except_me, begin = self.begin, end = self.end, variants = layout_local_vars)
+            loo_consensus = loo_layout.get_consensus(context)
             return loo_consensus
 
-        llsnvs = self.define_local_variants(ctx)
+        # NOTE pruning might result in dividing the layout. so this should return a list of layouts begot
+        goods = []
+        repositioned = 0
 
-        def if_uniquely_align(ccs, read):
-            np = Alignment(hers = [ccs] + ctx.hers[read[0]])
-            np_regs = [ (i, ai) 
-                for i, a in np.arrs.items()
-                for ai, l in enumerate(a) if len(l) > 4 ]
-            ccs_parts = len([ r for r in np_regs if r[0] == 0 ]) 
-            if ccs_parts > 1:
-                print(f"consensus is fluctured into {ccs_parts}.")
-                return True # TODO: can I do that?
-            # TODO: alignment actually.
-            llbd = np.get_bits_dict(llsnvs, np_regs)
-            i, ai = np_regs[0]
-            j, aj = read[0]
-            li = llbd[(i, ai)].shape[0]
-            lj = llbd[(j, aj)].shape[0]
-            alns = [ np.calc_align(i, ai, j, aj, k, bits_dict = llbd) for k in range(-lj-5, li+5) ]
-            alns = [ aln for aln in sorted(alns, key = lambda x: -x.score) if aln.eff_ovlp > 4 ]
-            return (aln[0].score - aln[1].score) > 15.0
+        for (ri, rai), k in sorted(self.reads, key = lambda r: r[1]):
+            read = context.hers[ri]
+            aln = Alignment(hers = [leave_one_out_consensus((ri, rai)), read], variants = layout_local_vars)
+            #xi = len(aln.bits[(0,0)][:,0])
+            ast = aln.get_all_vs_all_aln()
 
+            if ((0, 0) in ast.alignments.keys()) and ((1,rai) in ast.alignments[(0, 0)].keys()):
+                alns = [ a for a in sorted(ast.alignments[(0,0)][(1,rai)], key = lambda x: -x.score) if a.eff_ovlp > 4 ]
+            else:
+                alns = []
 
-        goods = [ rd for rd in self.reads
-            if if_uniquely_align(leave_one_out_consensus(rd), rd) ]
-        print(f"Pruned; {len(goods)} passed out of {len(self.reads)} reads.")
+            if not alns:
+                pass
+                #return 0
+            elif len(alns) == 1:
+                if (alns[0].score - 50.0) > 15.0:
+                    goods += [ ((ri, rai), alns[0].k) ]
+                    print(f"{alns[0].k} <- {k}, {k-self.begin}")
+                    repositioned += 1 if alns[0].k != k-self.begin else 0
+                #return alns[0].score - 50.0 # NOTE: OK?
+            elif len(alns) > 1:
+                if (alns[0].score - alns[1].score) > 15.0:
+                    goods += [ ((ri, rai), alns[0].k) ]
+                    print(f"{alns[0].k} <- {k}, {k-self.begin}")
+                    repositioned += 1 if alns[0].k != k-self.begin else 0
+                #return (alns[0].score - alns[1].score)
 
+        # TODO: sometimes all reads gone.
         # making layout!
         b = min([ rpos for (rid, aid), rpos in goods ])
-        e = max([ rpos + len(ctx.arrs[rid][aid]) for (rid, aid), rpos in goods ])
-        pruned_layout = Layout(goods, b, e)
-        return pruned_layout
+        e = max([ rpos + len(context.arrs[rid][aid]) for (rid, aid), rpos in goods ])
 
+        print(f"Pruned; {len(goods)} good reads out of {len(self.reads)} reads, making l of {e-b} units long, {repositioned} repositioned")
+        if len(goods) == len(self.reads) and repositioned == 0:
+            return None
+        else:
+            return Layout(reads = goods, begin = b, end = e, variants = layout_local_vars)
 
+    # TODO: update this implementation
     def describe(self, ctx):
         """ describe layout's consistency (stability with local mask?). This should work fine for medium-size layout. """
 
@@ -374,6 +387,7 @@ class Layout:
         l0 = layout_local_bits_dict[regs[0]].shape[0] # layout's length
         print("The structure of the layout:")
         print(newpool.hers[0].hors)
+
 
         def er_to_svs_dp(asm, i, ai, bd):
             # encoded read to self-vs-self dot plot in hor resolution, given snv mask.
@@ -427,6 +441,70 @@ class Layout:
                 print(f"\nScore Gap = {(alns[0].score - 0):.1f} - PASS (ONLY_ALN)")
             if alns:
                 print_align(alns[0], layout_local_bits_dict)
+
+    def visualize(self, context, variants = None, other_layouts = None):
+        """
+        fully visualize the layout, using leave-one-out consensus vs 
+        There can be two modes: to use the same variants definition for all comparison (when variants are specified),
+        or to use specialized variants definition for each read (when variants are not specified).
+        If `other_layouts` is specified, then the layout is to be compared with (consensi of) those layouts.
+        Returns: dict with data and metadata.
+        """
+
+        def dotplot(i, ai, j, aj, b):
+            """ returns dotplot matrix for the two reads. Maybe useful in other places? """
+            mi, mj = b[(i, ai)], b[(j, aj)]
+            li, lj = mi.shape[0], mj.shape[0]
+
+            def _s(x, y):
+                """ helper func to calc score aligning a unit to unit """
+                mx, my = mi[x,:], mj[y,:]
+                mch = np.sum(np.multiply(mx, my) == 1)
+                n11 = np.sum((mx + my) == 2)
+                n00 = np.sum((mx + my) == -2)
+                mis = np.sum(np.multiply(mx, my) == -1)
+                assert mch == n11 + n00, "matrix calculation wrong"
+                return (n11 + context.c_00 * n00) / (0.01 + n11 + context.c_00 * n00 + context.c_ms * mis)
+
+            # return [ (x, y, _s(x, y)) for x in range(li) for y in range(lj) ]
+            # return np.array([ _s(x, y) for x in range(li) for y in range(lj) ]).reshape(li, lj)
+            return [ _s(x, y) for y in range(lj)  for x in range(li) ]
+
+        def leave_one_out_consensus(rd): # NOTE: If leaving one divides the layout, consensus would be still the same size.
+            reads_except_me = [ r for r in self.reads if r[0] != rd ]
+            assert len(reads_except_me) == len(self.reads) - 1, "wrong number of reads!"
+            loo_layout = Layout(reads = reads_except_me, begin = self.begin, end = self.end, variants = variants)
+            loo_consensus = loo_layout.get_consensus(context)
+            return loo_consensus
+
+        variants = variants if variants else context.variants
+
+        dotplot_data = []
+
+        if not other_layouts:
+            for (ri, rai), k in sorted(self.reads, key = lambda r: r[1]):
+                read = context.hers[ri]
+                # NOTE: maybe I could use loo version of variants, but I'll skip that.
+                aln = Alignment(hers = [leave_one_out_consensus((ri, rai)), read], variants = variants)
+                xi = len(aln.bits[(0,0)][:,0])
+                ast = aln.get_all_vs_all_aln()
+                loo_bits = aln.bits
+                for (j, aj), alns in ast.alignments[(0,0)].items(): # there must be only one j
+                    dotplot_data += dotplot(0, 0, j, aj, loo_bits)
+                dotplot_data += [ 1.0 for x in range(xi) ]
+        else:
+            consensus = self.get_consensus
+            for l in other_layouts:
+                aln = Alignment(hers = [consensus, l.get_consensus], variants = variants)
+                xi = len(aln.bits[(0,0)][:,0])
+                ast = aln.get_all_vs_all_aln()
+                for (j, aj), alns in ast.alignments[(0,0)].items(): # there must be only one j
+                    dotplot_data += dotplot(0, 0, j, aj, aln.bits)
+                dotplot_data += [ 1.0 for x in range(xi) ]
+
+        n = len(dotplot_data)
+        yi = int(n/xi)
+        return dict(data = dotplot_data, xi = xi, yi = yi)
 
 
 # TODO: def plot_scoreGap_distr(), or any other equivalent
@@ -696,17 +774,17 @@ if __name__ == '__main__':
         ast = pickle.load(open(args.alns, "rb"))
         context = Alignment(ast.reads, arrs = ast.arrays, variants = ast.variants)
 
-        # TODO: this is working well
-        #layouts = iterative_layout(alignments)
-        #print(f"{len(layouts)} layouts found. done.")
+        # TODO: this is working well; global layouts, this might be too useful to ignore!
+        layouts = iterative_layout(ast)
+        print(f"{len(layouts)} layouts found. done.")
+        with open("layouts-global.pickle", "wb") as f:
+            pickle.dump(layouts, f)
+        sys.exit()
 
         covers = read_cover(ast)
-
         n = 0
         layouts = []
-
         #fluct = set([ r for c in covers for r in c if len(c) <= 9 ])
-
         fluct = set() # NOTE: temporarily ignore fractured ones
         print(f"{len(fluct)} reads in fractured covers.")
 
@@ -721,6 +799,8 @@ if __name__ == '__main__':
             print_snvs(snvs)
 
             local_ast = context.get_all_vs_all_aln(cover | fluct, snvs)
+            #local_ast = context.get_all_vs_all_aln(cover | fluct, snvs)
+
             los = iterative_layout(local_ast)
             print(f"\n--- inside {len(los)} layouts for Cover {n} ---")
             for il, lo in enumerate(los):
@@ -734,14 +814,117 @@ if __name__ == '__main__':
 
         # layout(alignments)
 
-    if args.action == "connect":
+    elif args.action == "extends":
+        # for each (large) layout, take layout-local-vars or layout-ends-vars
+        # and recompute a-v-a align among all reads, which is then used for defining a cover and cover-local-vars
+
+        assert args.alns, "need alignments"
+        ast = pickle.load(open(args.alns, "rb"))
+        context = Alignment(ast.reads, arrs = ast.arrays, variants = ast.variants)
 
         assert args.layouts, "need layouts; perform 'layout' first"
         with open(args.layouts, "rb") as f:
             layouts = pickle.load(f)
 
+        for i, l in enumerate(sorted(layouts, key = lambda l: -1 * len(l.reads))):
+
+            if len(l.reads) < 10:
+                continue
+
+            print(f"Layout {i}: {len(l.reads)} reads, {l.end - l.begin} units-long ~ {2052 * (l.end - l.begin)} bp.")
+
+            # prune it if necessary
+            pruned = l.prune(context)
+            l = pruned if pruned else l
+
+            # calculate layout-local variants, and alignments outwards
+            lv = l.define_local_variants(context)
+            regs = context.longer_than(6)
+            bits = context.get_bits_dict(lv, regs)
+            mines = [ (i, ai) for ((i, ai), k) in l.reads ]
+            yours = [ r for r in regs if r not in mines ]
+
+            print(f"{len(mines)} mines, {len(yours)} yours, {len(regs)} regs.")
+            #alns = context.some_vs_some_alignment(mines, regs, bits)
+
+            ast = AlignmentStore(
+                reads = context.hers,
+                arrays = context.arrs,
+                variants = lv,
+                # alignments = context.some_vs_some_alignment(mines, yours, bits),
+                alignments = context.some_vs_some_alignment(regs, regs, bits),
+                c_00 = context.c_00,
+                c_ms = context.c_ms)
+
+            los = iterative_layout(ast)
+            print(f"got {len(los)} layout for extension")
+
+            los_to_save = []
+            for j, m in enumerate(los):
+                if len(m.reads) < 3:
+                    continue
+                if all([ r[0] not in mines for r in m.reads ]):
+                    # if no overlap between l and m
+                    continue
+
+                cand_offset = Counter([ kj - ki for ri, ki in l.reads for rj, kj in m.reads if ri == rj ])
+                if cand_offset:
+                    print(f"ovlp by {cand_offset.most_common(0)} unit being shifted, layout {i}-{j} with {len(m.reads)} reads")
+                    los_to_save += [m]
+                #d3 = ll.visualize(context, variants = lv)
+                #fig, ax = plt.subplots(3, 1, figsize = ( d1["yi"]/20, 3*d1["xi"]/20 ))
+                #sns.heatmap(np.array(d1["data"]).reshape(d1["yi"], d1["xi"]).transpose(), cmap="Blues", ax = ax[0])
+
+            # TODO
+            with open(f"layouts-extension-{i}.pickle", "wb") as f:
+                pickle.dump(los_to_save, f)
+
+            #alns = context.some_vs_some_alignment(mines, yours, bits)
+            #print(alns)
+
+    elif args.action == "visualize":
+
+        # TODO: what if I use "wrong" variants for visualization??
+
+        # you need this to take consensus of layouts for visualizing it
+        assert args.alns, "need alignments"
+        ast = pickle.load(open(args.alns, "rb"))
+        context = Alignment(ast.reads, arrs = ast.arrays, variants = ast.variants)
+
+        assert args.layouts, "need layouts; perform 'layout' first"
+        with open(args.layouts, "rb") as f:
+            layouts = pickle.load(f)
+
+        for i, l in enumerate(sorted(layouts, key = lambda l: -1 * len(l.reads))):
+            if len(l.reads) < 3:
+                continue
+
+            lv = l.define_local_variants(context)
+            d1 = l.visualize(context, variants = ast.variants)
+            d2 = l.visualize(context, variants = lv)
+            pruned = l.prune(context)
+
+            if pruned:
+                lvp = pruned.define_local_variants(context)
+                d3 = pruned.visualize(context, variants = lvp)
+                fig, ax = plt.subplots(3, 1, figsize = ( d1["yi"]/20, 3*d1["xi"]/20 ))
+                sns.heatmap(np.array(d1["data"]).reshape(d1["yi"], d1["xi"]).transpose(), cmap="Blues", ax = ax[0])
+                sns.heatmap(np.array(d2["data"]).reshape(d2["yi"], d2["xi"]).transpose(), cmap="Blues", ax = ax[1])
+                sns.heatmap(np.array(d3["data"]).reshape(d3["yi"], d3["xi"]).transpose(), cmap="Blues", ax = ax[2])
+            else:
+                fig, ax = plt.subplots(2, 1, figsize = ( d1["yi"]/20, 2*d1["xi"]/20 ))
+                sns.heatmap(np.array(d1["data"]).reshape(d1["yi"], d1["xi"]).transpose(), cmap="Blues", ax = ax[0])
+                sns.heatmap(np.array(d2["data"]).reshape(d2["yi"], d2["xi"]).transpose(), cmap="Blues", ax = ax[1])
+
+            # print(l.variants[0]) # TODO; I don't know why but it's tuple...
+            #l.visualize(context, variants = l.variants[0], filename = f"images/layouts-{i}-lv.png")
+            plt.savefig(f"images/layouts-{i}-jux.png")
+            plt.close('all')
+
+    elif args.action == "connect":
+
         # print(f"{len(layouts)} layouts loaded.")
-        print("l\tl.nr\tl.b\tl.e\tl.l\t.\tm\tm.nr\tm.b\tm.e\tm.l\tstatus\trext\tfext\toffsets")
+        # print("l\tl.nr\tl.b\tl.e\tl.l\t.\tm\tm.nr\tm.b\tm.e\tm.l\tstatus\trext\tfext\toffsets")
 
         def merge(l, m, i, j):
             """ tries to merge two layouts. ?? """
@@ -767,7 +950,7 @@ if __name__ == '__main__':
         def ovlp(l, m): 
             return Counter([ kj - ki for ri, ki in l.reads for rj, kj in m.reads if ri == rj ]).most_common(10)
 
-        def filter_non_essentials(layouts):
+        def filter_non_essentials(layouts, min_ratio = 1.0):
             """ returns only essential layouts, which are not contained in another. """
             non_essentials = set()
             for i, j, l, m in [ (i, j, l, m) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i < j ]:
@@ -775,46 +958,69 @@ if __name__ == '__main__':
                 if not cand_offset:
                     continue
                 nmatch = cand_offset[0][1]
-                if len(l.reads) == nmatch and len(m.reads) == nmatch:
-                    non_essentials |= set([j])
+                if nmatch / len(l.reads) >= min_ratio and nmatch / len(m.reads) >= min_ratio:
+                    if len(l.reads) > len(m.reads): # take larger
+                        non_essentials |= set([j])
+                    else:
+                        non_essentials |= set([i])
                 elif len(l.reads) == nmatch:
                     non_essentials |= set([i])
                 elif len(m.reads) == nmatch:
                     non_essentials |= set([j])
+
             return [ l for i, l in enumerate(layouts) if i not in non_essentials ]
 
-        def enrich(layouts):
+        def enrich(layouts, min_ratio = 1.0):
             """ sort out the set of leyouts as follows; pick the longest layout, check if it covers others, then merge them into it. """
             layouts = sorted(layouts, key = lambda x: (x.begin - x.end))
             result_layouts = []
-            for i, l in enumerate(layouts[:-1]):
-                cl = l # current layout
 
-                for m in layouts[i+1:]:
+            for i, l in enumerate(layouts):
+                cl = l # current layout
+                #begin, end = l.begin, l.end
+                #other = Counter()
+                for j, m in [ (j, m) for j, m in enumerate(layouts) if not i == j ]:
                     cand_offset = Counter([ kj - ki for ri, ki in l.reads for rj, kj in m.reads if ri == rj ]).most_common(10)
-                    if len(cand_offset) == 1: # NOTE: if no evident conflict
-                        if cand_offset[0][1] > 1: # NOTE: if supported by at least two reads
-                            offset = cand_offset[0][0]
-                            if l.begin <= m.begin-offset and m.end-offset <= l.end:
-                                cl = Layout(reads = cl.reads + [ ((mi, mai), mk - offset) for (mi, mai), mk in m.reads ], begin = cl.begin, end = cl.end)
+                    if len(cand_offset) == 1 \
+                       or (len(cand_offset) > 1 and (cand_offset[0][1] / (cand_offset[0][1] + cand_offset[1][1])) > min_ratio):
+                        offset = cand_offset[0][0]
+                        #other += Counter([ ((mi, mai), mk - offset) for (mi, mai), mk in m.reads ]) 
+                        #begin = min(begin, m.begin-offset)
+                        #end = max(end, m.end-offset)
+                        cl = Layout(reads = cl.reads + [ ((mi, mai), mk - offset) for (mi, mai), mk in m.reads
+                            if (mi, mai) not in [ clr for clr, clo in cl.reads] ],
+                                begin = min(cl.begin, m.begin-offset),
+                                end = max(cl.end, m.end-offset))
 
                 cl = Layout(reads = list(set(cl.reads)), begin = cl.begin, end = cl.end)
-                print(f"{i} {len(l.reads)} => {len(cl.reads)}", flush=True)
+                # print(f"{i} {len(l.reads)} => {len(cl.reads)}", flush=True)
                 result_layouts += [cl]
 
             return result_layouts
 
         print(f"From {len(layouts)} layouts...")
+
         # first iter
         essentials = sorted(filter_non_essentials(layouts), key = lambda l: l.begin - l.end)
-        print(f"{len(essentials)} essentials found...", flush = True)
-        layouts = enrich(essentials)
-        # second iter
-        essentials = sorted(filter_non_essentials(layouts), key = lambda l: l.begin - l.end)
-        print(f"{len(essentials)} essentials found...", flush = True)
-        layouts = enrich(essentials)
+        n = 100000
+        while len(essentials) < n:
+            n = len(essentials)
+            layouts = enrich(essentials, 0.9)
+            essentials = sorted(filter_non_essentials(layouts, 0.5), key = lambda l: l.begin - l.end)
+            print(f"{len(essentials)} essentials found...", flush = True)
 
-        t = [ merge(l, m, i, j) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i != j]
+        layouts = essentials
+        print("\nEssential Layouts:")
+        print("i\tnreads\tbegin\tend\tlength")
+        print("\n".join([ f"{i}\t{len(l.reads)}\t{l.begin}\t{l.end}\t{l.end-l.begin}" for i, l in enumerate(layouts) ]))
+
+        print("\nIncidence:")
+        t = [ (i, j, ovlp(l, m)) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i < j ]
+        t = sorted(t, key = lambda x: -x[2][0][1] if x[2] else 0)
+
+        print("i\tj\tnreads_i\tnreads_j\tbest_shared\tbest_offset\tsb_shared\tsb_offset\tratio_1_2")
+        print("\n".join([ f"{i}\t{j}\t{len(layouts[i].reads)}\t{len(layouts[j].reads)}\t{o[0][1]}\t{o[0][0]}" +\
+                (f"\t{o[1][1]}\t{o[1][0]}\t{o[0][1]/(o[0][1]+o[1][1]):.3f}" if len(o) > 1 else "\t*\t*") for i, j, o in t if o ]))
 
         # t = [ merge(layouts[i], layouts[j], i, j) for i in essentials for j in essentials if i != j ]
         # t = [ (i, j, merge(l, m, i, j)) for i, l in enumerate(layouts) for j, m in enumerate(layouts) if i < j ]
