@@ -493,9 +493,9 @@ class Layout:
                     dotplot_data += dotplot(0, 0, j, aj, loo_bits)
                 dotplot_data += [ 1.0 for x in range(xi) ]
         else:
-            consensus = self.get_consensus
+            consensus = self.get_consensus(context)
             for l in other_layouts:
-                aln = Alignment(hers = [consensus, l.get_consensus], variants = variants)
+                aln = Alignment(hers = [consensus, l.get_consensus(context)], variants = variants)
                 xi = len(aln.bits[(0,0)][:,0])
                 ast = aln.get_all_vs_all_aln()
                 for (j, aj), alns in ast.alignments[(0,0)].items(): # there must be only one j
@@ -856,6 +856,10 @@ if __name__ == '__main__':
                 c_00 = context.c_00,
                 c_ms = context.c_ms)
 
+            with open(f"alignments-for-extension-{i}.pickle", "wb") as f:
+                pickle.dump(ast, f)
+            print(f"saved alignments for extension")
+
             los = iterative_layout(ast)
             print(f"got {len(los)} layout for extension")
 
@@ -863,14 +867,14 @@ if __name__ == '__main__':
             for j, m in enumerate(los):
                 if len(m.reads) < 3:
                     continue
+                los_to_save += [m]
                 if all([ r[0] not in mines for r in m.reads ]):
                     # if no overlap between l and m
                     continue
-
                 cand_offset = Counter([ kj - ki for ri, ki in l.reads for rj, kj in m.reads if ri == rj ])
-                if cand_offset:
-                    print(f"ovlp by {cand_offset.most_common(0)} unit being shifted, layout {i}-{j} with {len(m.reads)} reads")
-                    los_to_save += [m]
+                #if cand_offset:
+                    #print(f"ovlp by {cand_offset.most_common(1)} unit being shifted, layout {i}-{j} with {len(m.reads)} reads")
+                #    pass
                 #d3 = ll.visualize(context, variants = lv)
                 #fig, ax = plt.subplots(3, 1, figsize = ( d1["yi"]/20, 3*d1["xi"]/20 ))
                 #sns.heatmap(np.array(d1["data"]).reshape(d1["yi"], d1["xi"]).transpose(), cmap="Blues", ax = ax[0])
@@ -895,13 +899,24 @@ if __name__ == '__main__':
         with open(args.layouts, "rb") as f:
             layouts = pickle.load(f)
 
-        for i, l in enumerate(sorted(layouts, key = lambda l: -1 * len(l.reads))):
+        layouts = sorted(layouts, key = lambda l: -1 * len(l.reads))
+
+        for i, l in enumerate(layouts):
             if len(l.reads) < 3:
                 continue
 
             lv = l.define_local_variants(context)
-            d1 = l.visualize(context, variants = ast.variants)
-            d2 = l.visualize(context, variants = lv)
+            d4 = l.visualize(context, variants = ast.variants, other_layouts = layouts[:10])
+            d5 = l.visualize(context, variants = lv, other_layouts = layouts[:10])
+            fig, ax = plt.subplots(2, 1, figsize = ( d4["yi"]/20, 2*d4["xi"]/20 ))
+            sns.heatmap(np.array(d4["data"]).reshape(d4["yi"], d4["xi"]).transpose(), cmap="Blues", ax = ax[0])
+            sns.heatmap(np.array(d5["data"]).reshape(d5["yi"], d5["xi"]).transpose(), cmap="Blues", ax = ax[1])
+            plt.savefig(f"images/layouts-{i}-v-others.png")
+            plt.close('all')
+
+            """
+            d1 = l.visualize(context, variants = ast.variants) # with original vars of construction time
+            d2 = l.visualize(context, variants = lv) # with layout local vars
             pruned = l.prune(context)
 
             if pruned:
@@ -920,6 +935,7 @@ if __name__ == '__main__':
             #l.visualize(context, variants = l.variants[0], filename = f"images/layouts-{i}-lv.png")
             plt.savefig(f"images/layouts-{i}-jux.png")
             plt.close('all')
+            """
 
     elif args.action == "connect":
 
