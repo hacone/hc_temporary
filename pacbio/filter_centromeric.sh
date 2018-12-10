@@ -11,10 +11,9 @@ export S=20
 export MONS_CQF=./d0.fq.K$K.S$S.ser
 
 make_ref_cqf() {
-
+  # NOTE: executed on ax02
 	${SQUEAKR_DIR}/squeakr-count -f -k $K -s $S -t 1 -o ./ ../data/monomers/d0.fq \
 	&& mv d0.fq.ser ${MONS_CQF}
-	# echo "got d0.fq.K$K.S$S.ser"
 }
 
 
@@ -38,7 +37,9 @@ filter_centromeric() {
 
 mkdir -p Centro_Fasta_143Cells
 
-ls Fastq/ | grep .fastq.gz \
-| xargs -P 8 -I % bash -c "filter_centromeric %"
+#ls Fastq/ | grep .fastq.gz \
+#| xargs -P 8 -I % bash -c "filter_centromeric %"
+
+make_ref_cqf
 
 echo "all done"
