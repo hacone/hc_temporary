@@ -442,6 +442,46 @@ class Layout:
             if alns:
                 print_align(alns[0], layout_local_bits_dict)
 
+    def visualize_consistency(self, context, variants = None):
+        # TODO : visualize consistency
+        """
+        There should be two modes: use just specified variants (default to layout-local variants) or to use adaptive one.
+        """
+
+        # TODO: NOTE: this is copied one!!
+        def leave_one_out_consensus(rd): # NOTE: If leaving one divides the layout, consensus would be still the same size.
+            reads_except_me = [ r for r in self.reads if r[0] != rd ]
+            assert len(reads_except_me) == len(self.reads) - 1, "wrong number of reads!"
+            loo_layout = Layout(reads = reads_except_me, begin = self.begin, end = self.end, variants = variants)
+            loo_consensus = loo_layout.get_consensus(context)
+            return loo_consensus
+
+        result = dict()
+        variants = variants if variants else context.variants
+        for (ri, rai), k in sorted(self.reads, key = lambda r: r[1]):
+            result[(ri, rai)] = []
+            read = context.hers[ri]
+            aln = Alignment(hers = [leave_one_out_consensus((ri, rai)), read], variants = variants)
+            xi = len(aln.bits[(0,0)][:,0])
+            ast = aln.get_all_vs_all_aln(quiet = True)
+            loo_bits = aln.bits
+            for (j, aj), alns in ast.alignments[(0,0)].items(): # there must be only one j # NOTE: No!
+                if rai != aj:
+                    continue
+                lj = loo_bits[(j, aj)].shape[0]
+                for k in range(-lj+2, xi-2):
+                    a = aln.calc_align(0, 0, j, aj, k, bits_dict = loo_bits)
+                    result[(ri, rai)] += [(k, a.score)]
+
+            srt = sorted(result[(ri, rai)], key=lambda x: -x[1])
+            if len(srt) > 1:
+                print(f"{ri}\t{rai}\t{srt[0][1]:.2f}\t{srt[1][1]:.2f}")
+            elif srt:
+                print(f"{ri}\t{rai}\t{srt[0][1]:.2f}\t{0:.2f}")
+
+        return result
+
+
     def visualize(self, context, variants = None, other_layouts = None):
         """
         fully visualize the layout, using leave-one-out consensus vs 
@@ -905,9 +945,15 @@ if __name__ == '__main__':
             if len(l.reads) < 3:
                 continue
 
+            print(f"for layout {i}")
             lv = l.define_local_variants(context)
+            l.visualize_consistency(context, variants = ast.variants)
+            #l.visualize_consistency(context, variants = lv)
+
+            continue
             d4 = l.visualize(context, variants = ast.variants, other_layouts = layouts[:10])
             d5 = l.visualize(context, variants = lv, other_layouts = layouts[:10])
+
             fig, ax = plt.subplots(2, 1, figsize = ( d4["yi"]/20, 2*d4["xi"]/20 ))
             sns.heatmap(np.array(d4["data"]).reshape(d4["yi"], d4["xi"]).transpose(), cmap="Blues", ax = ax[0])
             sns.heatmap(np.array(d5["data"]).reshape(d5["yi"], d5["xi"]).transpose(), cmap="Blues", ax = ax[1])

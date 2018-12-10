@@ -200,7 +200,6 @@ class Alignment: # TODO: rename this!!
     def some_vs_some_alignment(self, targets, queries, bits_dict, quiet = False): # TODO: bits_dict might be adaptive (local w.r.t. targets?)
         """ calculate some-vs-some alignments among reads(regions), returning dict of alns.
             also you have more control over the parameters (variants to be used) thru bits """
-        # TODO: i won't need all_vs_all_aln anymore?
 
         alns_dict = dict()
         n = 0
@@ -213,8 +212,6 @@ class Alignment: # TODO: rename this!!
             if not quiet:
                 print(".", end = "", flush = True)
 
-            #n += 1
-            #print(f"aligning {i} - {ai}. {n} / {len(targets)}")
             alns_dict[(i, ai)] = dict()
             for j, aj in [ (j, aj) for j, aj in queries if not (j, aj) == (i, ai)]:
                 li, lj = bits_dict[(i, ai)].shape[0], bits_dict[(j, aj)].shape[0]
@@ -223,14 +220,11 @@ class Alignment: # TODO: rename this!!
                 alns = [ aln for aln in alns if aln.score > T_dag - 100 and aln.eff_ovlp > 4 ] # NOTE: threshold depends on scoring scheme.
                 if alns:
                     alns_dict[(i, ai)][(j, aj)] = sorted(alns, key = lambda x: -1 * x.score)
-            #l = f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag -100 and aln.eff_ovlp > 4 ]) } targets found for saving. "
-            #l += f"{ len([ 0 for t, alns in alns_dict[(i, ai)].items() for aln in alns if aln.score > T_dag and aln.eff_ovlp > 4 ]) } targets above T_dag = {T_dag}."
-            #print(l, flush = True)
 
         # TODO: wouldn't you return alignment store instead?
         return alns_dict
 
-    def get_all_vs_all_aln(self, regs = None, variants = None):
+    def get_all_vs_all_aln(self, regs = None, variants = None, quiet = False):
         """ calculate all-vs-all alignments among reads(regions), returning dict of alns.
             parameters are default, induced from the contextual object. (cf. some_vs_some_alignment) """
 
@@ -249,7 +243,7 @@ class Alignment: # TODO: rename this!!
             reads = self.hers,
             arrays = self.arrs,
             variants = variants,
-            alignments = self.some_vs_some_alignment(regs, regs, bits),
+            alignments = self.some_vs_some_alignment(regs, regs, bits, quiet = quiet),
             c_00 = self.c_00,
             c_ms = self.c_ms)
 
