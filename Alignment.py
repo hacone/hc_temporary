@@ -342,17 +342,21 @@ class AlignmentStore:
                         print("\nNo corresponding alignment in original setting.")
                 """
 
-def stats_alns_dict(alns_dict): # NOTE: I'm not using this, but leave it here for later reference
-    """ empirical score distribution for plotting (deprecated?) """
-    # (score, gap, n11/n11+n00, eff_ovlp, rank)
-    print("i\tj\tscore\tscoreGap\tvars_frac\teff_ovlp\trank")
-    for (i, ai), d in alns_dict.items():
-        for rank, (j, aj, alns) in enumerate(
-                sorted([ (j, aj, alns) for (j, aj), alns in d.items() if (j, aj) != (i, ai) ], key = lambda x: -1.0 * x[2][0].score)[:10]):
-            scoreGap = alns[0].score - alns[1].score if len(alns) > 1 else alns[0].score - (T_dag-100)
-            vars_frac = alns[0].n11 / (alns[0].n11 + alns[0].n00) # n11/(n11+n00)
-            line = f"{i}\t{j}\t{alns[0].score/10:.2f}\t{scoreGap/10:.2f}\t{100*vars_frac:.2f}\t{alns[0].eff_ovlp}\t{rank}"
-            print(line)
+    def summary(self):
+        """ empirical score distribution for plotting (deprecated?) """
+        # (score, gap, n11/n11+n00, eff_ovlp, rank)
+        print("i\tj\tscore\tscoreGap\tvars_frac\teff_ovlp\trank")
+        for (i, ai), d in self.alignments.items():
+            targets = sorted([
+                (j, aj, alns) for (j, aj), alns in d.items() if (j, aj) != (i, ai) ],
+                key = lambda x: -1.0 * x[2][0].score)
+            s = ""
+            for rank, (j, aj, alns) in enumerate(targets[:10]):
+                scoreGap = alns[0].score - alns[1].score if len(alns) > 1 else alns[0].score - (T_dag-100)
+                vars_frac = alns[0].n11 / (alns[0].n11 + alns[0].n00) # n11/(n11+n00)
+                s += f"{i}\t{j}\t{alns[0].score/10:.2f}\t{scoreGap/10:.2f}\t" \
+                   + f"{100*vars_frac:.2f}\t{alns[0].eff_ovlp}\t{rank}\n"
+            print(s, flush=True)
 
 if __name__ == '__main__':
 

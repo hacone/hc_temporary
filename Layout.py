@@ -550,13 +550,18 @@ class Layout:
 # TODO: def plot_scoreGap_distr(), or any other equivalent
 # TODO: some function to map shorter reads into layouts/components to enrich data.
 
-def print_layout(layout, bits_dict):
+def print_layout(layout, bits_dict, context = None):
+    """ if context is provided, try to determine special units: 5-mer, 10-mer, ... """
 
     def is_in(i, j, aj, d):
         lj = bits_dict[(j, aj)].shape[0]
         if d <= i and i < d + lj:
             if bits_dict[(j, aj)][i-d,0] == 0:
-                return "*"
+                if context:
+                    # TODO: fill
+                    return "*"
+                else:
+                    return "*"
             else:
                 return "|"
         else:
