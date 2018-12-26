@@ -558,8 +558,8 @@ def print_layout(layout, bits_dict, context = None):
         if d <= i and i < d + lj:
             if bits_dict[(j, aj)][i-d,0] == 0:
                 if context:
-                    # TODO: fill
-                    return "*"
+                    t = context.arrs[j][aj][i-d]
+                    return "U21Ff@"[t+6] if (t in [-1, -2, -3, -4, -5, -6] else "*"
                 else:
                     return "*"
             else:

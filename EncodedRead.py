@@ -162,7 +162,7 @@ def parse_sam_records(aln, mons):
 
 
 # TODO: handle orientation info properly
-def encodeSAM_DP(samfile):
+def encodeSAM_DP(samfile, usemons = None):
     """ Encode PacBio reads in SAM format (reads as query, monomers as reference)
         NOTE: this tries to select best assignment using DP
         The result is written out in `out`.
@@ -180,6 +180,8 @@ def encodeSAM_DP(samfile):
         length = readname2len(read)
         mons_f = []
         for mon in [ m for m in mons if (not m.is_secondary) and m.has_tag("MD") and m.get_tag("BS") > 50 ]:
+            if usemons and aln.references[mon.reference_id] not in usemons:
+                continue
             rs, re = get_read_range(mon)
             rs_full, re_full = rs - mon.reference_start, re + aln.lengths[mon.reference_id] - mon.reference_end
             if mon.is_reverse:
@@ -339,6 +341,7 @@ if __name__ == "__main__":
     parser.add_argument('--split', dest='split', help='specify to split the encoded reads pickle (for larger sam file)')
     parser.add_argument('--read', dest='readfile', help='pickled encoded reads')
     parser.add_argument('--vars', dest='varsfile', help='pickled admissible variants')
+    parser.add_argument('--mons', dest='monsfile', help='list of monomers to be used; default to use all.')
     parser.add_argument('--out', dest='outfile', help='the output to which pickled encoded reads are written out.' +
             ' For correction task, corrected reads are written out to the path')
     args = parser.parse_args()
@@ -350,12 +353,17 @@ if __name__ == "__main__":
         assert args.samfile, "SAM file is not specified. aborting."
         assert args.outfile, "output file is not specified. aborting."
 
+        if args.monsfile:
+            usemons = [ l.strip() for l in open(args.monsfile, "r").readlines() ]
+        else:
+            usemons = None
+
         if not args.split:
-            ers = encodeSAM_DP(args.samfile)
+            ers = encodeSAM_DP(args.samfile, usemons)
             with open(args.outfile, "wb") as f:
                 pickle.dump(list(ers), f)
         else:
-            ers = encodeSAM_DP(args.samfile)
+            ers = encodeSAM_DP(args.samfile, mons, usemons)
             nfile = 1
             grouper = [ers] * 10000
             for e in zip_longest(*grouper, fillvalue=None):

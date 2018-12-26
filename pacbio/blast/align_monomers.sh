@@ -104,7 +104,7 @@ export READ_DIR=/work2/hacone/2018/human_centromeres/pacbio/blast/ScoreMovies/
 
 find $READ_DIR | grep .fasta.gz$ | head -n 10 | xargs -P 12 -I % bash -c "align %"
 
-find $READ_DIR | grep .fasta.gz$ | head -n 10 | xargs -P 12 -I % bash -c "sorted %"
+#find $READ_DIR | grep .fasta.gz$ | head -n 10 | xargs -P 12 -I % bash -c "sorted %"
 
-find $TMP_DIR | grep .sam.gz$ | head -n 10 | xargs -P 12 -I % bash -c "encode %"
+#find $TMP_DIR | grep .sam.gz$ | head -n 10 | xargs -P 12 -I % bash -c "encode %"
 
