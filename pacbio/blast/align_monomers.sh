@@ -2,14 +2,20 @@
 
 # General Settings
 export MONOMER_DB=/work2/hacone/2018/human_centromeres/cluster.s14.SRR3189741.fa
+export READ_DIR=/work2/hacone/2018/human_centromeres/pacbio/blast/ScoreMovies/
 export TMP_DIR=/work2/hacone/2018/human_centromeres/pacbio/blast/tmp/
 
 # Required for `sorted`
 export SAMTOOLS=/path/to/samtools
 
 # Required for `encode`
-export VENV_ACT=../../venv/bin/activate
-export ENCODEPY=../../EncodedRead.py
+export VENV_ACT=/work2/hacone/2018/human_centromeres/venv/bin/activate
+export ENCODEPY=/work2/hacone/2018/human_centromeres/EncodedRead.py
+export MONLIST=/work2/hacone/2018/human_centromeres/resource/monomers/s14-for-X.txt
+
+# in case it can't reach the correct one
+#export PYTHON3=python3
+export PYTHON3=/work2/hacone/2018/human_centromeres/venv/bin/python3
 
 ## This performs monomer-assignment by blast. Output should be organized as sam/bam format file that can be directly parsed by python.
 ## As it considers monomers to be query, parsing part should be somewhat different. This specification might be changed later.
@@ -91,8 +97,10 @@ encode() {
 	source ${VENV_ACT}
 
   # echo debugging...
-	echo "python3 ${ENCODEPY} encode_dp --sam ${SAM} --out ${SAM%%.sam.gz}.pickle"
-  #python3 ${ENCODEPY} encode_dp --sam ${SAM} --out ${SAM%%.sam.gz}.pickle
+	echo "python3 ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.all2.pickle"
+  ${PYTHON3} ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.all2.pickle
+	#echo "python3 ${ENCODEPY} encode_dp --sam ${SAM} --out ${SAM%%.sam.gz}.all.pickle"
+  #${PYTHON3} ${ENCODEPY} encode_dp --sam ${SAM} --out ${SAM%%.sam.gz}.all.pickle
 
   echo "Done encoding."
 
@@ -100,11 +108,10 @@ encode() {
 
 # NOTE: HERE IS THE ENTRY POINT OF THE SCRIPT!
 
-export READ_DIR=/work2/hacone/2018/human_centromeres/pacbio/blast/ScoreMovies/
 
-find $READ_DIR | grep .fasta.gz$ | head -n 10 | xargs -P 12 -I % bash -c "align %"
+#find $READ_DIR | grep .fasta.gz$ | head -n 10 | xargs -P 12 -I % bash -c "align %"
 
 #find $READ_DIR | grep .fasta.gz$ | head -n 10 | xargs -P 12 -I % bash -c "sorted %"
 
-#find $TMP_DIR | grep .sam.gz$ | head -n 10 | xargs -P 12 -I % bash -c "encode %"
+find $TMP_DIR | grep .sam.gz$ | head -n 10 | xargs -P 12 -I % bash -c "encode %"
 

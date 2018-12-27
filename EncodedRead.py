@@ -175,13 +175,21 @@ def encodeSAM_DP(samfile, usemons = None):
 
     aln = pysam.AlignmentFile(samfile)
 
+    usemon_ids = [ i for i, n in enumerate(aln.references) if n in usemons ] if usemons else []
+
     for read, mons in groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name):
         #yield EncodedRead(name = read, mons = list(parse_sam_records(aln, mons)), length = readname2len(read))
         length = readname2len(read)
         mons_f = []
+
+        #if usemons:
+        #    mons = [ m for m in mons if aln.references[m.reference_id] in usemons ]
+
         for mon in [ m for m in mons if (not m.is_secondary) and m.has_tag("MD") and m.get_tag("BS") > 50 ]:
-            if usemons and aln.references[mon.reference_id] not in usemons:
+
+            if usemon_ids and mon.reference_id not in usemon_ids:
                 continue
+
             rs, re = get_read_range(mon)
             rs_full, re_full = rs - mon.reference_start, re + aln.lengths[mon.reference_id] - mon.reference_end
             if mon.is_reverse:
@@ -191,6 +199,7 @@ def encodeSAM_DP(samfile, usemons = None):
 
         if not mons_f:
             continue
+
         # NOTE: here is stringent heuristic; taking ones with maximal score
         mons_f = sorted(mons_f, key = lambda x: x[1])
         mons_f = groupby(mons_f, key = lambda x: x[1])
