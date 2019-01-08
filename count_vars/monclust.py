@@ -143,6 +143,7 @@ def plot_embedding():
 #plot_embedding()
 
 if __name__ == "__main__":
+
     import argparse
     parser = argparse.ArgumentParser(description='Interact with monomer databases.')
     parser.add_argument('action', metavar='action', type=str, help='action to perform: distmat, cluster, ...')
@@ -151,6 +152,8 @@ if __name__ == "__main__":
     parser.add_argument('--dist', dest='distmatfile', help='path to distance matrix numpy object')
     parser.add_argument('--cluster-size', dest='cluster_size', help='the distance by which clusters must be separated each other')
     parser.add_argument('--bam', dest='bamfile', help='bamfile where short reads are aligned to monomers, used in selecting representatives')
+
+    parser.add_argument('--freq', dest='freqfile', help='tab-delimited table of names of monomers and frequencies in integer for pruning')
     args = parser.parse_args()
 
     print(args.action)
@@ -174,6 +177,40 @@ if __name__ == "__main__":
             cluster(mons, dm, int(args.cluster_size), monomer_freq)
         else:
             cluster(mons, dm, int(args.cluster_size))
+
+    if args.action == "prune":
+        #assert args.monfile, "monomers database is not specified. aborting."
+        #assert args.distmatfile, "distance matrix is not specified. aborting."
+        assert args.freqfile, "monomer frequencies file is not specified. aborting."
+
+        #mons = openFasta(args.monfile)
+        #dm = np.load(args.distmatfile)
+
+        l = np.loadtxt(args.monfile + ".fai", dtype = "U20", delimiter = "\t", usecols = (0))
+        m2i = { m : i for i, m in enumerate(l) }
+        i2m = { i : m for i, m in enumerate(l) }
+
+        #nmons = len(mon_to_id)
+
+        freq = { m : int(i) for m, i in np.loadtxt(args.freqfile, dtype = "U20") }
+        print(freq)
+
+        pruned = []
+
+        while len(pruned) < len(l) - 1:
+
+            mink, minp = min( [ (k, freq[k] * min([ dm[m2i(k), m2i(m)] for m in l if m not in [k] + pruned ]))
+                for k in l if k not in precious ], key = lambda x: x[1] )
+
+            if minp < alpha:
+                pruned += [mink]
+
+        # TODO; or not TODO
+        #freq[m] 
+
+        #mon_to_id = { i:n for n, i in enumerate(l) }
+        #nmons = len(mon_to_id)
+        #prune
 
     else:
         print(f"unknown action. {args.action}")

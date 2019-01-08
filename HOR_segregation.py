@@ -57,8 +57,8 @@ def cluster_reads(occ, n_clusters = 40):
     return kmeans.predict(occ_n)
 
 
-def segregate_reads(pickles_dir):
-    pickles = [ pickles_dir + path for path in os.listdir(pickles_dir) if path.endswith('.ori.pickle') ]
+def segregate_reads(pickles, outdir):
+    # pickles = [ pickles_dir + path for path in os.listdir(pickles_dir) if path.endswith('.ori.pickle') ]
     reads = load_encoded_reads(pickles)
     cls = cluster_reads(monomers_in_reads(reads))
     cls_reads = [ [] for i in range(40) ]
@@ -69,7 +69,7 @@ def segregate_reads(pickles_dir):
 
     for i, c in enumerate(cls_reads):
         print(f"C-{i+1} has {len(c)} reads")
-        pickle.dump(c, open(f"./encoded_read_clusters_ori/C_{i+1}.pickle", "wb"))
+        pickle.dump(c, open(f"{outdir}/C_{i+1}.pickle", "wb"))
 
 def print_reads(pkl):
     reads = pickle.load(open(pkl, "rb"))
@@ -92,8 +92,9 @@ def tsne_reads(occ):
     # np.save("20k_reads.tsne.npy", reduced)
     reduced = np.load("20k_reads.tsne.npy")
     # mycm = plt.get_cmap("tab20b") + plt.get_cmap("tab20c") # TODO: how can i concatenate?
-    mycm = plt.get_cmap("tab20b")
-    plt.scatter(reduced[:, 0], reduced[:, 1], c=cls, s=6, alpha=0.5, edgecolors="none", cmap=mycm)
+    plt.scatter(
+            reduced[:, 0], reduced[:, 1], c=cls,
+            s=6, alpha=0.5, edgecolors="none", cmap=plt.get_cmap("tab20b"))
     plt.savefig("TSNE_encoded_reads_20k_40c.svg")
 
 def extract_kmonomers(pkl, k):
@@ -287,7 +288,11 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Breakup encoded read based on the set of assigned monomers.')
     parser.add_argument('action', metavar='action', type=str, help='action to perform: segregate, print(temporary), kmer, encode-hor, prinr-hor, show...')
-    parser.add_argument('--pickle-dir', dest='pickle_dir', help='directory where pickled encoded reads are placed')
+
+    # for segregate
+    parser.add_argument('--pickles', dest='pickles', help='fofn of pickled encoded reads')
+    parser.add_argument('--outdir', dest='outdir', help='output directory to which clustered reads are to be put')
+
     parser.add_argument('--reads', dest='reads', help='pickled encoded reads')
     parser.add_argument('--hor-reads', dest='hors', help='pickled encoded reads with hor encoding')
     parser.add_argument('-k', dest='k', help='k for k-mer analysis')
@@ -304,10 +309,9 @@ if __name__ == '__main__':
 
 
     if args.action == "segregate":
-        #assert args.pickle_dir, "pickle dir is not specified"
-        #assert args.reffile, "ref file is missing"
-        #segregate_reads(args.pickle_dir)
-        segregate_reads("./pacbio/blast/blast_assignment/")
+        assert args.pickles, "pickle fofn is not specified"
+        assert args.outdir, "output dir is not specified"
+        segregate_reads(args.pickles, args.outdir)
 
     elif args.action == "print":
         #NOTE: this is temporary
