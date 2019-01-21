@@ -23,6 +23,7 @@ T_agr = 700 # agree score threshold. alignment with score above this can be ...
 T_gap = 100 # required score gap between best one vs 2nd best one.
 T_dag = 600 # disagree score threshold. alignments with scores below this are considered false.
 
+# TODO: I'll move these to new library file.
 # TODO: can this be abstracted to work with other chromosomes?
 def chopx(reads):
     """
@@ -247,18 +248,6 @@ class Alignment: # TODO: rename this!!
             c_00 = self.c_00,
             c_ms = self.c_ms)
 
-def print_snvs(snvs, alt_snvs = None):
-    """ Show SNVs """
-    lines = "  k\t  p\tb\t    c\t   f\t   p-val\t c.f.d.\t f.gl\n"
-    for s in sorted(snvs, key = lambda x: -x["c"]):
-        k, p, b, c, f, pv = s["k"], s["p"], s["b"], s["c"], s["f"], s["binom_p"]
-        if alt_snvs:
-            alt_f = [ a["f"] for a in alt_snvs if (k, p, b) == (a["k"], a["p"], a["b"]) ]
-            alt_info = f"{100*alt_f[0]:>5.2f}" if alt_f else "    *"
-            lines += f"{k:>3}\t{p:>3}\t{b}\t{c:>5}\t{100*f:.2f}\t{pv:.2e}\t{pv*171*10*3:>7.2f}\t{alt_info}\n"
-        else:
-            lines += f"{k:>3}\t{p:>3}\t{b}\t{c:>5}\t{100*f:.2f}\t{pv:.2e}\t{pv*171*10*3:>7.2f}\n"
-    print(lines)
 
 def print_align(aln, bits_dict):
     """ Visualize an alignment in text to clarify the overlap. """

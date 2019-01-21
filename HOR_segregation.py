@@ -14,26 +14,28 @@ import svgwrite
 # hors := (index, size, symbol)
 HOR_Read = namedtuple("HOR_Read", ("name", "mons", "hors", "length", "ori"))
 
-# TODO: get this from param
-l = np.loadtxt("cluster.s14.SRR3189741.fa.fai", dtype = "U20", delimiter = "\t", usecols = (0))
-mon_to_id = { i:n for n, i in enumerate(l) }
-nmons = len(mon_to_id)
-
 
 def load_encoded_reads(pickles, n_max_reads = None):
+    l = np.loadtxt(pickles, dtype = "U20", delimiter = "\t", usecols = (0))
     reads = []
-    for picklefile in pickles:
+    for picklefile in l:
         reads += pickle.load(open(picklefile, "rb"))
         print(f"{len(reads)} reads found... " + "loaded " + picklefile, flush = True)
         if n_max_reads and (len(reads) > n_max_reads):
             break
     return reads
 
-def monomers_in_reads(reads):
+def monomers_in_reads(reads, ref = "cluster.s14.SRR3189741.fa.fai"):
     """
     counts occurences of each reference monomer in each read.
     returns ndarray of shape (nreads, nmons)
     """
+
+    # TODO: get this from param
+    l = np.loadtxt(ref, dtype = "U20", delimiter = "\t", usecols = (0))
+    mon_to_id = { i:n for n, i in enumerate(l) }
+    nmons = len(mon_to_id)
+
     occ = np.zeros(len(reads)*nmons).reshape(len(reads), nmons)
     for i, r in enumerate(reads):
         for m in r.mons:
