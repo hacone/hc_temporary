@@ -16,9 +16,8 @@ HOR_Read = namedtuple("HOR_Read", ("name", "mons", "hors", "length", "ori"))
 
 
 def load_encoded_reads(pickles, n_max_reads = None):
-    l = np.loadtxt(pickles, dtype = "U20", delimiter = "\t", usecols = (0))
     reads = []
-    for picklefile in l:
+    for picklefile in [ l.strip() for l in open(pickles, "r").readlines() ]:
         reads += pickle.load(open(picklefile, "rb"))
         print(f"{len(reads)} reads found... " + "loaded " + picklefile, flush = True)
         if n_max_reads and (len(reads) > n_max_reads):
@@ -75,11 +74,11 @@ def segregate_reads(pickles, outdir):
 
 def print_reads(pkl):
     reads = pickle.load(open(pkl, "rb"))
-    for r in reads[:200]:
-        print(f"{r.name}\t{len(r.mons)}\t{r.length}")
+    for r in sorted(reads, key=lambda x: -len(x.mons)):
+        print(f"\n{r.name}\t{len(r.mons)}\t{r.length}")
         last_end = 0
         for m in r.mons:
-            print(f"{m.monomer.name}\t{m.begin}\t{m.end}\t{m.begin-last_end}\t{len(m.monomer.snvs)}")
+            print(f"{m.monomer.name}\t{m.begin}\t{m.end}\t{m.begin-last_end}\t{len(m.monomer.snvs)}\t{m.ori}")
             last_end = m.end
 
 # NOTE: currently not visible from the menu
@@ -197,7 +196,7 @@ def print_HOR(pkl):
     hors = pickle.load(open(pkl, "rb"))
     #print(r.name, flush = True) # NOTE: print into stdout
     print("name\tbegin\tend\tidx\tsize\telem\tgap")
-    for r in hors:
+    for r in sorted(hors, key=lambda x: -len(x.mons)):
         for _idx, _size, elem in r.hors:
             idx, size = int(_idx), int(_size)
             if r.ori == '+':
@@ -209,6 +208,7 @@ def print_HOR(pkl):
                 gap = 0 if idx == 0 else -(r.mons[idx].end - r.mons[idx-1].begin)
 
             print( f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t{gap}")
+        print("")
 
 def HOR_encoding(pkl, path_merged, path_patterns):
 
