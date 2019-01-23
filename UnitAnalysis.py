@@ -16,12 +16,27 @@ from HOR_segregation import *
 
 # TODO: I'll work on this.
 # TODO: can this be abstracted to work with other chromosomes?
+
+def _chopx2(read):
+    hors_found = [ (h, h+s-1, t) for h, s, t in read.hors if t in ["~", "D39", "D28", "22U", "D1", "D12"] ]
+    for i in range(len(hors_found) - 1):
+        if read.ori == '+':
+            gap = read.mons[hors_found[i+1][0]].begin - read.mons[hors_found[i][1]].end
+        if read.ori == '-':
+            gap = read.mons[hors_found[i][1]].begin - read.mons[hors_found[i+1][0]].end
+        #print(f"{hors_found[i][2]}\t{hors_found[i+1][2]}\t{gap}\t{read.ori}")
+        print(f"{hors_found[i]}\t{hors_found[i+1]}\t{gap}\t{read.ori}")
+
+    # TODO: change
+    return hors_found
+
 def chopx(reads):
     """
         chop HOR-encoded reads from X, return `{ rid : [[mids, ...], ...] }`
         Specifically, they're valid consecutive regions after 22/23/24-mons or 33/34/35-mons gaps are filled.
         the format is { ri : [[mi, mi, mi, ...], [mi, mi, ...]] } (mi < 0 for masked)
     """
+
     regs = {}
 
     def _chopx(hors):
@@ -59,8 +74,10 @@ def chopx(reads):
         return [ l for l in ret if l ]
 
     # return with removing empty items
-    regs = { i : _chopx(her.hors) for i, her in enumerate(reads) }
-    return { k : v for k, v in regs.items() if v }
+    #regs = { i : _chopx(her.hors) for i, her in enumerate(reads) }
+    regs = { i : _chopx2(her) for i, her in enumerate(reads) }
+
+    #return { k : v for k, v in regs.items() if v }
 
 def var(reads, units = None, hor_type = "~", skips = [],
         err_rate = 0.03, fq_upper_bound = 0.75, comprehensive = False):
@@ -147,9 +164,6 @@ if __name__ == '__main__':
         hor_type = args.hor_type if args.hor_type else "~"
         skips = [ int(i) for i in args.skips.split(",") ] if args.skips else []
 
-        #print(f"vars on {hor_type} by pos")
-        #print_snvs(v1, sort = "pos")
-
         v = var(
             hers,
             hor_type = hor_type,
@@ -160,8 +174,13 @@ if __name__ == '__main__':
         print(f"# Variants on HOR units of type: {hor_type}")
         print_snvs(v, sort = "freq", innum = True if args.innum else False)
 
-        #print(f"all vars on {hor_type} by pos")
-        #print_snvs(v2, sort = "pos")
+    if args.action == "print-gap":
+        assert args.hors, "specify HOR-encoded reads"
+        hers = pickle.load(open(args.hors, "rb"))
+
+        for her in hers:
+            print(her.name)
+            _chopx2(her)
 
         """
     if args.action == "align":
