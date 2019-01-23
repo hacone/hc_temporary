@@ -5,11 +5,12 @@ import hashlib
 from collections import namedtuple
 import numpy as np
 import pickle
-from underscore import _ as us
+# from underscore import _ as us
 
 # TODO: I just need datatype definition. That can be separated from other codes.
 from EncodedRead import *
 from HOR_segregation import *
+from UnitAnalysis import *
 
 # a record for an alignment (for reads, and for layouts).
 # eff_ovlp = effective length of ovlp, f_ext/r_ext = extention forward/reverse
@@ -23,8 +24,7 @@ T_agr = 700 # agree score threshold. alignment with score above this can be ...
 T_gap = 100 # required score gap between best one vs 2nd best one.
 T_dag = 600 # disagree score threshold. alignments with scores below this are considered false.
 
-# TODO: I'll move these to new library file.
-# TODO: can this be abstracted to work with other chromosomes?
+# TODO: I've moved these to new library file.
 def chopx(reads):
     """
         chop HOR-encoded reads from X, return `{ rid : [[mids, ...], ...] }`

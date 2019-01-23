@@ -193,21 +193,27 @@ def show_HOR(hors):
     dwg.save()
 
 def print_HOR(pkl):
+    """ taking a pickled HOR encoded reads, outputs HOR structure of the reads. """
+
     hors = pickle.load(open(pkl, "rb"))
-    #print(r.name, flush = True) # NOTE: print into stdout
-    print("name\tbegin\tend\tidx\tsize\telem\tgap")
+
+    print("readname\tbegin\tend\tidx\tsize\telem\tgap\tvars")
+
     for r in sorted(hors, key=lambda x: -len(x.mons)):
+
         for _idx, _size, elem in r.hors:
+
             idx, size = int(_idx), int(_size)
+
             if r.ori == '+':
                 b, e = r.mons[idx].begin, r.mons[idx + size - 1].end
-                # gap before me.
-                gap = 0 if idx == 0 else r.mons[idx].begin - r.mons[idx-1].end
+                gap = 0 if idx == 0 else r.mons[idx].begin - r.mons[idx-1].end # gap before me.
             else:
                 b, e = r.mons[idx].end, r.mons[idx + size - 1].begin
                 gap = 0 if idx == 0 else -(r.mons[idx].end - r.mons[idx-1].begin)
 
-            print( f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t{gap}")
+            nvars = sum([ len(m.monomer.snvs) for m in r.mons[idx:idx+size] ])
+            print( f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t{gap}\t{nvars}")
         print("")
 
 def HOR_encoding(pkl, path_merged, path_patterns):
@@ -240,7 +246,7 @@ def HOR_encoding(pkl, path_merged, path_patterns):
         else:
             mons = list(reversed(er.mons))
             gaps = [ mons[i].begin - mons[i+1].end for i in range(len(mons)-1) ] + [0]
-        # renamed monnomers in the read
+        # renamed monomers in the read
         ren_mons = [ ren(m.monomer.name) for m in mons ]
 
         # find patterns : NOTE: this can be a bit faster
@@ -252,7 +258,6 @@ def HOR_encoding(pkl, path_merged, path_patterns):
                     for i in range(len(mons)-ps+1):
                         if all([ gaps[j] < 100 for j in range(i,i+ps-1) ]) and "#".join([f"{s}" for s in ren_mons[i:i+ps]]) == pat_str:
                             found += [(i, i+ps, c)]
-        # print(found, flush=True)
 
         # find best layout of patterns
         s = [ 0 for i in range(len(mons) + 1) ]
