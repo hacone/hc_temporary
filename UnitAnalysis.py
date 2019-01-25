@@ -20,10 +20,9 @@ def fillx(read, verbose = False):
 
     """
     this is more like `fill`ing appropriate number of `*` HOR units.
-    get an array from a read.
+    get an array from a read. returns (h, s, t) : midx, size, type
     """
 
-    # TODO: check this impl would work
     hors_found = [ (h, s, t, h+s-1) for h, s, t in read.hors if t in ["~", "D39", "D28", "22U", "D1", "D12"] ]
     reg = []
 
@@ -45,7 +44,6 @@ def fillx(read, verbose = False):
 
     # add the last HOR
     if len(hors_found) > 0:
-        print( hors_found[len(hors_found)-1] )
         h, s, t, e = hors_found[len(hors_found)-1]
         reg += [(h, s, t)]
 
@@ -100,6 +98,19 @@ def ba(read, arr, snvs):
     """ bit array for a single array """
     v = [ [0] * len(snvs) if h < 0 else vec(read, h, snvs) for h in arr ]
     return np.array(v).reshape(len(arr), len(snvs))
+
+def ucomp(rd1, h1, rd2, h2, snvs = None):
+    """ compare two units on snvs. use all columns if `snvs` = None.
+        NOTE: specialized for chrX """
+
+    v1 = { (k, t.pos, t.base) for k in range(12) for t in rd1.mons[h1+k].monomer.snvs }
+    v2 = { (k, t.pos, t.base) for k in range(12) for t in rd2.mons[h2+k].monomer.snvs }
+    d = v1 ^ v2
+    if snvs:
+        return len(d & { (int(s["k"]), int(s["p"]), s["b"]) for s in snvs }) / len(snvs)
+    else:
+        return len(d) / 2057.0
+
 
 def print_snvs(snvs, sort = "freq", n_tests = 2057, alt_snvs = None, innum = False):
 
@@ -168,10 +179,33 @@ if __name__ == '__main__':
 
     elif args.action == "print-snv-evolution":
 
-        print("print-snv-evolution")
+
+        hor_type = args.hor_type if args.hor_type else "~"
+        skips = [ int(i) for i in args.skips.split(",") ] if args.skips else []
+
+        v_major = var(hers, hor_type = hor_type,
+            fq_upper_bound = 1.1, skips = skips,
+            comprehensive = False)
+
+        print(f"print-snv-evolution : {len(v_major)} SNVs\nd\t%MM-All\t%MM-SNV")
+
         for her in hers:
-            print(her.name)
+
             arr = fillx(her)
+            if not arr:
+                continue
+
+            # print(her.name)
+            for d in range(1, 21):
+                for i in range(len(arr) - d):
+                    h, s, t = arr[i]
+                    _h, _s, _t = arr[i+d]
+                    if (t == "~") & (_t == "~"):
+                        div = ucomp(her, h, her, _h)
+                        divm = ucomp(her, h, her, _h, snvs = v_major)
+                        #print(f"{d}\t{h}\t{_h}\t{100*div:.2f}\t{100*divm:.2f}")
+                        print(f"{d}\t{100*div:.3f}\t{100*divm:.3f}")
+
 
         """
     if args.action == "align":
