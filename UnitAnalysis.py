@@ -1,4 +1,3 @@
-
 # Utilities to analyze HOR encoded reads before alignment.
 # As a standalone script, this outputs relevant data and figures available at this stage.
 
@@ -8,7 +7,7 @@ import hashlib
 from collections import namedtuple
 import numpy as np
 import pickle
-from underscore import _ as us
+# from underscore import _ as us
 
 # TODO: I just need datatype definition. That can be separated from other codes.
 from EncodedRead import *
@@ -17,67 +16,44 @@ from HOR_segregation import *
 # TODO: I'll work on this.
 # TODO: can this be abstracted to work with other chromosomes?
 
-def _chopx2(read):
-    hors_found = [ (h, h+s-1, t) for h, s, t in read.hors if t in ["~", "D39", "D28", "22U", "D1", "D12"] ]
+def fillx(read, verbose = False):
+
+    """
+    this is more like `fill`ing appropriate number of `*` HOR units.
+    get an array from a read.
+    """
+
+    # TODO: check this impl would work
+    hors_found = [ (h, s, t, h+s-1) for h, s, t in read.hors if t in ["~", "D39", "D28", "22U", "D1", "D12"] ]
+    reg = []
+
     for i in range(len(hors_found) - 1):
+        h, s, t, e = hors_found[i]
+        nh, ns, nt, ne = hors_found[i+1]
+
         if read.ori == '+':
-            gap = read.mons[hors_found[i+1][0]].begin - read.mons[hors_found[i][1]].end
+            gap = read.mons[nh].begin - read.mons[e].end
         if read.ori == '-':
-            gap = read.mons[hors_found[i][1]].begin - read.mons[hors_found[i+1][0]].end
-        #print(f"{hors_found[i][2]}\t{hors_found[i+1][2]}\t{gap}\t{read.ori}")
-        print(f"{hors_found[i]}\t{hors_found[i+1]}\t{gap}\t{read.ori}")
+            gap = read.mons[e].begin - read.mons[nh].end
 
-    # TODO: change
-    return hors_found
+        if verbose:
+            print(f"{hors_found[i]}\t{hors_found[i+1]}\t{gap}\t{read.ori}")
 
-def chopx(reads):
-    """
-        chop HOR-encoded reads from X, return `{ rid : [[mids, ...], ...] }`
-        Specifically, they're valid consecutive regions after 22/23/24-mons or 33/34/35-mons gaps are filled.
-        the format is { ri : [[mi, mi, mi, ...], [mi, mi, ...]] } (mi < 0 for masked)
-    """
+        reg += [(h, s, t)]
+        for j in range(int((gap + 1000) / 2057)):
+            reg += [(h, s, "*")]
 
-    regs = {}
+    # add the last HOR
+    if len(hors_found) > 0:
+        print( hors_found[len(hors_found)-1] )
+        h, s, t, e = hors_found[len(hors_found)-1]
+        reg += [(h, s, t)]
 
-    def _chopx(hors):
-        """ chop one read """
-        ret, ai, lh = [], -1, 0.5
-        for h, s, t in hors:
-            if t not in ["~", "@LO", "D39", "D28", "22U", "D1", "D12"]:
-                continue
+    if verbose and reg:
+        print(reg)
+        print(f"reglen\t{len(reg)}")
 
-            if t in ["@LO"] and h == lh: # special element to facilitate non-canonical units in layout!
-                ret[ai] += [-1]
-            elif t == "D39" and h == lh:
-                ret[ai] += [-2]
-            elif t == "D28" and h == lh:
-                ret[ai] += [-3]
-            elif t == "D1" and h == lh:
-                ret[ai] += [-4]
-            elif t == "D12" and h == lh:
-                ret[ai] += [-5]
-            elif t == "22U" and h == lh:
-                ret[ai] += [-6,-6]
-
-            elif t == "~" and h == lh:
-                ret[ai] += [h] # NOTE: positivity matters
-            elif t == "~" and h in [lh + 10, lh + 11, lh + 12]:
-                ret[ai] += [-0.5, h]
-            elif t == "~" and h in [lh + 21, lh + 22, lh + 23]:
-                ret[ai] += [-0.5, -0.5, h]
-            else:
-                ret += [[h]] if t == "~" else [[-0.5]] # TODO logic!!
-                ai += 1
-            lh = h + s
-
-        # return with removing empty items
-        return [ l for l in ret if l ]
-
-    # return with removing empty items
-    #regs = { i : _chopx(her.hors) for i, her in enumerate(reads) }
-    regs = { i : _chopx2(her) for i, her in enumerate(reads) }
-
-    #return { k : v for k, v in regs.items() if v }
+    return reg
 
 def var(reads, units = None, hor_type = "~", skips = [],
         err_rate = 0.03, fq_upper_bound = 0.75, comprehensive = False):
@@ -113,6 +89,18 @@ def var(reads, units = None, hor_type = "~", skips = [],
         _nt_vars = [ dict(k = k, p = p, b = b, f = c/len(units), c = c, binom_p = 1 - binom.cdf(c, len(units), err_rate)) for k, p, b, f, c in _tmp ]
         return [ s for s in _nt_vars if s["binom_p"] * n_tests < 1.0 ]
 
+def vec(read, h, snvs):
+    """ bit array for a single HOR unit, starting at h-th monomers of a read """
+    def has_s(s):
+        # i.e., if s in t
+        return any([ (t.pos, t.base) == (int(s["p"]), s["b"]) for t in read.mons[h+int(s["k"])].monomer.snvs ])
+    return [ 1 if has_s(s) else -1 for s in snvs ]
+
+def ba(read, arr, snvs):
+    """ bit array for a single array """
+    v = [ [0] * len(snvs) if h < 0 else vec(read, h, snvs) for h in arr ]
+    return np.array(v).reshape(len(arr), len(snvs))
+
 def print_snvs(snvs, sort = "freq", n_tests = 2057, alt_snvs = None, innum = False):
 
     """ Show SNVs """
@@ -140,15 +128,15 @@ def print_snvs(snvs, sort = "freq", n_tests = 2057, alt_snvs = None, innum = Fal
 
     print(lines)
 
-# TODO print-hor should be here?
-
 if __name__ == '__main__':
 
     import argparse
     parser = argparse.ArgumentParser(description='Analyze HOR encoded read.')
-    parser.add_argument('action', metavar='action', type=str, help='action to perform: print-var, ...')
+    parser.add_argument('action', metavar='action', type=str,
+            help='action to perform: print-var, print-gap, print-snv-evolution...')
     parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads')
 
+    # For print-var
     parser.add_argument('--hor-type', dest='hor_type', help='HOR unit on which variants will be reported.')
     parser.add_argument('--skips', dest='skips', help='idx of monomers to be ignored.')
     parser.add_argument('--all', dest='allvars', action='store_const', const=True, help='report all mismatches')
@@ -157,30 +145,33 @@ if __name__ == '__main__':
     #parser.add_argument('-o', dest='outfile', help='the file to be output (required for align)')
     args = parser.parse_args()
 
-    if args.action == "print-var":
-        assert args.hors, "specify HOR-encoded reads"
-        hers = pickle.load(open(args.hors, "rb"))
+    assert args.hors, "specify HOR-encoded reads"
+    hers = pickle.load(open(args.hors, "rb"))
 
+    # Print SNVs detected
+    if args.action == "print-var":
         hor_type = args.hor_type if args.hor_type else "~"
         skips = [ int(i) for i in args.skips.split(",") ] if args.skips else []
 
-        v = var(
-            hers,
-            hor_type = hor_type,
-            fq_upper_bound = 1.1,
-            skips = skips,
+        v = var(hers, hor_type = hor_type,
+            fq_upper_bound = 1.1, skips = skips,
             comprehensive = True if args.allvars else False)
 
         print(f"# Variants on HOR units of type: {hor_type}")
         print_snvs(v, sort = "freq", innum = True if args.innum else False)
 
-    if args.action == "print-gap":
-        assert args.hors, "specify HOR-encoded reads"
-        hers = pickle.load(open(args.hors, "rb"))
+    elif args.action == "print-gap":
 
         for her in hers:
             print(her.name)
-            _chopx2(her)
+            fillx(her, verbose = True)
+
+    elif args.action == "print-snv-evolution":
+
+        print("print-snv-evolution")
+        for her in hers:
+            print(her.name)
+            arr = fillx(her)
 
         """
     if args.action == "align":
