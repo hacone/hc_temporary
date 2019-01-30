@@ -16,16 +16,16 @@ HOR_Read = namedtuple("HOR_Read", ("name", "mons", "hors", "length", "ori"))
 
 
 def load_encoded_reads(pickles, n_max_reads = None):
-    l = np.loadtxt(pickles, dtype = "U20", delimiter = "\t", usecols = (0))
     reads = []
-    for picklefile in l:
-        reads += pickle.load(open(picklefile, "rb"))
+    for picklefile in [ l.strip() for l in open(pickles, "r").readlines() ]:
+        rds += pickle.load(open(picklefile, "rb"))
+        reads += [ r for r in rds if len(r.mons) > 29 ]
         print(f"{len(reads)} reads found... " + "loaded " + picklefile, flush = True)
         if n_max_reads and (len(reads) > n_max_reads):
             break
     return reads
 
-def monomers_in_reads(reads, ref = "cluster.s14.SRR3189741.fa.fai"):
+def monomers_in_reads(reads, ref = "d0.fasta.fai"):
     """
     counts occurences of each reference monomer in each read.
     returns ndarray of shape (nreads, nmons)
@@ -52,6 +52,7 @@ def cluster_reads(occ, n_clusters = 40):
     for i in range(occ.shape[0]):
         occ_n[i] = occ[i] / sum([ occ[i,j] for j in range(occ.shape[1]) ])
 
+    ## NOTE: may i use the subset??
     from sklearn.cluster import KMeans
     kmeans = KMeans(n_clusters=n_clusters, random_state=0, verbose=1, n_jobs=-3).fit(occ_n)
     # pickle.dump(kmeans, open("{n_clusters}_cls.kmeans.pkl", 'wb'))
@@ -75,11 +76,11 @@ def segregate_reads(pickles, outdir):
 
 def print_reads(pkl):
     reads = pickle.load(open(pkl, "rb"))
-    for r in reads[:200]:
-        print(f"{r.name}\t{len(r.mons)}\t{r.length}")
+    for r in sorted(reads, key=lambda x: -len(x.mons)):
+        print(f"\n{r.name}\t{len(r.mons)}\t{r.length}")
         last_end = 0
         for m in r.mons:
-            print(f"{m.monomer.name}\t{m.begin}\t{m.end}\t{m.begin-last_end}\t{len(m.monomer.snvs)}")
+            print(f"{m.monomer.name}\t{m.begin}\t{m.end}\t{m.begin-last_end}\t{len(m.monomer.snvs)}\t{m.ori}")
             last_end = m.end
 
 # NOTE: currently not visible from the menu
@@ -194,21 +195,28 @@ def show_HOR(hors):
     dwg.save()
 
 def print_HOR(pkl):
+    """ taking a pickled HOR encoded reads, outputs HOR structure of the reads. """
+
     hors = pickle.load(open(pkl, "rb"))
-    #print(r.name, flush = True) # NOTE: print into stdout
-    print("name\tbegin\tend\tidx\tsize\telem\tgap")
-    for r in hors:
+
+    print("readname\tbegin\tend\tidx\tsize\telem\tgap\tvars")
+
+    for r in sorted(hors, key=lambda x: -len(x.mons)):
+
         for _idx, _size, elem in r.hors:
+
             idx, size = int(_idx), int(_size)
+
             if r.ori == '+':
                 b, e = r.mons[idx].begin, r.mons[idx + size - 1].end
-                # gap before me.
-                gap = 0 if idx == 0 else r.mons[idx].begin - r.mons[idx-1].end
+                gap = 0 if idx == 0 else r.mons[idx].begin - r.mons[idx-1].end # gap before me.
             else:
                 b, e = r.mons[idx].end, r.mons[idx + size - 1].begin
                 gap = 0 if idx == 0 else -(r.mons[idx].end - r.mons[idx-1].begin)
 
-            print( f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t{gap}")
+            nvars = sum([ len(m.monomer.snvs) for m in r.mons[idx:idx+size] ])
+            print( f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t{gap}\t{nvars}")
+        print("")
 
 def HOR_encoding(pkl, path_merged, path_patterns):
 
@@ -240,7 +248,7 @@ def HOR_encoding(pkl, path_merged, path_patterns):
         else:
             mons = list(reversed(er.mons))
             gaps = [ mons[i].begin - mons[i+1].end for i in range(len(mons)-1) ] + [0]
-        # renamed monnomers in the read
+        # renamed monomers in the read
         ren_mons = [ ren(m.monomer.name) for m in mons ]
 
         # find patterns : NOTE: this can be a bit faster
@@ -252,7 +260,6 @@ def HOR_encoding(pkl, path_merged, path_patterns):
                     for i in range(len(mons)-ps+1):
                         if all([ gaps[j] < 100 for j in range(i,i+ps-1) ]) and "#".join([f"{s}" for s in ren_mons[i:i+ps]]) == pat_str:
                             found += [(i, i+ps, c)]
-        # print(found, flush=True)
 
         # find best layout of patterns
         s = [ 0 for i in range(len(mons) + 1) ]

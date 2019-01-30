@@ -367,39 +367,18 @@ if __name__ == "__main__":
         else:
             usemons = None
 
-        if not args.split:
-            ers = encodeSAM_DP(args.samfile, usemons)
-            with open(args.outfile, "wb") as f:
-                pickle.dump(list(ers), f)
-        else:
-            ers = encodeSAM_DP(args.samfile, mons, usemons)
-            nfile = 1
-            grouper = [ers] * 10000
-            for e in zip_longest(*grouper, fillvalue=None):
-                with open(args.outfile + f".{nfile}", "wb") as f:
-                    pickle.dump(e, f)
-                print(f"written {nfile}")
-                nfile += 1
-            print("done")
+        ers = encodeSAM_DP(args.samfile, usemons)
+        with open(args.outfile, "wb") as f:
+            pickle.dump(list(ers), f)
 
+    ## NOTE: deprecated.
     elif args.action == "encode":
         assert args.samfile, "SAM file is not specified. aborting."
         assert args.outfile, "output file is not specified. aborting."
 
-        if not args.split:
-            ers = encodeSAM(args.samfile)
-            with open(args.outfile, "wb") as f:
-                pickle.dump(list(ers), f)
-        else:
-            ers = encodeSAM(args.samfile)
-            nfile = 1
-            grouper = [ers] * 10000
-            for e in zip_longest(*grouper, fillvalue=None):
-                with open(args.outfile + f".{nfile}", "wb") as f:
-                    pickle.dump(e, f)
-                print(f"written {nfile}")
-                nfile += 1
-            print("done")
+        ers = encodeSAM(args.samfile)
+        with open(args.outfile, "wb") as f:
+            pickle.dump(list(ers), f)
 
         # encoding_stats(ers)
 
@@ -419,6 +398,7 @@ if __name__ == "__main__":
         with open(args.outfile, "wb") as f:
             pickle.dump(corrected, f)
 
+    ## NOTE: replaced by `kmer` in HOR_segregation.py ??
     elif args.action == "k-monomer":
         assert args.readfile, "file of encoded reads is not specified. aborting."
         with open(args.readfile, "rb") as f:
@@ -427,4 +407,3 @@ if __name__ == "__main__":
 
     else:
         print(f"unknown action. {args.action}")
-

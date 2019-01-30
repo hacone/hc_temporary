@@ -5,11 +5,12 @@ import hashlib
 from collections import namedtuple
 import numpy as np
 import pickle
-from underscore import _ as us
+# from underscore import _ as us
 
 # TODO: I just need datatype definition. That can be separated from other codes.
 from EncodedRead import *
 from HOR_segregation import *
+from UnitAnalysis import *
 
 # a record for an alignment (for reads, and for layouts).
 # eff_ovlp = effective length of ovlp, f_ext/r_ext = extention forward/reverse
@@ -22,77 +23,6 @@ Layout = namedtuple("Layout", ("reads", "begin", "end"))
 T_agr = 700 # agree score threshold. alignment with score above this can be ...
 T_gap = 100 # required score gap between best one vs 2nd best one.
 T_dag = 600 # disagree score threshold. alignments with scores below this are considered false.
-
-# TODO: I'll move these to new library file.
-# TODO: can this be abstracted to work with other chromosomes?
-def chopx(reads):
-    """
-        chop HOR-encoded reads from X, return `{ rid : [[mids, ...], ...] }`
-        Specifically, they're valid consecutive regions after 22/23/24-mons or 33/34/35-mons gaps are filled.
-        the format is { ri : [[mi, mi, mi, ...], [mi, mi, ...]] } (mi < 0 for masked)
-    """
-    regs = {}
-
-    def _chopx(hors):
-        """ chop one read """
-        ret, ai, lh = [], -1, 0.5
-        for h, s, t in hors:
-            if t not in ["~", "@LO", "D39", "D28", "22U", "D1", "D12"]:
-                continue
-
-            if t in ["@LO"] and h == lh: # special element to facilitate non-canonical units in layout!
-                ret[ai] += [-1]
-            elif t == "D39" and h == lh:
-                ret[ai] += [-2]
-            elif t == "D28" and h == lh:
-                ret[ai] += [-3]
-            elif t == "D1" and h == lh:
-                ret[ai] += [-4]
-            elif t == "D12" and h == lh:
-                ret[ai] += [-5]
-            elif t == "22U" and h == lh:
-                ret[ai] += [-6,-6]
-
-            elif t == "~" and h == lh:
-                ret[ai] += [h] # NOTE: positivity matters
-            elif t == "~" and h in [lh + 10, lh + 11, lh + 12]:
-                ret[ai] += [-0.5, h]
-            elif t == "~" and h in [lh + 21, lh + 22, lh + 23]:
-                ret[ai] += [-0.5, -0.5, h]
-            else:
-                ret += [[h]] if t == "~" else [[-0.5]] # TODO logic!!
-                ai += 1
-            lh = h + s
-
-        # return with removing empty items
-        return [ l for l in ret if l ]
-
-    # return with removing empty items
-    regs = { i : _chopx(her.hors) for i, her in enumerate(reads) }
-    return { k : v for k, v in regs.items() if v }
-
-def var(reads, units = None, err_rate = 0.03, fq_upper_bound = 0.75, comprehensive = False):
-    """ Define SNVs over `units` in `reads`. Currently, SNV is dict with following keys: k, p, b, f, c, binom_p
-        If `units` is not specified, it uses all default "~" units.
-        It assumes error rate of `err_rate` for calculation of FDR. Too frequent SNVs are ignored as noninformative. """
-
-    counter = Counter()
-    if not units:
-        units = [ (ri, h) for ri, er in enumerate(reads) for h, _, t in er.hors if t == "~" ]
-
-    for ri, i in units:
-        for j in range(2, 12): # NOTE: specialied for X. skipping the first 2 monomers, where assignment is always wrong
-            counter.update([ (j, s.pos, s.base) for s in reads[ri].mons[i+j].monomer.snvs ])
-
-    if comprehensive:
-        return [ dict(k = k, p = p, b = b, f = c/len(units), c = c, binom_p = 1 - binom.cdf(c, len(units), err_rate)) for (k, p, b), c in counter.most_common() ]
-
-    # remove too frequent ones, and allow <1 false positives
-    if not comprehensive:
-        _tmp = [ (k, p, b, c / len(units), c) for (k, p, b), c in counter.most_common() if c / len(units) < fq_upper_bound ]
-        _nt_vars = [ dict(k = k, p = p, b = b, f = c/len(units), c = c, binom_p = 1 - binom.cdf(c, len(units), err_rate)) for k, p, b, f, c in _tmp ]
-        return [ s for s in _nt_vars if s["binom_p"]*(171*10*3) < 1.0 ]
-        # Here I'll return every detected variants positions!
 
 class Alignment: # TODO: rename this!!
     """
@@ -117,28 +47,16 @@ class Alignment: # TODO: rename this!!
         """ helper function to return region indices for later use. """
         return [ (i, ai) for i, a in self.arrs.items() for ai, l in enumerate(a) if len(l) > tl ]
 
+    # TODO rework this
     def get_bits_dict(self, snvs, regs):
         """ construct bit array representation as dict """
 
         reads, arrs = self.hers, self.arrs
         # regs = self.longer_than(0)
 
-        def vec(i, h):
-            """ bit array for a single unit, starting at h-th monomers of read i """
-            def has_s(s):
-                # i.e., if s in t
-                #return any([ (t.pos, t.base) == (s["p"], s["b"]) for t in reads[i].mons[h+s["k"]].monomer.snvs ])
-                return any([ (t.pos, t.base) == (int(s["p"]), s["b"]) for t in reads[i].mons[h+int(s["k"])].monomer.snvs ])
-            return [ 1 if has_s(s) else -1 for s in snvs ]
+        return { (i, ai) : ba(reads[i], arrs[i][ai], snvs) for i, ai in regs } 
 
-        def _ba(i, ai):
-            """ bit array for a single array """
-            l = arrs[i][ai]
-            v = [ [0] * len(snvs) if h < 0 else vec(i, h) for h in l ]
-            return np.array(v).reshape(len(l), len(snvs))
-
-        return { (i, ai) : _ba(i, ai) for i, ai in regs } 
-
+    # TODO: use a generalized metric g
     def mismatX(self, i, ai, j, aj, k, bits_dict):
         """ aux func returning stats of matches and mismatches
             eventually, this could be a mismatch matrix X
