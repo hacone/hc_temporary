@@ -1,21 +1,23 @@
 #!/bin/bash
 
+export HC=/work2/hacone/2018/human_centromeres
+
 # General Settings
-export MONOMER_DB=/work2/hacone/2018/human_centromeres/cluster.s14.SRR3189741.fa
-export READ_DIR=/work2/hacone/2018/human_centromeres/pacbio/blast/ScoreMovies/
-export TMP_DIR=/work2/hacone/2018/human_centromeres/pacbio/blast/tmp/
+#export MONOMER_DB=${HC}/cluster.s14.SRR3189741.fa
+export MONOMER_DB=${HC}/resource/monomers/d0.fasta
+export READ_DIR=${HC}/pacbio/Centro_Fasta_143Cells
+export TMP_DIR=${HC}/pacbio/blast/tmp/
 
 # Required for `sorted`
-export SAMTOOLS=/path/to/samtools
+export SAMTOOLS=samtools
 
 # Required for `encode`
-export VENV_ACT=/work2/hacone/2018/human_centromeres/venv/bin/activate
-export ENCODEPY=/work2/hacone/2018/human_centromeres/EncodedRead.py
-export MONLIST=/work2/hacone/2018/human_centromeres/resource/monomers/s14-for-X.txt
+export VENV_ACT=${HC}/venv/bin/activate
+export ENCODEPY=${HC}/EncodedRead.py
+export MONLIST=${HC}/resource/monomers/s14-for-X.txt
 
 # in case it can't reach the correct one
-#export PYTHON3=python3
-export PYTHON3=/work2/hacone/2018/human_centromeres/venv/bin/python3
+export PYTHON3=${HC}/venv/bin/python3
 
 ## This performs monomer-assignment by blast. Output should be organized as sam/bam format file that can be directly parsed by python.
 ## As it considers monomers to be query, parsing part should be somewhat different. This specification might be changed later.
@@ -109,9 +111,9 @@ encode() {
 # NOTE: HERE IS THE ENTRY POINT OF THE SCRIPT!
 
 
-#find $READ_DIR | grep .fasta.gz$ | head -n 10 | xargs -P 12 -I % bash -c "align %"
+find $READ_DIR | grep .fasta.gz$ | xargs -P 24 -I % bash -c "align %"
 
 #find $READ_DIR | grep .fasta.gz$ | head -n 10 | xargs -P 12 -I % bash -c "sorted %"
 
-find $TMP_DIR | grep .sam.gz$ | head -n 10 | xargs -P 12 -I % bash -c "encode %"
+#find $TMP_DIR | grep .sam.gz$ | head -n 10 | xargs -P 12 -I % bash -c "encode %"
 
