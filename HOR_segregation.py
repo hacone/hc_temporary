@@ -18,13 +18,14 @@ HOR_Read = namedtuple("HOR_Read", ("name", "mons", "hors", "length", "ori"))
 def load_encoded_reads(pickles, n_max_reads = None):
     reads = []
     for picklefile in [ l.strip() for l in open(pickles, "r").readlines() ]:
-        reads += pickle.load(open(picklefile, "rb"))
+        rds += pickle.load(open(picklefile, "rb"))
+        reads += [ r for r in rds if len(r.mons) > 29 ]
         print(f"{len(reads)} reads found... " + "loaded " + picklefile, flush = True)
         if n_max_reads and (len(reads) > n_max_reads):
             break
     return reads
 
-def monomers_in_reads(reads, ref = "cluster.s14.SRR3189741.fa.fai"):
+def monomers_in_reads(reads, ref = "d0.fasta.fai"):
     """
     counts occurences of each reference monomer in each read.
     returns ndarray of shape (nreads, nmons)
@@ -51,6 +52,7 @@ def cluster_reads(occ, n_clusters = 40):
     for i in range(occ.shape[0]):
         occ_n[i] = occ[i] / sum([ occ[i,j] for j in range(occ.shape[1]) ])
 
+    ## NOTE: may i use the subset??
     from sklearn.cluster import KMeans
     kmeans = KMeans(n_clusters=n_clusters, random_state=0, verbose=1, n_jobs=-3).fit(occ_n)
     # pickle.dump(kmeans, open("{n_clusters}_cls.kmeans.pkl", 'wb'))
