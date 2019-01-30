@@ -274,12 +274,14 @@ if __name__ == '__main__':
     parser.add_argument('action', metavar='action', type=str,
             help='action to perform: print-var, print-gap, print-snv-evolution...')
     parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads')
+    parser.add_argument('--vars', dest='vars', help='pickled variant sites (disable auto detection)')
 
     # For print-var
     parser.add_argument('--hor-type', dest='hor_type', help='HOR unit on which variants will be reported.')
     parser.add_argument('--skips', dest='skips', help='idx of monomers to be ignored.')
     parser.add_argument('--all', dest='allvars', action='store_const', const=True, help='report all mismatches')
     parser.add_argument('--innum', dest='innum', action='store_const', const=True, help='bases are encoded into int (for plotting)')
+    parser.add_argument('--save-to', dest='save', help='pickle variants for later use')
 
     #parser.add_argument('-o', dest='outfile', help='the file to be output (required for align)')
     args = parser.parse_args()
@@ -298,6 +300,10 @@ if __name__ == '__main__':
         print(f"# Variants on HOR units of type: {hor_type}")
         print_snvs(v, sort = "freq", innum = True if args.innum else False)
 
+        if args.save:
+            with open(args.save, "wb") as f:
+                pickle.dump(v, f)
+
     elif args.action == "print-gap":
 
         for her in hers:
@@ -306,9 +312,12 @@ if __name__ == '__main__':
 
     elif args.action == "print-snv-evolution":
 
-        v_major = var(hers, hor_type = hor_type,
-            fq_upper_bound = 1.1, skips = skips,
-            comprehensive = False)
+        if args.vars:
+            v_major = pickle.load(open(args.vars, "rb"))
+        else:
+            v_major = var(hers, hor_type = hor_type,
+                fq_upper_bound = 1.1, skips = skips,
+                comprehensive = False)
 
         print(f"print-snv-evolution : {len(v_major)} SNVs\nd\t%MM-All\t%MM-SNV")
 
@@ -331,9 +340,12 @@ if __name__ == '__main__':
 
     elif args.action == "test-align":
 
-        v_major = var(hers, hor_type = "~", err_rate = 0.05,
-            fq_upper_bound = 1.1, skips = skips,
-            comprehensive = False)
+        if args.vars:
+            v_major = pickle.load(open(args.vars, "rb"))
+        else:
+            v_major = var(hers, hor_type = "~", err_rate = 0.05,
+                fq_upper_bound = 1.1, skips = skips,
+                comprehensive = False)
 
         g_row_0 = [ s["f"] * (1.0 - s["f"]) for s in v_major ]
         g_row_1 = [ 0.1 * s["f"] * (1.0 - s["f"]) for s in v_major ]
