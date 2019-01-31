@@ -5,9 +5,14 @@ from scipy.stats import binom
 from collections import Counter
 import hashlib
 from collections import namedtuple
+
 import numpy as np
+import pandas as pd
 import pickle
-# from underscore import _ as us
+import seaborn as sns
+import matplotlib.pyplot as plt
+import random
+random.seed(42)
 
 # TODO: I just need datatype definition. That can be separated from other codes.
 from EncodedRead import *
@@ -276,6 +281,9 @@ if __name__ == '__main__':
     parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads')
     parser.add_argument('--vars', dest='vars', help='pickled variant sites (disable auto detection)')
 
+    # For print-snv-evolution
+    parser.add_argument('--rand', dest='random', action='store_const', const=True, help='compare 50k random pairs of units')
+
     # For print-var
     parser.add_argument('--hor-type', dest='hor_type', help='HOR unit on which variants will be reported.')
     parser.add_argument('--skips', dest='skips', help='idx of monomers to be ignored.')
@@ -288,6 +296,7 @@ if __name__ == '__main__':
     assert args.hors, "specify HOR-encoded reads"
     hers = pickle.load(open(args.hors, "rb"))
     hor_type = args.hor_type if args.hor_type else "~"
+    units = [ (her, h) for her in hers for h, s, t in fillx(her) if t == hor_type ]
     skips = [ int(i) for i in args.skips.split(",") ] if args.skips else []
 
     # Print SNVs detected
@@ -310,6 +319,94 @@ if __name__ == '__main__':
             print(her.name)
             fillx(her, verbose = True)
 
+    elif args.action == "draw-units-pca":
+        """ generate a figure of all units' PCA """
+
+        if args.vars:
+            v_major = pickle.load(open(args.vars, "rb"))
+        else:
+            v_major = var(hers, hor_type = hor_type,
+                fq_upper_bound = 1.1, skips = skips,
+                comprehensive = True)[:100]
+                #comprehensive = False)
+
+        arrs = [ fillx(her) for her in hers ]
+        bits = { i: ba(her, arrs[i], v_major) for i, her in enumerate(hers) if arrs[i] }
+
+        a, n = [], 0
+        ridx = []
+
+        for i in range(len(hers)):
+            rs = n
+            for j, (h, s, t) in enumerate(arrs[i]):
+                if t != hor_type:
+                    continue
+                n += 1
+                a.extend([i, j])
+                a.extend(list(bits[i][j,]))
+            ridx.append([rs, n])
+
+        X = np.array(a).reshape(n, 2 + len(v_major))
+
+        X = X[0:5000,:]
+        print("load data")
+
+        from sklearn.cluster import KMeans
+        from sklearn.decomposition import PCA
+
+        #for nvars in [20, 30, 40, 50, 75, 100, 200]:
+        #for nvars in [50]:
+        for nvars in [30, 40, 75, 100, 50]:
+
+            Xs = X[:,2:2+nvars]
+            km_model = KMeans(n_clusters=3, random_state=0, n_jobs=-3).fit(Xs)
+            cls = km_model.predict(Xs)
+            print("kmeans done")
+
+            pca = PCA(n_components=2).fit(Xs)
+            Xrd = pca.fit_transform(Xs)
+            print("pca done")
+
+            xlim = min(Xrd[:,0]), max(Xrd[:,0])
+            ylim = min(Xrd[:,1]), max(Xrd[:,1])
+
+            g = sns.scatterplot(x = Xrd[:,0], y = Xrd[:,1], hue=cls, s = 5, alpha = 0.8, palette = "Accent")
+            plt.xlim(xlim)
+            plt.ylim(ylim)
+            plt.savefig(f"PCA-{X.shape[0]}-units-{nvars}-vars.png")
+            plt.close()
+
+        # for each read !
+        nvars = 50
+        Xs = X[:,2:2+nvars]
+        km_model = KMeans(n_clusters=3, random_state=0, n_jobs=-3).fit(Xs)
+        print("k-means done")
+        cls = km_model.predict(Xs)
+        pca = PCA(n_components=2).fit(Xs)
+        print("pca done")
+        Xrd = pca.fit_transform(Xs)
+
+        xlim = min(Xrd[:,0]), max(Xrd[:,0])
+        ylim = min(Xrd[:,1]), max(Xrd[:,1])
+
+        gi = [ i for i in range(5000) if arrs[i] and len(arrs[i]) > 9 and ridx[i][0] <= Xrd.shape[0] ]
+        gi = sorted(gi, key = lambda i: Xrd[ridx[i][0],0])
+
+        for j, i in enumerate(gi):
+
+            #g = sns.scatterplot(
+            g = sns.lineplot(
+                    x = Xrd[ridx[i][0]:ridx[i][1],0],
+                    y = Xrd[ridx[i][0]:ridx[i][1],1],
+                    lw = 1, sort = False)
+            plt.xlim(xlim)
+            plt.ylim(ylim)
+            plt.text(-3, -3, f"Read-{i:04}", horizontalalignment='left', size='medium', color='black', weight='semibold')
+            plt.savefig(f"PCA-read-{nvars}-vars-{j:04}.png")
+            plt.close()
+            print(f"written for {j}", flush = True)
+
+
     elif args.action == "print-snv-evolution":
 
         if args.vars:
@@ -319,15 +416,28 @@ if __name__ == '__main__':
                 fq_upper_bound = 1.1, skips = skips,
                 comprehensive = False)
 
-        print(f"print-snv-evolution : {len(v_major)} SNVs\nd\t%MM-All\t%MM-SNV")
+        print(f"print-snv-evolution (50k of {len(units)} units): {len(v_major)} SNVs")
 
+        n = 50000
+        a = [] # accumulator for plot
+        for i in range(n):
+            j, k = random.randrange(0, len(units)), random.randrange(0, len(units))
+            r, x = units[j]
+            s, y = units[k]
+            div = ucomp(r, x, s, y)
+            divm = ucomp(r, x, s, y, snvs = v_major)
+            a += [-1, div, divm]
+            # print(f"R\t{100*div:.3f}\t{100*divm:.3f}")
+
+        df = pd.DataFrame(
+            data = np.array(a).reshape(n, 3),
+            columns =["d", "All", "Snv"])
+
+        a = [] # accumulator for plot
         for her in hers:
-
             arr = fillx(her)
             if not arr:
                 continue
-
-            # print(her.name)
             for d in range(1, 21):
                 for i in range(len(arr) - d):
                     h, s, t = arr[i]
@@ -335,8 +445,20 @@ if __name__ == '__main__':
                     if (t == "~") & (_t == "~"):
                         div = ucomp(her, h, her, _h)
                         divm = ucomp(her, h, her, _h, snvs = v_major)
-                        #print(f"{d}\t{h}\t{_h}\t{100*div:.2f}\t{100*divm:.2f}")
-                        print(f"{d}\t{100*div:.3f}\t{100*divm:.3f}")
+                        a += [d, div, divm]
+
+        df = df.append(pd.DataFrame(
+            data = np.array(a).reshape(int(len(a)/3), 3),
+            columns = ["d", "All", "Snv"]))
+
+
+        df = pd.melt(df, id_vars = ["d"], var_name = "class", value_name = "pDiv") #, value_vars = data.columns[:-2].tolist())
+        print(df.head(n=10))
+
+        g = sns.boxplot(x='d', y="pDiv", hue='class', data=df, palette="PRGn")
+        # plt.show(g)
+        plt.savefig("fig.svg")
+        plt.close()
 
     elif args.action == "test-align":
 
@@ -396,41 +518,6 @@ if __name__ == '__main__':
 
                 #alns = [ self.calc_align(i, ai, j, aj, k, bits_dict = bits_dict) for k in range(-lj+2, li-2) ]
                 #alns = [ aln for aln in alns if aln.score > T_dag - 100 and aln.eff_ovlp > 4 ] # NOTE: threshold depends on scoring scheme.
-
-        """
-        for i, ai in targets:
-            if not quiet:
-                print(".", end = "", flush = True)
-
-            alns_dict[(i, ai)] = dict()
-            for j, aj in [ (j, aj) for j, aj in queries if not (j, aj) == (i, ai)]:
-                li, lj = bits_dict[(i, ai)].shape[0], bits_dict[(j, aj)].shape[0]
-                # with at least 2 units in overlap
-                alns = [ self.calc_align(i, ai, j, aj, k, bits_dict = bits_dict) for k in range(-lj+2, li-2) ]
-                alns = [ aln for aln in alns if aln.score > T_dag - 100 and aln.eff_ovlp > 4 ] # NOTE: threshold depends on scoring scheme.
-        """
-
-
-        """
-    if args.action == "align":
-        assert args.hors, "specify HOR-encoded reads"
-        assert args.outfile, "specify output file"
-
-        hers = pickle.load(open(args.hors, "rb"))
-        alignment = Alignment(hers)
-        store = alignment.get_all_vs_all_aln()
-        with open(args.outfile, "wb") as f:
-            pickle.dump(store, f)
-        print("done.")
-
-    if args.action == "print":
-        assert args.alns, "specify pickled alignment file"
-
-        with open(args.alns, "rb") as f:
-            store = pickle.load(f)
-            alignment = Alignment(store.reads, arrs = store.arrays, variants = store.variants)
-            store.describe(alignment.bits)
-        """
 
     else:
         assert False, "invalid action."
