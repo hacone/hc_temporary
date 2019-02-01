@@ -1,12 +1,14 @@
 #!/bin/bash
 
-A=PCA-5000-units-50-vars.png
+NVARS=25
 
-for B in $( ls PCA-read-50-vars-0*.png ); do
+A=PCA-9813-units-${NVARS}-vars.png
+
+for B in $( ls PCA-read-${NVARS}-vars-*.png ); do
   composite -blend 40 $A $B .blend.$B
 done
 
-LAST=.blend.PCA-read-50-vars-0211.png
+LAST=.blend.PCA-read-${NVARS}-vars-0199.png
 
-convert -layers optimize -loop 0 -delay 40 .blend.PCA-read-50-vars-0* -delay 460 $LAST animation.gif
+convert -layers optimize -loop 0 -delay 40 .blend.PCA-read-${NVARS}-vars-* -delay 460 $LAST animation-${NVARS}-vars.gif
 rm .blend.*

@@ -283,6 +283,7 @@ if __name__ == '__main__':
 
     # For print-snv-evolution
     parser.add_argument('--rand', dest='random', action='store_const', const=True, help='compare 50k random pairs of units')
+    parser.add_argument('--nvars', dest='nvars', help='number of variants to be used')
 
     # For print-var
     parser.add_argument('--hor-type', dest='hor_type', help='HOR unit on which variants will be reported.')
@@ -333,10 +334,12 @@ if __name__ == '__main__':
         arrs = [ fillx(her) for her in hers ]
         bits = { i: ba(her, arrs[i], v_major) for i, her in enumerate(hers) if arrs[i] }
 
-        a, n = [], 0
-        ridx = []
-
+        a, n, ridx = [], 0, []
         for i in range(len(hers)):
+            if not arrs[i] or (len(arrs[i]) < 10):
+                ridx.append([n, n])
+                continue
+
             rs = n
             for j, (h, s, t) in enumerate(arrs[i]):
                 if t != hor_type:
@@ -347,17 +350,13 @@ if __name__ == '__main__':
             ridx.append([rs, n])
 
         X = np.array(a).reshape(n, 2 + len(v_major))
-
-        X = X[0:5000,:]
+        X = X[0:10000,:]
         print("load data")
 
         from sklearn.cluster import KMeans
         from sklearn.decomposition import PCA
 
-        #for nvars in [20, 30, 40, 50, 75, 100, 200]:
-        #for nvars in [50]:
-        for nvars in [30, 40, 75, 100, 50]:
-
+        for nvars in [25, 50, 75, 100]:
             Xs = X[:,2:2+nvars]
             km_model = KMeans(n_clusters=3, random_state=0, n_jobs=-3).fit(Xs)
             cls = km_model.predict(Xs)
@@ -377,7 +376,7 @@ if __name__ == '__main__':
             plt.close()
 
         # for each read !
-        nvars = 50
+        nvars = min([int(args.nvars), 100]) if int(args.nvars) else 50
         Xs = X[:,2:2+nvars]
         km_model = KMeans(n_clusters=3, random_state=0, n_jobs=-3).fit(Xs)
         print("k-means done")
@@ -389,36 +388,41 @@ if __name__ == '__main__':
         xlim = min(Xrd[:,0]), max(Xrd[:,0])
         ylim = min(Xrd[:,1]), max(Xrd[:,1])
 
-        gi = [ i for i in range(5000) if arrs[i] and len(arrs[i]) > 9 and ridx[i][0] <= Xrd.shape[0] ]
+        # take reads upto 5000 units, sorting by x-coord in PCA.
+        gi = [ i for i in range(len(hers)) if ridx[i][1] -ridx[i][0] > 9 and ridx[i][0] < Xrd.shape[0] ][:200]
         gi = sorted(gi, key = lambda i: Xrd[ridx[i][0],0])
 
         for j, i in enumerate(gi):
-
-            #g = sns.scatterplot(
             g = sns.lineplot(
                     x = Xrd[ridx[i][0]:ridx[i][1],0],
                     y = Xrd[ridx[i][0]:ridx[i][1],1],
                     lw = 1, sort = False)
             plt.xlim(xlim)
             plt.ylim(ylim)
-            plt.text(-3, -3, f"Read-{i:04}", horizontalalignment='left', size='medium', color='black', weight='semibold')
+            plt.text(xlim[0], ylim[0], f"Read-{i:04}", horizontalalignment='left', size='medium', color='black', weight='semibold')
             plt.savefig(f"PCA-read-{nvars}-vars-{j:04}.png")
             plt.close()
-            print(f"written for {j}", flush = True)
+            print("|" if j%10 else ".", flush = True)
 
 
     elif args.action == "print-snv-evolution":
 
         if args.vars:
+            # if vars are specified.
             v_major = pickle.load(open(args.vars, "rb"))
         else:
             v_major = var(hers, hor_type = hor_type,
                 fq_upper_bound = 1.1, skips = skips,
                 comprehensive = False)
+        if args.nvars:
+            # if the number of SNVs is specified.
+            v_major = var(hers, hor_type = hor_type,
+                fq_upper_bound = 1.1, skips = skips,
+                comprehensive = True)
+            v_major = v_major[0:int(args.nvars)]
 
-        print(f"print-snv-evolution (50k of {len(units)} units): {len(v_major)} SNVs")
-
-        n = 50000
+        n = 10000
+        print(f"print-snv-evolution ({n} of {len(units)} units): {len(v_major)} SNVs")
         a = [] # accumulator for plot
         for i in range(n):
             j, k = random.randrange(0, len(units)), random.randrange(0, len(units))
@@ -426,8 +430,7 @@ if __name__ == '__main__':
             s, y = units[k]
             div = ucomp(r, x, s, y)
             divm = ucomp(r, x, s, y, snvs = v_major)
-            a += [-1, div, divm]
-            # print(f"R\t{100*div:.3f}\t{100*divm:.3f}")
+            a += [-1, 100*div, 100*divm]
 
         df = pd.DataFrame(
             data = np.array(a).reshape(n, 3),
@@ -438,14 +441,14 @@ if __name__ == '__main__':
             arr = fillx(her)
             if not arr:
                 continue
-            for d in range(1, 21):
+            for d in range(1, 11):
                 for i in range(len(arr) - d):
                     h, s, t = arr[i]
                     _h, _s, _t = arr[i+d]
                     if (t == "~") & (_t == "~"):
                         div = ucomp(her, h, her, _h)
                         divm = ucomp(her, h, her, _h, snvs = v_major)
-                        a += [d, div, divm]
+                        a += [d, 100*div, 100*divm]
 
         df = df.append(pd.DataFrame(
             data = np.array(a).reshape(int(len(a)/3), 3),
@@ -453,11 +456,10 @@ if __name__ == '__main__':
 
 
         df = pd.melt(df, id_vars = ["d"], var_name = "class", value_name = "pDiv") #, value_vars = data.columns[:-2].tolist())
-        print(df.head(n=10))
 
         g = sns.boxplot(x='d', y="pDiv", hue='class', data=df, palette="PRGn")
-        # plt.show(g)
-        plt.savefig("fig.svg")
+        g.set_xticklabels(["Random"] + [ f"{i+1}" for i in range(10) ], rotation = -45)
+        plt.savefig(f"units-divergence-{len(v_major)}vars.svg")
         plt.close()
 
     elif args.action == "test-align":
