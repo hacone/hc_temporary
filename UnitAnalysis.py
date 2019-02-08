@@ -164,9 +164,9 @@ def acomp(rd1, a1, rd2, a2, snvs = None):
 
     return np.array(m).reshape(len(a1), len(a2))
 
+# NOTE: almost deprecated
 # TODO: use a generalized metric g # NOTE: reworking from impl in Alignment
 # def mismatX(self, i, ai, j, aj, k, bits_dict):
-
 def mismatX(i, ai, j, aj, b1, b2, k, g = None):
     """ aux func returns with some metadata a (3, len(snv)) matrix, which summarizes #11, #01/10, #00 of each column,
         in comparison of bit-represented read `b1` and `b2` with displacement of k units.
@@ -304,6 +304,8 @@ if __name__ == '__main__':
     parser.add_argument('--hor-type', dest='hor_type', help='HOR unit on which variants will be reported.')
     parser.add_argument('--skips', dest='skips', help='idx of monomers to be ignored.')
     parser.add_argument('--all', dest='allvars', action='store_const', const=True, help='report all mismatches')
+    parser.add_argument('--err-rate', dest='err_rate', help='error rate assumed in variants detection')
+    # and --nvars as well
     parser.add_argument('--innum', dest='innum', action='store_const', const=True, help='bases are encoded into int (for plotting)')
     parser.add_argument('--save-to', dest='save', help='pickle variants for later use')
 
@@ -320,12 +322,17 @@ if __name__ == '__main__':
 
         v = var(hers, hor_type = hor_type,
             fq_upper_bound = 1.1, skips = skips,
+            err_rate = float(args.err_rate) if args.err_rate else 0.03
             comprehensive = True if args.allvars else False)
 
         print(f"# Variants on HOR units of type: {hor_type}")
         print_snvs(v, sort = "freq", innum = True if args.innum else False)
 
         if args.save:
+            if args.nvars:
+                v = v[:int(args.nvars)]
+
+            print(f"\n\n{len(v)} of these variants are to be saved to {args.save}")
             with open(args.save, "wb") as f:
                 pickle.dump(v, f)
 
