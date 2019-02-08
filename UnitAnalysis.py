@@ -21,6 +21,14 @@ random.seed(42)
 from EncodedRead import *
 from HOR_segregation import *
 
+def squarify(M,val):
+    a , b = M.shape
+    if a > b:
+        padding = ((0,0),(0,a-b))
+    else:
+        padding = ((0,b-a),(0,0))
+    return np.pad(M,padding,mode='constant',constant_values=val)
+
 # NOTE: This new definition is not compatible with one in Alignment.py
 Aln = namedtuple("Aln", ("i", "ai", "li", "j", "aj", "lj", "k", "lov", "eov", "f_ext", "r_ext", "n11", "n00", "nmis", "score"))
 
@@ -194,6 +202,11 @@ def mismatX(i, ai, j, aj, b1, b2, k, g = None):
     score += np.sum(np.multiply(g[1,], np.sum(match_00, axis=0)))
     score += np.sum(np.multiply(g[2,], np.sum(mismatch, axis=0)))
 
+    # normalize score
+    ascore = 100
+    bscore = 50
+    norm_score = 100 * (score - bscore) / (ascore - bscore)
+    
     # effective length of overlap
     eov = lov - sum([ 1 if x == 0 else 0 for x in m[:,0] ])
 
@@ -204,9 +217,8 @@ def mismatX(i, ai, j, aj, b1, b2, k, g = None):
 
     return Aln(
         i = i, ai = ai, li = li, j = j, aj = aj, lj = lj, k = k,
-        score = score, lov = lov, eov = eov, f_ext = max(0, k+lj-li), r_ext = max(0, -k),
+        score = norm_score, lov = lov, eov = eov, f_ext = max(0, k+lj-li), r_ext = max(0, -k),
         n11 = np.sum(match_11), n00 = np.sum(match_00), nmis = np.sum(mismatch))
-
 
 def print_snvs(snvs, sort = "freq", n_tests = 2057, alt_snvs = None, innum = False):
 
@@ -474,27 +486,88 @@ if __name__ == '__main__':
                 fq_upper_bound = 1.1, skips = skips,
                 comprehensive = False)
 
-        g_row_0 = [ s["f"] * (1.0 - s["f"]) for s in v_major ]
-        g_row_1 = [ 0.1 * s["f"] * (1.0 - s["f"]) for s in v_major ]
-        g_row_2 = [ -1.5 * s["f"] * (1.0 - s["f"]) for s in v_major ]
-        g = np.array(g_row_0 + g_row_1 + g_row_2).reshape(3, len(v_major))
+        class error_tensor:
 
-        # c11, c00, c01 = 1.0, 0.1, -2.0
-        # g = np.array(([c11] * b1.shape[1]) + ([c00] * b1.shape[1]) + ([c01] * b1.shape[1])).reshape(3, b1.shape[1])
+            def __init__(self, e0 = 0.01, e1 = 0.05):
+                self.e0 = e0
+                self.e1 = e1
+                self.td = np.array([1-e0, e0, e1, 1-e1]).reshape(2, 2)
+                self.dsq = np.array(
+                        [ e0*e0 + (1-e0)*(1-e0), e0*(1-e1) + e1*(1-e0), 
+                          e0*(1-e1) + e1*(1-e0), e1*e1 + (1-e1)*(1-e1) ]).reshape(2, 2)
+
+        #errt = error_tensor(e0 = 0.03, e1 = 0.10)
+        errt_lev = error_tensor(e0 = 0.10, e1 = 0.10)
+
+        #errt = error_tensor(e0 = 0.01, e1 = 0.05)
+        errt = error_tensor(e0 = 0.10, e1 = 0.10)
+
+        vf = np.array([ v["f"] for v in v_major ]).reshape(len(v_major))
+        #vf = np.array([ 0.1 for v in v_major ]).reshape(len(v_major))
+        #vf_cst = np.array([ 0.1 for v in v_major ]).reshape(len(v_major))
+
+        print("\ntd:")
+        print(errt.td)
+
+        print("\ndsq:")
+        print(errt.dsq)
+
+        print("\nvf:")
+        print(vf)
+
+        # t2_ve = np.tensordot(np.stack([1-vf, vf]), errt.dsq, [0, 1])
+
+        def b_to_plup(b, f):
+            # TODO: this will do?
+            #return np.stack([0.5*(1-b) - (1-f), 0.5*(1+b) - f])
+            return np.stack([0.5*(1-b) - (1-f), 0.5*(1+b) - f]).reshape(2, b.shape[0])
+
+        def denomi(plup, errt):
+            # first; pluppp = plup[n,k] * dsq[l,n]
+            # then; denomi = plup[l,k] * pluppp[l,k]
+            pluppp = np.tensordot(errt.dsq, plup, [1, 0])
+            return np.tensordot(plup, pluppp, [[0,1],[0,1]])
+
+        def numeri(plup, bx, errt, t2_ve):
+            x = (1 + np.outer(np.array([-1, 1]), bx)) / 2
+            t1 = np.tensordot(x, errt.td, [0, 1])
+            return np.tensordot(plup, t1 - t2_ve, [[0,1],[1,0]])
 
         arrs = [ fillx(her) for her in hers ]
         bits = { i: ba(her, arrs[i], v_major) for i, her in enumerate(hers) if arrs[i] and len(arrs[i]) > 9 }
-
         bits_keys_longer = sorted(bits.keys(), key = lambda x: -bits[x].shape[0])
-
         print(f"{len(bits)} bb long arrs in {len(hers)} reads", flush=True)
 
-            # alns_dict[(i, ai)] = dict()
+        def dotplot(i, j, errt = errt, vf = vf):
+            """ required context: arrs, bits, errt, vf """
 
-        def look_for_ext(i):
+            li = bits[i].shape[0]
+            lj = bits[j].shape[0]
+            result = np.zeros(li*lj).reshape(li, lj)
+            result[:] = np.nan
+
+            t2_ve = np.tensordot(np.stack([1-vf, vf]), errt.dsq, [0, 1])
+
+            plup = [ b_to_plup(bits[i][n,], vf) for n in range(li) ]
+            denomis = [ denomi(plup[n], errt) for n in range(li) ]
+
+            for n in range(li):
+                if arrs[i][n][2] != "~":
+                    continue
+
+                for m in range(lj):
+                    if arrs[j][m][2] != "~":
+                        continue
+                    result[n,m] = numeri(plup[n], bits[j][m,], errt, t2_ve) / (denomis[n] + 0.0001)
+
+            return result
+
+
+        def look_for_ext(i, nt = 10000, mult = 100):
             # TODO: add description!!
-            """ returns a dict of possible extension from read i.
-                an entry (for a single read) is a list of `aln` sorted by the score. """
+            """ returns a dict of possible extensions (and inclusions) from read i (at most `nt` target).
+                an entry (for a single read, say, j) is a list of at most `mult` of `aln` sorted by the score.
+                """
 
             ad0 = {}
             for j in [ j for j in bits.keys() if j != i ]:
@@ -505,8 +578,107 @@ if __name__ == '__main__':
                 ad0[j] = sorted(res, key=lambda x: -x.score)[:2]
 
             print(i, flush=True)
-
             return ad0
+
+        for i in bits_keys_longer[:100]:
+
+            print(f"aligning for {i}")
+
+            # aln for i
+            li = bits[i].shape[0]
+            plup = [ b_to_plup(bits[i][n,], vf) for n in range(li) ]
+            denomis = [ denomi(plup[n], errt) for n in range(li) ]
+            t2_ve = np.tensordot(np.stack([1-vf, vf]), errt.dsq, [0, 1])
+
+            result_i = {}
+
+            for j in [ j for j in bits_keys_longer if i != j ]:
+                # aln for i, j
+                lj = bits[j].shape[0]
+
+                result_j = []
+                maxs_j = -10000
+
+                for k in range(-lj+2, li-2):
+                    # aln for i, j, k
+                    s = 0 # score
+                    e = 0 # units effectively overlapped
+
+                    if k > 0:
+                        lov = min(lj, -k+li) # length of overlap
+                        #xi = bits[i][k:(k+lov),]
+                        #xj = bits[j][0:lov,]
+
+                        for n in [ n for n in range(lov) if arrs[i][k+n][2] == "~" and arrs[j][n][2] == "~"]:
+                            e += 1
+                            s += numeri(plup[k+n], bits[j][n,], errt, t2_ve) / (denomis[k+n] + 0.0001)
+
+                    else:
+                        lov =  min(li, k+lj) # length of overlap
+                        #xi = bits[i][0:lov,]
+                        #xj = bits[j][-k:(-k+lov),]
+
+                        for n in [ n for n in range(lov) if arrs[i][n][2] == "~" and arrs[j][n-k][2] == "~"]:
+                            e += 1
+                            s += numeri(plup[n], bits[j][n-k,], errt, t2_ve) / (denomis[n] + 0.0001)
+
+                    if e > 4:
+                        s = s / e if e > 0 else 0
+                        maxs_j = max(maxs_j, s)
+                        result_j += [(k, s, e)]
+
+                if result_j:
+                    result_i[j] = sorted(result_j, key = lambda x: -x[1])
+
+                print(".", end = "", flush = True)
+
+            best_js = sorted(result_i.keys(), key = lambda j: (-1) * result_i[j][0][1])
+
+            print(f"\nbest alignment for {i}")
+            avg_sep = 0
+
+            for j in best_js[:5]:
+                line = f"To {j:5d}" + "\t".join([ f"{k:3d}:{s:.3f}:{e:3d}" for k, s, e in result_i[j][:5] ])
+                print(line)
+
+                if len(result_i[j]) > 1:
+                    avg_sep += (result_i[j][0][1] - result_i[j][1][1]) / result_i[j][0][1]
+                else:
+                    avg_sep += 1.0
+
+            print(f"AVGSEP\t{i}\t{100 * avg_sep / 5:.2f}")
+
+            for j in best_js[:0]:
+                print((i, j))
+                fig = plt.figure(figsize=(12, 10))
+
+                plt.axis("off")
+
+                ax1 = fig.add_subplot(2, 2, 1)
+                dots = squarify(dotplot(i, j), np.nan)
+                g1 = sns.heatmap(dots, vmin=np.nanmin(dots), vmax=np.nanmax(dots), cmap="coolwarm", ax = ax1)
+                ax1.set_title("full")
+
+                ax2 = fig.add_subplot(2, 2, 2)
+                dots = squarify(dotplot(i, j, errt = errt_lev), np.nan)
+                g2 = sns.heatmap(dots, vmin=np.nanmin(dots), vmax=np.nanmax(dots), cmap="coolwarm", ax = ax2)
+                ax2.set_title("e=const.")
+
+                ax3 = fig.add_subplot(2, 2, 3)
+                dots = squarify(dotplot(i, j, vf = vf_cst), np.nan)
+                g3 = sns.heatmap(dots, vmin=np.nanmin(dots), vmax=np.nanmax(dots), cmap="coolwarm", ax = ax3)
+                ax3.set_title("v=const.")
+
+                ax4 = fig.add_subplot(2, 2, 4)
+                dots = squarify(dotplot(i, j, errt = errt_lev, vf = vf_cst), np.nan)
+                g4 = sns.heatmap(dots, vmin=np.nanmin(dots), vmax=np.nanmax(dots), cmap="coolwarm", ax = ax4)
+                ax4.set_title("e,v=const.")
+
+                plt.savefig(f"dots-{i}-vs-{j}.png")
+                plt.close()
+
+        import sys
+        sys.exit()
 
         ad = [ (i, look_for_ext(i)) for i in bits_keys_longer[:10] ]
 
