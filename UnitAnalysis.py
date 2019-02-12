@@ -17,6 +17,8 @@ import seaborn as sns
 import random
 random.seed(42)
 
+nfig = -1
+
 # TODO: I just need datatype definition. That can be separated from other codes.
 from EncodedRead import *
 from HOR_segregation import *
@@ -73,7 +75,7 @@ def fillx(read, verbose = False):
     return reg
 
 def var(reads, units = None, hor_type = "~", skips = [],
-        err_rate = 0.03, fq_upper_bound = 0.75, comprehensive = False):
+        err_rate = 0.05, fq_upper_bound = 0.75, comprehensive = False):
     """ Define SNVs over `units` in `reads`. Currently, SNV is dict with following keys: k, p, b, f, c, binom_p
         If `units` is not specified, it look for all unit of `hor_type`.
         If `units` nor `hor_type` is specified, it defaults to use "~".
@@ -163,62 +165,6 @@ def acomp(rd1, a1, rd2, a2, snvs = None):
                 m += [-2]
 
     return np.array(m).reshape(len(a1), len(a2))
-
-# NOTE: almost deprecated
-# TODO: use a generalized metric g # NOTE: reworking from impl in Alignment
-# def mismatX(self, i, ai, j, aj, k, bits_dict):
-def mismatX(i, ai, j, aj, b1, b2, k, g = None):
-    """ aux func returns with some metadata a (3, len(snv)) matrix, which summarizes #11, #01/10, #00 of each column,
-        in comparison of bit-represented read `b1` and `b2` with displacement of k units.
-        g is the metric.
-    """
-
-    # li, lj = bits_dict[(i, ai)].shape[0], bits_dict[(j, aj)].shape[0]
-
-    assert b1.shape[1] == b2.shape[1], "wrong shape"
-    """
-    if g == None:
-        c11 = 1.0
-        c00 = 0.1
-        c01 = -2.0
-        g = np.array(([c11] * b1.shape[1]) + ([c00] * b1.shape[1]) + ([c01] * b1.shape[1])).reshape(3, b1.shape[1])
-    else:
-        assert g.shape[0] == 3 and b1.shape[1] == g.shape[1], "wrong shape"
-    """
-
-    li, lj = b1.shape[0], b2.shape[0]
-    lov = min(lj, -k+li) if k > 0 else min(li, k+lj) # length of overlap
-    xi = b1[k:(k+lov),] if k > 0 else b1[0:lov,]
-    xj = b2[0:lov,] if k > 0 else b2[-k:(-k+lov),]
-
-    m = np.multiply(xi, xj) # 1: match, 0: masked, -1: mismatch
-    match = np.multiply((m + 1), m) / 2 # 1: match, 0: masked/mismatch
-    match_11 = np.multiply((xi + 1), match) / 2
-    match_00 = np.multiply((1 - xi), match) / 2
-    mismatch = np.multiply(m, m) - match # 1: mismatch (01/10), 0: masked/match
-
-    # calculate score
-    score = np.sum(np.multiply(g[0,], np.sum(match_11, axis=0)))
-    score += np.sum(np.multiply(g[1,], np.sum(match_00, axis=0)))
-    score += np.sum(np.multiply(g[2,], np.sum(mismatch, axis=0)))
-
-    # normalize score
-    ascore = 100
-    bscore = 50
-    norm_score = 100 * (score - bscore) / (ascore - bscore)
-    
-    # effective length of overlap
-    eov = lov - sum([ 1 if x == 0 else 0 for x in m[:,0] ])
-
-    #return dict(li = li, lj = lj, lov = lov, eov = eov,
-    #        n11 = n11, n00 = n00, match = np.sum(match), mismatch = np.sum(mismatch))
-    #X = self.mismatX(i, ai, j, aj, k, bits_dict = bits_dict)
-    #score = 1000 * (X["n11"] + self.c_00 * X["n00"]) / (0.01 + X["n11"] + self.c_00 * X["n00"] + self.c_ms * X["mismatch"]) # per-mille !
-
-    return Aln(
-        i = i, ai = ai, li = li, j = j, aj = aj, lj = lj, k = k,
-        score = norm_score, lov = lov, eov = eov, f_ext = max(0, k+lj-li), r_ext = max(0, -k),
-        n11 = np.sum(match_11), n00 = np.sum(match_00), nmis = np.sum(mismatch))
 
 def print_snvs(snvs, sort = "freq", n_tests = 2057, alt_snvs = None, innum = False):
 
@@ -322,7 +268,7 @@ if __name__ == '__main__':
 
         v = var(hers, hor_type = hor_type,
             fq_upper_bound = 1.1, skips = skips,
-            err_rate = float(args.err_rate) if args.err_rate else 0.03
+            err_rate = float(args.err_rate) if args.err_rate else 0.03,
             comprehensive = True if args.allvars else False)
 
         print(f"# Variants on HOR units of type: {hor_type}")
@@ -503,11 +449,9 @@ if __name__ == '__main__':
                         [ e0*e0 + (1-e0)*(1-e0), e0*(1-e1) + e1*(1-e0), 
                           e0*(1-e1) + e1*(1-e0), e1*e1 + (1-e1)*(1-e1) ]).reshape(2, 2)
 
-        #errt = error_tensor(e0 = 0.03, e1 = 0.10)
+        errt = error_tensor(e0 = 0.03, e1 = 0.10) # for PacBio
+        #errt = error_tensor(e0 = 0.06, e1 = 0.20) # for ONT?
         errt_lev = error_tensor(e0 = 0.10, e1 = 0.10)
-
-        #errt = error_tensor(e0 = 0.01, e1 = 0.05)
-        errt = error_tensor(e0 = 0.10, e1 = 0.10)
 
         vf = np.array([ v["f"] for v in v_major ]).reshape(len(v_major))
         #vf = np.array([ 0.1 for v in v_major ]).reshape(len(v_major))
@@ -519,10 +463,8 @@ if __name__ == '__main__':
         print("\ndsq:")
         print(errt.dsq)
 
-        print("\nvf:")
+        print(f"\nvf ({len(v_major)} vars):")
         print(vf)
-
-        # t2_ve = np.tensordot(np.stack([1-vf, vf]), errt.dsq, [0, 1])
 
         def b_to_plup(b, f):
             # TODO: this will do?
@@ -541,12 +483,14 @@ if __name__ == '__main__':
             return np.tensordot(plup, t1 - t2_ve, [[0,1],[1,0]])
 
         arrs = [ fillx(her) for her in hers ]
-        bits = { i: ba(her, arrs[i], v_major) for i, her in enumerate(hers) if arrs[i] and len(arrs[i]) > 9 }
+
+        bits = { i: ba(her, arrs[i], v_major) for i, her in enumerate(hers) if arrs[i] and len(arrs[i]) > 7 }
+        # TODO: rename as this not depend on bits
         bits_keys_longer = sorted(bits.keys(), key = lambda x: -bits[x].shape[0])
         print(f"{len(bits)} bb long arrs in {len(hers)} reads", flush=True)
 
-        def dotplot(i, j, errt = errt, vf = vf):
-            """ required context: arrs, bits, errt, vf """
+        def dotplot(i, j, errt = errt, vf = vf, bits = bits):
+            """ required context: arrs """
 
             li = bits[i].shape[0]
             lj = bits[j].shape[0]
@@ -569,27 +513,9 @@ if __name__ == '__main__':
 
             return result
 
-
-        def look_for_ext(i, nt = 10000, mult = 100):
-            # TODO: add description!!
-            """ returns a dict of possible extensions (and inclusions) from read i (at most `nt` target).
-                an entry (for a single read, say, j) is a list of at most `mult` of `aln` sorted by the score.
-                """
-
-            ad0 = {}
-            for j in [ j for j in bits.keys() if j != i ]:
-                li, lj = bits[i].shape[0], bits[j].shape[0]
-                # with at least 4 units in overlap
-                res = [ mismatX(i, 0, j, 0, bits[i], bits[j], k, g) for k in range(-lj+4, li-4) ]
-                res = [ r for r in res if r.score > -100 and r.eov > 4 ]
-                ad0[j] = sorted(res, key=lambda x: -x.score)[:2]
-
-            print(i, flush=True)
-            return ad0
-
-        for i in bits_keys_longer[:100]:
-
-            print(f"aligning for {i}")
+        # TODO: temporary, obviously
+        def get_result_i(i, vf = vf, bits = bits, targets = None):
+            """ assumes errt in context """
 
             # aln for i
             li = bits[i].shape[0]
@@ -598,8 +524,10 @@ if __name__ == '__main__':
             t2_ve = np.tensordot(np.stack([1-vf, vf]), errt.dsq, [0, 1])
 
             result_i = {}
+            targets = targets if targets else bits_keys_longer
+            print(f"aligning for {i} : {len(targets)} targets")
 
-            for j in [ j for j in bits_keys_longer if i != j ]:
+            for j in [ j for j in targets if i != j ]:
                 # aln for i, j
                 lj = bits[j].shape[0]
 
@@ -613,76 +541,142 @@ if __name__ == '__main__':
 
                     if k > 0:
                         lov = min(lj, -k+li) # length of overlap
-                        #xi = bits[i][k:(k+lov),]
-                        #xj = bits[j][0:lov,]
-
+                        # NOTE: xi = bits[i][k:(k+lov),] is aligned to xj = bits[j][0:lov,]
                         for n in [ n for n in range(lov) if arrs[i][k+n][2] == "~" and arrs[j][n][2] == "~"]:
                             e += 1
                             s += numeri(plup[k+n], bits[j][n,], errt, t2_ve) / (denomis[k+n] + 0.0001)
 
                     else:
                         lov =  min(li, k+lj) # length of overlap
-                        #xi = bits[i][0:lov,]
-                        #xj = bits[j][-k:(-k+lov),]
-
+                        # NOTE: xi = bits[i][0:lov,] is aligned to xj = bits[j][-k:(-k+lov),]
                         for n in [ n for n in range(lov) if arrs[i][n][2] == "~" and arrs[j][n-k][2] == "~"]:
                             e += 1
                             s += numeri(plup[n], bits[j][n-k,], errt, t2_ve) / (denomis[n] + 0.0001)
 
-                    if e > 4:
-                        s = s / e if e > 0 else 0
+                    if e > 2:
+                        s = s / e
                         maxs_j = max(maxs_j, s)
-                        result_j += [(k, s, e)]
+                        f_ext, r_ext = max(0, k+lj-li), max(0, -k)
+                        result_j += [(k, s, e, f_ext, r_ext)] # offset, score, eov
 
                 if result_j:
                     result_i[j] = sorted(result_j, key = lambda x: -x[1])
 
                 print(".", end = "", flush = True)
 
-            best_js = sorted(result_i.keys(), key = lambda j: (-1) * result_i[j][0][1])
+            return result_i
 
-            print(f"\nbest alignment for {i}")
-            avg_sep = 0
 
-            for j in best_js[:5]:
-                line = f"To {j:5d}" + "\t".join([ f"{k:3d}:{s:.3f}:{e:3d}" for k, s, e in result_i[j][:5] ])
-                print(line)
+        def extension(i):
 
-                if len(result_i[j]) > 1:
-                    avg_sep += (result_i[j][0][1] - result_i[j][1][1]) / result_i[j][0][1]
-                else:
-                    avg_sep += 1.0
+            global nfig
 
-            print(f"AVGSEP\t{i}\t{100 * avg_sep / 5:.2f}")
+            vf_history = {}
 
-            for j in best_js[:0]:
-                print((i, j))
-                fig = plt.figure(figsize=(12, 10))
+            # initialize for round 0
+            nround = 0
+            best_js = bits_keys_longer
+            ntarget = len(bits_keys_longer)
+            vf_local = vf
+            bits_local = bits
+            vf_history[0] = (vf, bits)
 
-                plt.axis("off")
+            plus = []
+            minus = []
+            embed = []
 
-                ax1 = fig.add_subplot(2, 2, 1)
-                dots = squarify(dotplot(i, j), np.nan)
-                g1 = sns.heatmap(dots, vmin=np.nanmin(dots), vmax=np.nanmax(dots), cmap="coolwarm", ax = ax1)
-                ax1.set_title("full")
+            while nround < 7 and ntarget > 50:
 
-                ax2 = fig.add_subplot(2, 2, 2)
-                dots = squarify(dotplot(i, j, errt = errt_lev), np.nan)
-                g2 = sns.heatmap(dots, vmin=np.nanmin(dots), vmax=np.nanmax(dots), cmap="coolwarm", ax = ax2)
-                ax2.set_title("e=const.")
+                result_i = get_result_i(i, vf_local, bits_local, targets = best_js)
+                best_js = sorted(result_i.keys(), key = lambda j: (-1) * result_i[j][0][1])
 
-                ax3 = fig.add_subplot(2, 2, 3)
-                dots = squarify(dotplot(i, j, vf = vf_cst), np.nan)
-                g3 = sns.heatmap(dots, vmin=np.nanmin(dots), vmax=np.nanmax(dots), cmap="coolwarm", ax = ax3)
-                ax3.set_title("v=const.")
+                def gap(alns):
+                    if not [ a for a in alns if a[1] > 0.6 ]:
+                        return 0.0
+                    elif len(alns) < 2:
+                        return 1.0
+                    else: 
+                        return (alns[0][1] - alns[1][1]) / alns[0][1]
 
-                ax4 = fig.add_subplot(2, 2, 4)
-                dots = squarify(dotplot(i, j, errt = errt_lev, vf = vf_cst), np.nan)
-                g4 = sns.heatmap(dots, vmin=np.nanmin(dots), vmax=np.nanmax(dots), cmap="coolwarm", ax = ax4)
-                ax4.set_title("e,v=const.")
+                uniques = sorted([ j for j in best_js if gap(result_i[j]) > 0.15 ], key = lambda x: -result_i[x][0][2])
 
-                plt.savefig(f"dots-{i}-vs-{j}.png")
-                plt.close()
+                ## j, aln, gap, round
+                plus += [ (j, result_i[j][0], gap(result_i[j]), nround) for j in uniques
+                          if result_i[j][0][3] > 0 and result_i[j][0][2] > 4 ]
+                plus = sorted(plus, key = lambda x: (-x[2], -x[1][2]))
+
+                minus += [ (j, result_i[j][0], gap(result_i[j]), nround) for j in uniques
+                          if result_i[j][0][4] > 0 and result_i[j][0][2] > 4 ]
+                minus = sorted(minus, key = lambda x: (-x[2], -x[1][2]))
+
+                embed += [ (j, result_i[j][0], gap(result_i[j]), nround) for j in uniques
+                          if result_i[j][0][3] == 0 and result_i[j][0][4] == 0 and result_i[j][0][2] > 4 ]
+                embed = sorted(embed, key = lambda x: (-x[2], -x[1][2]))
+
+                print(f"\n{len(uniques)} uniques (+{len(plus)}, -{len(minus)}, ^{len(embed)}) for {i} upto round {nround}.")
+
+                print(f"\n   i\t   j\t  k\t  e\tfex\trex\tscr\t%gap\tround")
+                for j, aln, gap, r in plus[:10] + minus[:10] + embed[:10]:
+                    k, s, e, fex, rex = aln
+                    print(f"{i:4d}\t{j:4d}\t{k:3d}\t{e:3d}\t{fex:3d}+\t{rex:3d}-\t{s:.2f}\t{100*gap:.1f} %\t{r}")
+
+                # NOTE: update target, vf, bits
+                nround += 1
+                ntarget = int(ntarget*0.6)
+                best_js = best_js[:ntarget]
+
+                vs_local = var([ hers[j] for j in best_js ],
+                    hor_type = "~", err_rate = 0.05,
+                    fq_upper_bound = 1.1, skips = skips,
+                    comprehensive = False)
+
+                vf_local = np.array([ v["f"] for v in vs_local ]).reshape(len(vs_local))
+                bits_local = { i: ba(her, arrs[i], vs_local) for i, her in enumerate(hers) if arrs[i] and len(arrs[i]) > 7 }
+                vf_history[nround] = (vf_local, bits_local)
+                print(f"Next: {len(vs_local)} local SNVs for {ntarget} reads.")
+
+            if plus:
+                # j, eov+fex, %gap
+                print(f"# EXT+\t{plus[0][0]}\t{plus[0][1][2]}+{plus[0][1][3]}\t{100*plus[0][2]:.1f}")
+
+                for nr in range(plus[0][3]+1):
+                    #print(f"drawing for {(i, j)}")
+                    fig = plt.figure(figsize=(10, 8))
+                    plt.axis("off")
+                    ax1 = fig.add_subplot(1, 1, 1)
+                    dots = squarify(dotplot(i, plus[0][0], vf = vf_history[nr][0], bits = vf_history[nr][1]), np.nan)
+                    g1 = sns.heatmap(dots,
+                            vmin=np.nanmin(dots), vmax=np.nanmax(dots),
+                            cmap="coolwarm", ax = ax1)
+                    ax1.set_title(f"{i}-{plus[0][0]}; {plus[0][1][2]}+{plus[0][1][3]}; R{nr}~{100*plus[0][2]:.1f}%")
+                    plt.savefig(f"{nfig}-dots-{i}-vs-{plus[0][0]}-r-{nr}.png")
+                    plt.close()
+                    nfig += 1
+
+                return (plus[0][0] if plus else -1, minus[0][0] if minus else -1)
+
+            return (-1,-1)
+
+        seen = []
+
+        for i in bits_keys_longer[:200]:
+
+            if i in seen:
+                print(f"{i} skipped. already seen.")
+                continue
+
+            print(f"### START\t{i}")
+            next_if = i 
+
+            n = 0
+            while next_if >= 0 and (next_if not in seen):
+                print(f"## CUR\t{next_if}")
+                seen += [next_if]
+                next_if, next_ir = extension(next_if)
+                n += 1
+
+            print(f"### END\t {i} ==={n}==> {next_if}")
+
 
         import sys
         sys.exit()
