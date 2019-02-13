@@ -607,7 +607,7 @@ if __name__ == '__main__':
                     else: 
                         return (alns[0].score - alns[1].score) / alns[0].score
 
-                uniques = sorted([ j for j in best_js if gap(result_i[j]) > 0.20 ], key = lambda x: -result_i[x][0].eov)
+                uniques = sorted([ j for j in best_js if gap(result_i[j]) > 0.25 ], key = lambda x: -result_i[x][0].eov)
 
                 def pickbest(l):
                     # l is aln
@@ -636,7 +636,7 @@ if __name__ == '__main__':
 
                 for balns in plus[:10] + minus[:10] + embed[:10]:
                     line = f"{balns.i:4d}\t{balns.j:4d}\t{balns.aln.koff:3d}\t{balns.aln.eov:3d}\t"
-                    line += f"{balns.aln.fext:3d}+\t{balns.aln.rext:3d}-\t{balns.aln.s:.2f}\t{100*balns.gap:.1f} %\t{balns.nround}"
+                    line += f"{balns.aln.fext:3d}+\t{balns.aln.rext:3d}-\t{balns.aln.score:.2f}\t{100*balns.gap:.1f} %\t{balns.nround}"
                     print(line)
 
                 # NOTE: update target, vf, bits
@@ -672,7 +672,7 @@ if __name__ == '__main__':
                     plt.savefig(f"{fig_idx}-ctg{ctg_idx}-{i}-to-{plus[0].j}-r-{nr}.png")
                     plt.close()
 
-            return Extension(i = i, plus = plus, minus = minus, embed = embed)
+            return Extension(i = i, plus = plus, minus = minus, embed = embed, vf_history = vf_history)
 
         seen = []
         layout = []
@@ -699,13 +699,11 @@ if __name__ == '__main__':
                     n += 1
                     seen += [ nexts[0] ]
                     ext  = extension(nexts[0])
-                    plus = ext.plus[:10]
-                    minus = ext.minus[:10]
-                    embed = ext.embed[:10]
-                    print( "\n".join([ f"{nexts[0]}\t{p.j}\t{p.aln.koff}\t{p.aln.score}\t{100*p.gap:.2f}" for p in plus ]) )
-
+                    plus = [ p for p in ext.plus if p.gap > 0.3 ][:10]
+                    #minus = ext.minus[:10] #embed = ext.embed[:10]
+                    print( "\n".join([ f"EDGE\t{nexts[0]}\t{p.j}\t{p.aln.koff}\t{p.aln.fext}\t{p.aln.rext}\t{100*p.aln.score:.2f}\t{100*p.gap:.2f}" for p in plus ]) )
                     layout += [ (nexts[0], p.j, p.aln.koff, p.aln.score, p.gap) for p in plus ]
-                    nexts = nexts[1:] + [ pp.j for pp in plus if pp.j not in seen ]
+                    nexts = [ pp.j for pp in plus if pp.j not in seen ][:3] + nexts[1:]
 
             print(f"### END NO EXT\t{i}\t{n}")
 
