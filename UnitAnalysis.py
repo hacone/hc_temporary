@@ -17,8 +17,6 @@ import seaborn as sns
 import random
 random.seed(42)
 
-nfig = -1
-
 # TODO: I just need datatype definition. That can be separated from other codes.
 from EncodedRead import *
 from HOR_segregation import *
@@ -31,12 +29,16 @@ def squarify(M,val):
         padding = ((0,b-a),(0,0))
     return np.pad(M,padding,mode='constant',constant_values=val)
 
-# NOTE: This new definition is not compatible with one in Alignment.py
-Aln = namedtuple("Aln", ("i", "ai", "li", "j", "aj", "lj", "k", "lov", "eov", "f_ext", "r_ext", "n11", "n00", "nmis", "score"))
+# this is an atomic alignment
+Aln = namedtuple("Aln", ("koff", "score", "eov", "fext", "rext"))
 
-# TODO: I'll work on this.
+# for each read pair i, j, calc one BestAln out of Aln's
+BestAln = namedtuple("BestAln", ("i", "j", "aln", "gap", "nround"))
+
+# plus, minus, embed are list of BestAln
+Extension = namedtuple("Extension", ("i", "plus", "minus", "embed", "vf_history"))
+
 # TODO: can this be abstracted to work with other chromosomes?
-
 def fillx(read, verbose = False):
 
     """
@@ -430,7 +432,7 @@ if __name__ == '__main__':
         plt.savefig(f"units-divergence-{len(v_major)}vars.svg")
         plt.close()
 
-    elif args.action == "test-align":
+    elif args.action == "layout":
 
         if args.vars:
             v_major = pickle.load(open(args.vars, "rb"))
@@ -450,12 +452,11 @@ if __name__ == '__main__':
                           e0*(1-e1) + e1*(1-e0), e1*e1 + (1-e1)*(1-e1) ]).reshape(2, 2)
 
         errt = error_tensor(e0 = 0.03, e1 = 0.10) # for PacBio
-        #errt = error_tensor(e0 = 0.06, e1 = 0.20) # for ONT?
-        errt_lev = error_tensor(e0 = 0.10, e1 = 0.10)
+        # errt = error_tensor(e0 = 0.06, e1 = 0.20) # for ONT?
+        # errt_lev = error_tensor(e0 = 0.10, e1 = 0.10)
 
         vf = np.array([ v["f"] for v in v_major ]).reshape(len(v_major))
-        #vf = np.array([ 0.1 for v in v_major ]).reshape(len(v_major))
-        #vf_cst = np.array([ 0.1 for v in v_major ]).reshape(len(v_major))
+        # vf_cst = np.array([ 0.1 for v in v_major ]).reshape(len(v_major))
 
         print("\ntd:")
         print(errt.td)
@@ -463,8 +464,13 @@ if __name__ == '__main__':
         print("\ndsq:")
         print(errt.dsq)
 
-        print(f"\nvf ({len(v_major)} vars):")
+        print(f"\nvf ({len(v_major)} global vars):")
         print(vf)
+
+        fig_idx = 0
+        ctg_idx = 0
+        koff = 0
+        origin = 0
 
         def b_to_plup(b, f):
             # TODO: this will do?
@@ -557,19 +563,19 @@ if __name__ == '__main__':
                         s = s / e
                         maxs_j = max(maxs_j, s)
                         f_ext, r_ext = max(0, k+lj-li), max(0, -k)
-                        result_j += [(k, s, e, f_ext, r_ext)] # offset, score, eov
+                        # result_j += [(k, s, e, f_ext, r_ext)] # offset, score, eov, fext, rext
+                        result_j += [ Aln(koff = k, score = s, eov = e, fext = f_ext, rext = r_ext) ] # offset, score, eov, fext, rext
 
                 if result_j:
-                    result_i[j] = sorted(result_j, key = lambda x: -x[1])
+                    result_i[j] = sorted(result_j, key = lambda x: -x.score)
 
                 print(".", end = "", flush = True)
 
             return result_i
 
-
-        def extension(i):
-
-            global nfig
+        # layout is like [(j0, k0), (j1, k1), (j2, k2)...]
+        # extension into the right
+        def extension(i, layout = []):
 
             vf_history = {}
 
@@ -585,45 +591,60 @@ if __name__ == '__main__':
             minus = []
             embed = []
 
-            while nround < 7 and ntarget > 50:
+            global fig_idx
+            global ctg_idx
+
+            while nround < 10 and ntarget > 25:
 
                 result_i = get_result_i(i, vf_local, bits_local, targets = best_js)
-                best_js = sorted(result_i.keys(), key = lambda j: (-1) * result_i[j][0][1])
+                best_js = sorted(result_i.keys(), key = lambda j: (-1) * result_i[j][0].score)
 
                 def gap(alns):
-                    if not [ a for a in alns if a[1] > 0.6 ]:
+                    if not [ a for a in alns if a.score > 0.6 ]:
                         return 0.0
                     elif len(alns) < 2:
                         return 1.0
                     else: 
-                        return (alns[0][1] - alns[1][1]) / alns[0][1]
+                        return (alns[0].score - alns[1].score) / alns[0].score
 
-                uniques = sorted([ j for j in best_js if gap(result_i[j]) > 0.15 ], key = lambda x: -result_i[x][0][2])
+                uniques = sorted([ j for j in best_js if gap(result_i[j]) > 0.20 ], key = lambda x: -result_i[x][0].eov)
+
+                def pickbest(l):
+                    # l is aln
+                    _l, li = [], list(range(len(l)))
+                    while li:
+                        _l += [ l[li[0]] ]
+                        li = [ i for i in li if l[i].j not in [ e.j for e in _l ]]
+                    return _l
 
                 ## j, aln, gap, round
-                plus += [ (j, result_i[j][0], gap(result_i[j]), nround) for j in uniques
-                          if result_i[j][0][3] > 0 and result_i[j][0][2] > 4 ]
-                plus = sorted(plus, key = lambda x: (-x[2], -x[1][2]))
+                plus += [ BestAln(i = i, j = j, aln = result_i[j][0], gap = gap(result_i[j]), nround = nround)
+                          for j in uniques if result_i[j][0].fext > 0 and result_i[j][0].eov > 4 ]
+                plus = pickbest(sorted(plus, key = lambda x: (-x.gap, -x.aln.eov)))
 
-                minus += [ (j, result_i[j][0], gap(result_i[j]), nround) for j in uniques
-                          if result_i[j][0][4] > 0 and result_i[j][0][2] > 4 ]
-                minus = sorted(minus, key = lambda x: (-x[2], -x[1][2]))
+                minus += [ BestAln(i = i, j = j, aln = result_i[j][0], gap = gap(result_i[j]), nround = nround)
+                           for j in uniques if result_i[j][0].rext > 0 and result_i[j][0].eov > 4 ]
+                minus = pickbest(sorted(minus, key = lambda x: (-x.gap, -x.aln.eov)))
 
-                embed += [ (j, result_i[j][0], gap(result_i[j]), nround) for j in uniques
-                          if result_i[j][0][3] == 0 and result_i[j][0][4] == 0 and result_i[j][0][2] > 4 ]
-                embed = sorted(embed, key = lambda x: (-x[2], -x[1][2]))
+                embed += [ BestAln(i = i, j = j, aln = result_i[j][0], gap = gap(result_i[j]), nround = nround)
+                           for j in uniques if result_i[j][0].fext == 0 and result_i[j][0].rext == 0 and result_i[j][0].eov > 4 ]
+                embed = pickbest(sorted(embed, key = lambda x: (-x.gap, -x.aln.eov)))
 
-                print(f"\n{len(uniques)} uniques (+{len(plus)}, -{len(minus)}, ^{len(embed)}) for {i} upto round {nround}.")
+                print(f"\n(+{len(plus)}, -{len(minus)}, ^{len(embed)}) uniques for {i} upto round {nround}.")
 
                 print(f"\n   i\t   j\t  k\t  e\tfex\trex\tscr\t%gap\tround")
-                for j, aln, gap, r in plus[:10] + minus[:10] + embed[:10]:
-                    k, s, e, fex, rex = aln
-                    print(f"{i:4d}\t{j:4d}\t{k:3d}\t{e:3d}\t{fex:3d}+\t{rex:3d}-\t{s:.2f}\t{100*gap:.1f} %\t{r}")
+
+                for balns in plus[:10] + minus[:10] + embed[:10]:
+                    line = f"{balns.i:4d}\t{balns.j:4d}\t{balns.aln.koff:3d}\t{balns.aln.eov:3d}\t"
+                    line += f"{balns.aln.fext:3d}+\t{balns.aln.rext:3d}-\t{balns.aln.s:.2f}\t{100*balns.gap:.1f} %\t{balns.nround}"
+                    print(line)
 
                 # NOTE: update target, vf, bits
                 nround += 1
                 ntarget = int(ntarget*0.6)
-                best_js = best_js[:ntarget]
+
+                # take ones with plus extension
+                best_js = [ j for j in best_js if result_i[j][0].fext > 0 ][:ntarget]
 
                 vs_local = var([ hers[j] for j in best_js ],
                     hor_type = "~", err_rate = 0.05,
@@ -633,69 +654,60 @@ if __name__ == '__main__':
                 vf_local = np.array([ v["f"] for v in vs_local ]).reshape(len(vs_local))
                 bits_local = { i: ba(her, arrs[i], vs_local) for i, her in enumerate(hers) if arrs[i] and len(arrs[i]) > 7 }
                 vf_history[nround] = (vf_local, bits_local)
-                print(f"Next: {len(vs_local)} local SNVs for {ntarget} reads.")
+                print(f"Next: {len(vs_local)} local SNVs for {len(best_js)} reads.")
 
             if plus:
-                # j, eov+fex, %gap
-                print(f"# EXT+\t{plus[0][0]}\t{plus[0][1][2]}+{plus[0][1][3]}\t{100*plus[0][2]:.1f}")
 
-                for nr in range(plus[0][3]+1):
-                    #print(f"drawing for {(i, j)}")
+                # j, eov+fex, %gap
+                for nr in range(plus[0].nround + 1):
+                    fig_idx += 1
                     fig = plt.figure(figsize=(10, 8))
                     plt.axis("off")
                     ax1 = fig.add_subplot(1, 1, 1)
-                    dots = squarify(dotplot(i, plus[0][0], vf = vf_history[nr][0], bits = vf_history[nr][1]), np.nan)
+                    dots = squarify(dotplot(i, plus[0].j, vf = vf_history[nr][0], bits = vf_history[nr][1]), np.nan)
                     g1 = sns.heatmap(dots,
                             vmin=np.nanmin(dots), vmax=np.nanmax(dots),
                             cmap="coolwarm", ax = ax1)
-                    ax1.set_title(f"{i}-{plus[0][0]}; {plus[0][1][2]}+{plus[0][1][3]}; R{nr}~{100*plus[0][2]:.1f}%")
-                    plt.savefig(f"{nfig}-dots-{i}-vs-{plus[0][0]}-r-{nr}.png")
+                    ax1.set_title(f"{i}-{plus[0].j}; {plus[0].aln.eov}+{plus[0].aln.fext}; R{nr}~{100*plus[0].gap:.1f}%")
+                    plt.savefig(f"{fig_idx}-ctg{ctg_idx}-{i}-to-{plus[0].j}-r-{nr}.png")
                     plt.close()
-                    nfig += 1
 
-                return (plus[0][0] if plus else -1, minus[0][0] if minus else -1)
-
-            return (-1,-1)
+            return Extension(i = i, plus = plus, minus = minus, embed = embed)
 
         seen = []
+        layout = []
 
-        for i in bits_keys_longer[:200]:
+        for i in bits_keys_longer[:50]:
 
             if i in seen:
-                print(f"{i} skipped. already seen.")
                 continue
 
             print(f"### START\t{i}")
-            next_if = i 
+            ctg_idx += 1
+            origin, nexts = i, [i]
+            n, koff = 0, 0
 
-            n = 0
-            while next_if >= 0 and (next_if not in seen):
-                print(f"## CUR\t{next_if}")
-                seen += [next_if]
-                next_if, next_ir = extension(next_if)
-                n += 1
+            # while next_if >= 0 and (next_if not in seen):
+            while nexts:
 
-            print(f"### END\t {i} ==={n}==> {next_if}")
+                if nexts[0] in seen:
+                    print(f"skip {nexts[0]}")
+                    nexts = nexts[1:]
 
+                else:
+                    print(f"nexts = {nexts}")
+                    n += 1
+                    seen += [ nexts[0] ]
+                    ext  = extension(nexts[0])
+                    plus = ext.plus[:10]
+                    minus = ext.minus[:10]
+                    embed = ext.embed[:10]
+                    print( "\n".join([ f"{nexts[0]}\t{p.j}\t{p.aln.koff}\t{p.aln.score}\t{100*p.gap:.2f}" for p in plus ]) )
 
-        import sys
-        sys.exit()
+                    layout += [ (nexts[0], p.j, p.aln.koff, p.aln.score, p.gap) for p in plus ]
+                    nexts = nexts[1:] + [ pp.j for pp in plus if pp.j not in seen ]
 
-        ad = [ (i, look_for_ext(i)) for i in bits_keys_longer[:10] ]
-
-        for i, ad0 in ad:
-            print(f"# alignment for  {i}")
-            
-            for j in sorted([ j for j in ad0.keys() if ad0[j] ], key=lambda x: -ad0[x][0].score):
-                print(f"- alignment {i} with {j}")
-                for aln in ad0[j][:2]:
-                    print_align(aln, bits, arrs)
-
-            # sorted(res, key = lambda x: x.score
-            # ad[0] |= { j : [ mismatX(0, 0, j, 0, bits[0], bits[j], k) for k in range(-lj+2, li-2) ] }
-
-                #alns = [ self.calc_align(i, ai, j, aj, k, bits_dict = bits_dict) for k in range(-lj+2, li-2) ]
-                #alns = [ aln for aln in alns if aln.score > T_dag - 100 and aln.eff_ovlp > 4 ] # NOTE: threshold depends on scoring scheme.
+            print(f"### END NO EXT\t{i}\t{n}")
 
     else:
         assert False, "invalid action."
