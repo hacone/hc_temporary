@@ -441,6 +441,10 @@ if __name__ == '__main__':
                 fq_upper_bound = 1.1, skips = skips,
                 comprehensive = False)
 
+        v_all = var(hers, hor_type = "~", err_rate = 0.05,
+            fq_upper_bound = 1.1, skips = skips,
+            comprehensive = True)
+
         class error_tensor:
 
             def __init__(self, e0 = 0.01, e1 = 0.05):
@@ -456,6 +460,7 @@ if __name__ == '__main__':
         # errt_lev = error_tensor(e0 = 0.10, e1 = 0.10)
 
         vf = np.array([ v["f"] for v in v_major ]).reshape(len(v_major))
+        vf_all = np.array([ v["f"] for v in v_all ]).reshape(len(v_all))
         # vf_cst = np.array([ 0.1 for v in v_major ]).reshape(len(v_major))
 
         print("\ntd:")
@@ -489,11 +494,15 @@ if __name__ == '__main__':
             return np.tensordot(plup, t1 - t2_ve, [[0,1],[1,0]])
 
         arrs = [ fillx(her) for her in hers ]
-
         bits = { i: ba(her, arrs[i], v_major) for i, her in enumerate(hers) if arrs[i] and len(arrs[i]) > 7 }
+
         # TODO: rename as this not depend on bits
         bits_keys_longer = sorted(bits.keys(), key = lambda x: -bits[x].shape[0])
+
         print(f"{len(bits)} bb long arrs in {len(hers)} reads", flush=True)
+
+        print("\nid\tmons\tunits\treadname")
+        print("\n".join([ f"{i}\t{len(hers[i].mons)}\t{bits[i].shape[0]}\t{hers[i].name}" for i in bits_keys_longer ]))
 
         def dotplot(i, j, errt = errt, vf = vf, bits = bits):
             """ required context: arrs """
@@ -668,7 +677,7 @@ if __name__ == '__main__':
                     g1 = sns.heatmap(dots,
                             vmin=np.nanmin(dots), vmax=np.nanmax(dots),
                             cmap="coolwarm", ax = ax1)
-                    ax1.set_title(f"{i}-{plus[0].j}; {plus[0].aln.eov}+{plus[0].aln.fext}; R{nr}~{100*plus[0].gap:.1f}%")
+                    ax1.set_title(f"{i}-{plus[0].j}; {plus[0].aln.eov}+{plus[0].aln.fext}; R{nr}~{100*plus[0].gap:.1f}%@{plus[0].nround}")
                     plt.savefig(f"{fig_idx}-ctg{ctg_idx}-{i}-to-{plus[0].j}-r-{nr}.png")
                     plt.close()
 
@@ -679,33 +688,44 @@ if __name__ == '__main__':
 
         for i in bits_keys_longer[:50]:
 
+            layout_i = []
             if i in seen:
                 continue
 
             print(f"### START\t{i}")
             ctg_idx += 1
-            origin, nexts = i, [i]
-            n, koff = 0, 0
+            origin, nexts = i, [(i,0)]
+            n, koff, kall = 0, 0, 0
 
             # while next_if >= 0 and (next_if not in seen):
             while nexts:
 
-                if nexts[0] in seen:
+                if nexts[0][0] in seen:
                     print(f"skip {nexts[0]}")
                     nexts = nexts[1:]
 
                 else:
                     print(f"nexts = {nexts}")
                     n += 1
-                    seen += [ nexts[0] ]
-                    ext  = extension(nexts[0])
+                    seen += [ nexts[0][0] ]
+                    ext  = extension(nexts[0][0])
                     plus = [ p for p in ext.plus if p.gap > 0.3 ][:10]
-                    #minus = ext.minus[:10] #embed = ext.embed[:10]
-                    print( "\n".join([ f"EDGE\t{nexts[0]}\t{p.j}\t{p.aln.koff}\t{p.aln.fext}\t{p.aln.rext}\t{100*p.aln.score:.2f}\t{100*p.gap:.2f}" for p in plus ]) )
-                    layout += [ (nexts[0], p.j, p.aln.koff, p.aln.score, p.gap) for p in plus ]
-                    nexts = [ pp.j for pp in plus if pp.j not in seen ][:3] + nexts[1:]
+                    minusembed = [ me for me in sorted(ext.minus + ext.embed, key = lambda x: -x.gap) if me.gap > 0.5][:10]
+                    print(f"****\tOffOrig\tFrom\tTo\tOff\tEovlp\t+Ext\t-Ext\tScore\tGap")
+                    print( "\n".join([ 
+                        f"EDGE\t{nexts[0][1]}\t{nexts[0][0]}\t{p.j}\t{p.aln.koff}\t" +\
+                        f"{p.aln.eov}\t+{p.aln.fext}\t-{p.aln.rext}\t{100*p.aln.score:.2f}\t{100*p.gap:.2f}" for p in plus + minusembed ]) )
 
-            print(f"### END NO EXT\t{i}\t{n}")
+                    # from, to, offset, offset_from_origin, score, gap
+                    layout_i += [ (nexts[0], p.j, p.aln.koff, nexts[0][1]+p.aln.koff, p.aln.score, p.gap) for p in plus ]
+                    # to, offset_from_origin 
+                    nexts = [ (pp.j, nexts[0][1] + pp.aln.koff) for pp in plus if pp.j not in seen ][:3] + \
+                            [ (pp.j, nexts[0][1] + pp.aln.koff) for pp in minusembed if pp.j not in seen ][:3] + nexts[1:]
+                    nexts = sorted(list(set(nexts)), key=lambda x: -x[1])
+
+            print(f"### END NO EXT @\t{i}\t{n}")
+            print("\nOrigin\tFrom\tTo\tOffset\tOffOrig\tScore\tGap")
+            print("\n".join([ f"{i}\t{l[0]}\t{l[1]}\t{l[2]}\t{l[3]}\t{100*l[4]:.2f}\t{100*l[5]:.2f}" for l in layout_i ]))
 
     else:
         assert False, "invalid action."
