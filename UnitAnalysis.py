@@ -7,6 +7,10 @@ import hashlib
 from collections import namedtuple
 import numpy as np
 import pandas as pd
+import networkx as nx
+
+from joblib import Parallel, delayed
+import joblib
 import pickle
 
 import matplotlib
@@ -31,12 +35,11 @@ def squarify(M,val):
 
 # this is an atomic alignment
 Aln = namedtuple("Aln", ("koff", "score", "eov", "fext", "rext"))
-
 # for each read pair i, j, calc one BestAln out of Aln's
 BestAln = namedtuple("BestAln", ("i", "j", "aln", "gap", "nround"))
-
 # plus, minus, embed are list of BestAln
 Extension = namedtuple("Extension", ("i", "plus", "minus", "embed", "vf_history"))
+
 
 # TODO: can this be abstracted to work with other chromosomes?
 def fillx(read, verbose = False):
@@ -237,6 +240,7 @@ def print_align(aln, bits, arrs):
 
 if __name__ == '__main__':
 
+
     import argparse
     parser = argparse.ArgumentParser(description='Analyze HOR encoded read.')
     parser.add_argument('action', metavar='action', type=str,
@@ -256,6 +260,10 @@ if __name__ == '__main__':
     # and --nvars as well
     parser.add_argument('--innum', dest='innum', action='store_const', const=True, help='bases are encoded into int (for plotting)')
     parser.add_argument('--save-to', dest='save', help='pickle variants for later use')
+
+    # For layout, transitive
+    parser.add_argument('--parallel', dest='n_parallel', help='# of cores to be used')
+    parser.add_argument('--edges', dest='edgefile', help='edge list file')
 
     #parser.add_argument('-o', dest='outfile', help='the file to be output (required for align)')
     args = parser.parse_args()
@@ -434,17 +442,7 @@ if __name__ == '__main__':
 
     elif args.action == "layout":
 
-        if args.vars:
-            v_major = pickle.load(open(args.vars, "rb"))
-        else:
-            v_major = var(hers, hor_type = "~", err_rate = 0.05,
-                fq_upper_bound = 1.1, skips = skips,
-                comprehensive = False)
-
-        v_all = var(hers, hor_type = "~", err_rate = 0.05,
-            fq_upper_bound = 1.1, skips = skips,
-            comprehensive = True)
-
+        ## common data structures and helper function to calculate proper similarity scores
         class error_tensor:
 
             def __init__(self, e0 = 0.01, e1 = 0.05):
@@ -454,28 +452,6 @@ if __name__ == '__main__':
                 self.dsq = np.array(
                         [ e0*e0 + (1-e0)*(1-e0), e0*(1-e1) + e1*(1-e0), 
                           e0*(1-e1) + e1*(1-e0), e1*e1 + (1-e1)*(1-e1) ]).reshape(2, 2)
-
-        errt = error_tensor(e0 = 0.03, e1 = 0.10) # for PacBio
-        # errt = error_tensor(e0 = 0.06, e1 = 0.20) # for ONT?
-        # errt_lev = error_tensor(e0 = 0.10, e1 = 0.10)
-
-        vf = np.array([ v["f"] for v in v_major ]).reshape(len(v_major))
-        vf_all = np.array([ v["f"] for v in v_all ]).reshape(len(v_all))
-        # vf_cst = np.array([ 0.1 for v in v_major ]).reshape(len(v_major))
-
-        print("\ntd:")
-        print(errt.td)
-
-        print("\ndsq:")
-        print(errt.dsq)
-
-        print(f"\nvf ({len(v_major)} global vars):")
-        print(vf)
-
-        fig_idx = 0
-        ctg_idx = 0
-        koff = 0
-        origin = 0
 
         def b_to_plup(b, f):
             # TODO: this will do?
@@ -493,34 +469,71 @@ if __name__ == '__main__':
             t1 = np.tensordot(x, errt.td, [0, 1])
             return np.tensordot(plup, t1 - t2_ve, [[0,1],[1,0]])
 
+        ## entry point of this action.
+
+        if args.vars:
+            v_major = pickle.load(open(args.vars, "rb"))
+        else:
+            v_major = var(hers, hor_type = "~", err_rate = 0.05,
+                fq_upper_bound = 1.1, skips = skips,
+                comprehensive = False)
+        vf = np.array([ v["f"] for v in v_major ]).reshape(len(v_major))
+
+        v_all = var(hers, hor_type = "~", err_rate = 0.05,
+            fq_upper_bound = 1.1, skips = skips,
+            comprehensive = True)
+        vf_all = np.array([ v["f"] for v in v_all ]).reshape(len(v_all))
+
+        errt = error_tensor(e0 = 0.03, e1 = 0.10) # for PacBio
+        # errt = error_tensor(e0 = 0.06, e1 = 0.20) # for ONT?
+        # errt_lev = error_tensor(e0 = 0.10, e1 = 0.10)
+        # vf_cst = np.array([ 0.1 for v in v_major ]).reshape(len(v_major))
+
+        print("\ntd =")
+        print(errt.td)
+
+        print("\ndsq =")
+        print(errt.dsq)
+
+        print(f"\nvf = {len(v_major)} global vars:")
+        print(vf)
+        print(f"\nvf_all = {len(v_all)} comprehensive vars: suppressed...")
+
+        koff = 0
+        origin = 0
+
         arrs = [ fillx(her) for her in hers ]
-        bits = { i: ba(her, arrs[i], v_major) for i, her in enumerate(hers) if arrs[i] and len(arrs[i]) > 7 }
+        bits = { i: ba(her, arrs[i], v_major) for i, her in enumerate(hers) if arrs[i] and len(arrs[i]) > 1 }
+
+        keys_sorted = sorted(
+                [ i for i in range(len(hers)) if arrs[i] and len(arrs[i]) > 1 ],
+                key = lambda x: -1 * len(arrs[x]))
+        keys_long = [ i for i in keys_sorted if len(arrs[i]) > 7 ]
+        keys_short = [ i for i in keys_sorted if len(arrs[i]) <= 8 ]
+
+        print(f"{len(keys_long)} long (>7) arrs, {len(keys_short)} short arrs, of total {len(hers)} reads")
 
         # TODO: rename as this not depend on bits
-        bits_keys_longer = sorted(bits.keys(), key = lambda x: -bits[x].shape[0])
+        # bits_keys_longer = sorted(bits.keys(), key = lambda x: -bits[x].shape[0])
 
-        print(f"{len(bits)} bb long arrs in {len(hers)} reads", flush=True)
-
-        print("\nid\tmons\tunits\treadname")
-        print("\n".join([ f"{i}\t{len(hers[i].mons)}\t{bits[i].shape[0]}\t{hers[i].name}" for i in bits_keys_longer ]))
+        print("\n#\tid\tmons\tunits\treadname")
+        print("\n".join([ f"{n+1}\t{i}\t{len(hers[i].mons)}\t{bits[i].shape[0]}\t{hers[i].name}" for n, i in enumerate(keys_sorted) if len(arrs[i]) > 7 ]))
 
         def dotplot(i, j, errt = errt, vf = vf, bits = bits):
-            """ required context: arrs """
+            """ calculate each cell of dotplot of prop. sim.
+                required context: arrs """
 
             li = bits[i].shape[0]
             lj = bits[j].shape[0]
             result = np.zeros(li*lj).reshape(li, lj)
             result[:] = np.nan
-
             t2_ve = np.tensordot(np.stack([1-vf, vf]), errt.dsq, [0, 1])
-
             plup = [ b_to_plup(bits[i][n,], vf) for n in range(li) ]
             denomis = [ denomi(plup[n], errt) for n in range(li) ]
 
             for n in range(li):
                 if arrs[i][n][2] != "~":
                     continue
-
                 for m in range(lj):
                     if arrs[j][m][2] != "~":
                         continue
@@ -528,8 +541,8 @@ if __name__ == '__main__':
 
             return result
 
-        # TODO: temporary, obviously
-        def get_result_i(i, vf = vf, bits = bits, targets = None):
+        # TODO: temporary naming, obviously
+        def get_result_i(i, vf = vf, bits = bits, targets = None, verbose = False):
             """ assumes errt in context """
 
             # aln for i
@@ -539,7 +552,7 @@ if __name__ == '__main__':
             t2_ve = np.tensordot(np.stack([1-vf, vf]), errt.dsq, [0, 1])
 
             result_i = {}
-            targets = targets if targets else bits_keys_longer
+            targets = targets if targets else keys_long
             print(f"aligning for {i} : {len(targets)} targets")
 
             for j in [ j for j in targets if i != j ]:
@@ -549,7 +562,7 @@ if __name__ == '__main__':
                 result_j = []
                 maxs_j = -10000
 
-                for k in range(-lj+2, li-2):
+                for k in range(-lj+2, li-1): ## minimum overlap is set to be 2
                     # aln for i, j, k
                     s = 0 # score
                     e = 0 # units effectively overlapped
@@ -568,45 +581,59 @@ if __name__ == '__main__':
                             e += 1
                             s += numeri(plup[n], bits[j][n-k,], errt, t2_ve) / (denomis[n] + 0.0001)
 
-                    if e > 2:
+                    if e >= 2:
                         s = s / e
                         maxs_j = max(maxs_j, s)
                         f_ext, r_ext = max(0, k+lj-li), max(0, -k)
-                        # result_j += [(k, s, e, f_ext, r_ext)] # offset, score, eov, fext, rext
                         result_j += [ Aln(koff = k, score = s, eov = e, fext = f_ext, rext = r_ext) ] # offset, score, eov, fext, rext
 
                 if result_j:
                     result_i[j] = sorted(result_j, key = lambda x: -x.score)
 
-                print(".", end = "", flush = True)
+                if verbose:
+                    print(".", end = "", flush = True)
 
             return result_i
 
         # layout is like [(j0, k0), (j1, k1), (j2, k2)...]
         # extension into the right
-        def extension(i, layout = []):
+        def extension(i, backwards = False):
 
-            vf_history = {}
+            vf_history = []
+            bits_history = []
 
             # initialize for round 0
             nround = 0
-            best_js = bits_keys_longer
-            ntarget = len(bits_keys_longer)
+            best_long_js = keys_long
+            best_short_js = keys_short
+
+            # TODO: make this deprecated
+            n_long_target = len(keys_long)
+            n_short_target = len(keys_short)
+
+            vs_local = v_major
             vf_local = vf
             bits_local = bits
-            vf_history[0] = (vf, bits)
+            vf_history += [vf_local]
+            bits_history += [bits_local]
 
             plus = []
             minus = []
             embed = []
 
-            global fig_idx
-            global ctg_idx
+            #global fig_idx
+            #global ctg_idx
 
-            while nround < 10 and ntarget > 25:
+            # NOTE: n_units must be >100
+            while nround < 15 and \
+                  best_long_js and best_short_js and \
+                  vs_local and (vs_local[0]["c"] / vs_local[0]["f"]) > 100:
 
-                result_i = get_result_i(i, vf_local, bits_local, targets = best_js)
-                best_js = sorted(result_i.keys(), key = lambda j: (-1) * result_i[j][0].score)
+                result_i_long = get_result_i(i, vf_local, bits_local, targets = best_long_js) # ~7 us
+                best_long_js = sorted(result_i_long.keys(), key = lambda j: (-1) * result_i_long[j][0].score)
+
+                result_i_short = get_result_i(i, vf_local, bits_local, targets = best_short_js) # 2~7 us
+                best_short_js = sorted(result_i_short.keys(), key = lambda j: (-1) * result_i_short[j][0].score)
 
                 def gap(alns):
                     if not [ a for a in alns if a.score > 0.6 ]:
@@ -616,7 +643,7 @@ if __name__ == '__main__':
                     else: 
                         return (alns[0].score - alns[1].score) / alns[0].score
 
-                uniques = sorted([ j for j in best_js if gap(result_i[j]) > 0.25 ], key = lambda x: -result_i[x][0].eov)
+                uniques = sorted([ j for j in best_long_js if gap(result_i_long[j]) > 0.30 ], key = lambda x: -result_i_long[x][0].eov)
 
                 def pickbest(l):
                     # l is aln
@@ -627,66 +654,102 @@ if __name__ == '__main__':
                     return _l
 
                 ## j, aln, gap, round
-                plus += [ BestAln(i = i, j = j, aln = result_i[j][0], gap = gap(result_i[j]), nround = nround)
-                          for j in uniques if result_i[j][0].fext > 0 and result_i[j][0].eov > 4 ]
+                plus += [ BestAln(i = i, j = j, aln = result_i_long[j][0], gap = gap(result_i_long[j]), nround = nround)
+                          for j in uniques if result_i_long[j][0].fext > 0 and result_i_long[j][0].eov > 4 ]
                 plus = pickbest(sorted(plus, key = lambda x: (-x.gap, -x.aln.eov)))
 
-                minus += [ BestAln(i = i, j = j, aln = result_i[j][0], gap = gap(result_i[j]), nround = nround)
-                           for j in uniques if result_i[j][0].rext > 0 and result_i[j][0].eov > 4 ]
+                minus += [ BestAln(i = i, j = j, aln = result_i_long[j][0], gap = gap(result_i_long[j]), nround = nround)
+                           for j in uniques if result_i_long[j][0].rext > 0 and result_i_long[j][0].eov > 4 ]
                 minus = pickbest(sorted(minus, key = lambda x: (-x.gap, -x.aln.eov)))
 
-                embed += [ BestAln(i = i, j = j, aln = result_i[j][0], gap = gap(result_i[j]), nround = nround)
-                           for j in uniques if result_i[j][0].fext == 0 and result_i[j][0].rext == 0 and result_i[j][0].eov > 4 ]
+                embed += [ BestAln(i = i, j = j, aln = result_i_long[j][0], gap = gap(result_i_long[j]), nround = nround)
+                           for j in uniques if result_i_long[j][0].fext == 0 and result_i_long[j][0].rext == 0 and result_i_long[j][0].eov > 4 ]
                 embed = pickbest(sorted(embed, key = lambda x: (-x.gap, -x.aln.eov)))
 
-                print(f"\n(+{len(plus)}, -{len(minus)}, ^{len(embed)}) uniques for {i} upto round {nround}.")
-
-                print(f"\n   i\t   j\t  k\t  e\tfex\trex\tscr\t%gap\tround")
-
+                line = f"\n(+{len(plus)}, -{len(minus)}, ^{len(embed)}) uniques for {i} upto round {nround}."
+                line += f"\n   i\t   j\t  k\t  e\tfex\trex\tscr\t%gap\tround"
                 for balns in plus[:10] + minus[:10] + embed[:10]:
-                    line = f"{balns.i:4d}\t{balns.j:4d}\t{balns.aln.koff:3d}\t{balns.aln.eov:3d}\t"
-                    line += f"{balns.aln.fext:3d}+\t{balns.aln.rext:3d}-\t{balns.aln.score:.2f}\t{100*balns.gap:.1f} %\t{balns.nround}"
-                    print(line)
+                    line += f"\n{balns.i:4d}\t{balns.j:4d}\t{balns.aln.koff:3d}\t{balns.aln.eov:3d}\t" + \
+                            f"{balns.aln.fext:3d}+\t{balns.aln.rext:3d}-\t{balns.aln.score:.2f}\t{100*balns.gap:.1f} %\t{balns.nround}"
+
+                print(line)
 
                 # NOTE: update target, vf, bits
-                nround += 1
-                ntarget = int(ntarget*0.6)
+                n_long_target = int(n_long_target*0.6)
+                n_short_target = int(n_short_target*0.6)
 
                 # take ones with plus extension
-                best_js = [ j for j in best_js if result_i[j][0].fext > 0 ][:ntarget]
+                # TODO: also for shorter reads!
+                if backwards:
+                    best_long_js = [ j for j in best_long_js if result_i_long[j][0].rext > 0 ][:n_long_target]
+                    best_short_js = [ j for j in best_short_js if result_i_short[j][0].fext == 0 ][:n_short_target]
+                else:
+                    best_long_js = [ j for j in best_long_js if result_i_long[j][0].fext > 0 ][:n_long_target]
+                    best_short_js = [ j for j in best_short_js if result_i_short[j][0].koff >= 0 ][:n_short_target]
 
-                vs_local = var([ hers[j] for j in best_js ],
+                nround += 1
+                vs_local = var([ hers[j] for j in best_long_js + best_short_js ],
                     hor_type = "~", err_rate = 0.05,
                     fq_upper_bound = 1.1, skips = skips,
                     comprehensive = False)
 
                 vf_local = np.array([ v["f"] for v in vs_local ]).reshape(len(vs_local))
-                bits_local = { i: ba(her, arrs[i], vs_local) for i, her in enumerate(hers) if arrs[i] and len(arrs[i]) > 7 }
-                vf_history[nround] = (vf_local, bits_local)
-                print(f"Next: {len(vs_local)} local SNVs for {len(best_js)} reads.")
+                bits_local = { j: ba(hers[j], arrs[j], vs_local) for j in [i] + best_long_js + best_short_js }
+                vf_history += [vf_local]
+                bits_history += [bits_local]
 
-            if plus:
+                if vs_local:
+                    est_units = int(vs_local[0]["c"] / vs_local[0]["f"])
+                    print(f"Next for {i}: {len(vs_local)} local SNVs found for ~{est_units} units from {len(best_long_js)} long / {len(best_short_js)} short reads.")
 
+            for aln in plus[:3]:
                 # j, eov+fex, %gap
-                for nr in range(plus[0].nround + 1):
-                    fig_idx += 1
+                for nr in range(aln.nround + 1):
                     fig = plt.figure(figsize=(10, 8))
                     plt.axis("off")
                     ax1 = fig.add_subplot(1, 1, 1)
-                    dots = squarify(dotplot(i, plus[0].j, vf = vf_history[nr][0], bits = vf_history[nr][1]), np.nan)
+                    dots = squarify(dotplot(i, aln.j, vf = vf_history[nr], bits = bits_history[nr]), np.nan)
                     g1 = sns.heatmap(dots,
                             vmin=np.nanmin(dots), vmax=np.nanmax(dots),
                             cmap="coolwarm", ax = ax1)
-                    ax1.set_title(f"{i}-{plus[0].j}; {plus[0].aln.eov}+{plus[0].aln.fext}; R{nr}~{100*plus[0].gap:.1f}%@{plus[0].nround}")
-                    plt.savefig(f"{fig_idx}-ctg{ctg_idx}-{i}-to-{plus[0].j}-r-{nr}.png")
+                    ax1.set_title(f"{i}-{aln.j}; {aln.aln.eov}+{aln.aln.fext}-{aln.aln.rext}; R{nr}~{100*aln.gap:.1f}%@{aln.nround}")
+                    plt.savefig(f"{i}-to-{aln.j}-pl-r-{nr}.png")
                     plt.close()
 
-            return Extension(i = i, plus = plus, minus = minus, embed = embed, vf_history = vf_history)
+            for aln in sorted(minus + embed, key=lambda x: -x.gap)[:3]:
+                for nr in range(aln.nround + 1):
+                    fig = plt.figure(figsize=(10, 8))
+                    plt.axis("off")
+                    ax1 = fig.add_subplot(1, 1, 1)
+                    dots = squarify(dotplot(i, aln.j, vf = vf_history[nr], bits = bits_history[nr]), np.nan)
+                    g1 = sns.heatmap(dots,
+                            vmin=np.nanmin(dots), vmax=np.nanmax(dots),
+                            cmap="coolwarm", ax = ax1)
+                    ax1.set_title(f"{i}-{aln.j}; {aln.aln.eov}+{aln.aln.fext}-{aln.aln.rext}; R{nr}~{100*aln.gap:.1f}%@{aln.nround}")
+                    plt.savefig(f"{i}-to-{aln.j}-me-r-{nr}.png")
+                    plt.close()
+
+            print("\n".join([ f"{i}\t{aln.j}\t{aln.aln.koff}\t{aln.aln.eov}\t{aln.aln.fext}\t{aln.aln.rext}\t" +\
+                              f"{100*aln.aln.score:.2f}\t{100*aln.gap:.2f}\t{aln.nround}" for aln in plus + minus + embed ]),
+                  file=open(f"read-{i}.ext", "w"))
+
+            exts = Extension(i = i, plus = plus, minus = minus, embed = embed, vf_history = vf_history)
+            #pickle.dump(exts, open(f"exts-{i}.pickle", "wb"))
+            #joblib.dump(exts, f"exts-{i}.pickle")
+            return exts
 
         seen = []
         layout = []
 
-        for i in bits_keys_longer[:50]:
+        exts = Parallel(n_jobs=2)([ delayed(extension)(i) for i in keys_long[:2] ])
+        # pickle.dump(exts, open("exts.pickle", "wb"))
+        #print(exts)
+
+        import sys
+        sys.exit()
+
+        #for i in keys_long[:50]:
+        for i in [40, 1440]:
 
             layout_i = []
             if i in seen:
@@ -696,6 +759,7 @@ if __name__ == '__main__':
             ctg_idx += 1
             origin, nexts = i, [(i,0)]
             n, koff, kall = 0, 0, 0
+
 
             # while next_if >= 0 and (next_if not in seen):
             while nexts:
@@ -708,9 +772,12 @@ if __name__ == '__main__':
                     print(f"nexts = {nexts}")
                     n += 1
                     seen += [ nexts[0][0] ]
-                    ext  = extension(nexts[0][0])
-                    plus = [ p for p in ext.plus if p.gap > 0.3 ][:10]
-                    minusembed = [ me for me in sorted(ext.minus + ext.embed, key = lambda x: -x.gap) if me.gap > 0.5][:10]
+
+                    ext  = extension(nexts[0][0], backwards = False)
+
+                    ## TODO: output with rank
+                    plus = [ p for p in ext.plus if p.gap > 0.3 ][:5]
+                    minusembed = [ me for me in sorted(ext.minus + ext.embed, key = lambda x: -x.gap) if me.gap > 0.3][:5]
                     print(f"****\tOffOrig\tFrom\tTo\tOff\tEovlp\t+Ext\t-Ext\tScore\tGap")
                     print( "\n".join([ 
                         f"EDGE\t{nexts[0][1]}\t{nexts[0][0]}\t{p.j}\t{p.aln.koff}\t" +\
@@ -726,6 +793,48 @@ if __name__ == '__main__':
             print(f"### END NO EXT @\t{i}\t{n}")
             print("\nOrigin\tFrom\tTo\tOffset\tOffOrig\tScore\tGap")
             print("\n".join([ f"{i}\t{l[0]}\t{l[1]}\t{l[2]}\t{l[3]}\t{100*l[4]:.2f}\t{100*l[5]:.2f}" for l in layout_i ]))
+
+    elif args.action == "transitive":
+
+        df = pd.read_csv("./190214.edges.dat", sep="\t", names = ["EDGE", "OK", "From", "To", "K", "Eov", "Fext", "Rext", "Score", "Gap"])
+        G = nx.MultiDiGraph()
+        for _k, row in df.iterrows():
+            if row.Gap > 50:
+                G.add_edge(row.From, row.To, key = row.K)
+                for k, v in row.items():
+                        G.edges[row.From, row.To, row.K][k] = v
+
+        # (i, j, k, e) 
+        two_steps = []
+        for node in list(G.nodes):
+            #print(G.succ[node])
+            #outs = [[j, es] for j, es in G.succ[node]]
+            # two_steps = [] # NOTE: temp
+            outs = [(j, k, e) for j in G.succ[node] for k, e in G.succ[node][j].items()]
+            ins  = [(h, -k, e) for h in G.pred[node] for k, e in G.pred[node][h].items()]
+            for j, jk, je in outs+ins:
+                for h, hk, he in outs+ins:
+                    if j == h:
+                        continue
+                    #two_steps += [(j, h, -jk+hk, je, he)]
+                    two_steps += [(j, h, -jk+hk), (h, j, jk-hk)]
+
+            #print(f"NODE = {node}")
+            #print(G.succ[node])
+            #print(G.pred[node])
+            #print("TS = " + ",".join([ f"{(j,h,sep)}" for j, h, sep, je, he in two_steps ]))
+            #print(f"{node},", end = "", flush = True)
+
+        print(f"{len(list(two_steps))} => {len(list(set(two_steps)))}")
+
+        good_edges = [ (node, j, k) 
+            for node in list(G.nodes)
+            for j in G.succ[node]
+            for k, e in G.succ[node][j].items()
+            if (node, j, k) in two_steps ]
+
+        print(f"{len(good_edges)}")
+        print("\n".join([ f"{i}\t{j}\t{k}" for i, j, k in good_edges ]))
 
     else:
         assert False, "invalid action."
