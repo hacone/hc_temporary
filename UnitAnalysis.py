@@ -269,6 +269,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     assert args.hors, "specify HOR-encoded reads"
     hers = pickle.load(open(args.hors, "rb"))
+    arrs = [ fillx(her) for her in hers ]
+
     hor_type = args.hor_type if args.hor_type else "~"
     units = [ (her, h) for her in hers for h, s, t in fillx(her) if t == hor_type ]
     skips = [ int(i) for i in args.skips.split(",") ] if args.skips else []
@@ -309,7 +311,6 @@ if __name__ == '__main__':
                 comprehensive = True)[:100]
                 #comprehensive = False)
 
-        arrs = [ fillx(her) for her in hers ]
         bits = { i: ba(her, arrs[i], v_major) for i, her in enumerate(hers) if arrs[i] }
 
         a, n, ridx = [], 0, []
@@ -502,7 +503,6 @@ if __name__ == '__main__':
         koff = 0
         origin = 0
 
-        arrs = [ fillx(her) for her in hers ]
         bits = { i: ba(her, arrs[i], v_major) for i, her in enumerate(hers) if arrs[i] and len(arrs[i]) > 1 }
 
         keys_sorted = sorted(
@@ -796,7 +796,7 @@ if __name__ == '__main__':
 
     elif args.action == "transitive":
 
-        df = pd.read_csv("./190214.edges.dat", sep="\t", names = ["EDGE", "OK", "From", "To", "K", "Eov", "Fext", "Rext", "Score", "Gap"])
+        df = pd.read_csv("forwards-ext.txt", sep="\t", names = ["From", "To", "K", "Eov", "Fext", "Rext", "Score", "Gap", "Round"])
         G = nx.MultiDiGraph()
         for _k, row in df.iterrows():
             if row.Gap > 50:
@@ -827,6 +827,8 @@ if __name__ == '__main__':
 
         print(f"{len(list(two_steps))} => {len(list(set(two_steps)))}")
 
+        nonstd = { i:  [ (ii, t) for ii, (h, s, t) in enumerate(a) if t != "~" ] for i, a in enumerate(arrs) }
+
         good_edges = [ (node, j, k) 
             for node in list(G.nodes)
             for j in G.succ[node]
@@ -834,7 +836,10 @@ if __name__ == '__main__':
             if (node, j, k) in two_steps ]
 
         print(f"{len(good_edges)}")
-        print("\n".join([ f"{i}\t{j}\t{k}" for i, j, k in good_edges ]))
+        print("\n".join([ f"{i}\t{j}\t{k}\t" +\
+                          ",".join([ f"{t}@{ii}" for ii, t in nonstd[i] ])  + "\t" +\
+                          ",".join([ f"{t}@{ii}" for ii, t in nonstd[j] ])
+                          for i, j, k in good_edges ]))
 
     else:
         assert False, "invalid action."
