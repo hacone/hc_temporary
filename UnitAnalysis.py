@@ -263,6 +263,7 @@ if __name__ == '__main__':
 
     # For layout, transitive
     parser.add_argument('--parallel', dest='n_parallel', help='# of cores to be used')
+    parser.add_argument('--park', dest='park', help='you know')
     parser.add_argument('--edges', dest='edgefile', help='edge list file')
 
     #parser.add_argument('-o', dest='outfile', help='the file to be output (required for align)')
@@ -702,6 +703,10 @@ if __name__ == '__main__':
                     est_units = int(vs_local[0]["c"] / vs_local[0]["f"])
                     print(f"Next for {i}: {len(vs_local)} local SNVs found for ~{est_units} units from {len(best_long_js)} long / {len(best_short_js)} short reads.")
 
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+
             for aln in plus[:3]:
                 # j, eov+fex, %gap
                 for nr in range(aln.nround + 1):
@@ -741,8 +746,9 @@ if __name__ == '__main__':
         seen = []
         layout = []
 
-        exts = Parallel(n_jobs=2)([ delayed(extension)(i) for i in keys_long[:2] ])
-        # pickle.dump(exts, open("exts.pickle", "wb"))
+        #exts = Parallel(n_jobs=8, backend="threading")([ delayed(extension)(i) for i in keys_long[:8] ])
+        exts = [ extension(i, backwards = True) for i in keys_long if i % 24 == int(args.park) ]
+        pickle.dump(exts, open(f"exts-rev-mod{int(args.park)}.pickle", "wb"))
         #print(exts)
 
         import sys
@@ -796,13 +802,14 @@ if __name__ == '__main__':
 
     elif args.action == "transitive":
 
-        df = pd.read_csv("./190214.edges.dat", sep="\t", names = ["EDGE", "OK", "From", "To", "K", "Eov", "Fext", "Rext", "Score", "Gap"])
+        df = pd.read_csv(args.edgefile, sep="\t", names = ["From", "To", "K", "Eov", "Fext", "Rext", "Score", "Gap", "Round"])
         G = nx.MultiDiGraph()
+
         for _k, row in df.iterrows():
             if row.Gap > 50:
-                G.add_edge(row.From, row.To, key = row.K)
+                G.add_edge(int(row.From), int(row.To), key = int(row.K))
                 for k, v in row.items():
-                        G.edges[row.From, row.To, row.K][k] = v
+                        G.edges[int(row.From), int(row.To), int(row.K)][k] = v
 
         # (i, j, k, e) 
         two_steps = []
@@ -825,16 +832,17 @@ if __name__ == '__main__':
             #print("TS = " + ",".join([ f"{(j,h,sep)}" for j, h, sep, je, he in two_steps ]))
             #print(f"{node},", end = "", flush = True)
 
-        print(f"{len(list(two_steps))} => {len(list(set(two_steps)))}")
+        #print(f"{len(list(two_steps))} => {len(list(set(two_steps)))}")
 
-        good_edges = [ (node, j, k) 
+        good_edges = [ (node, j, k, e["Gap"]) 
             for node in list(G.nodes)
             for j in G.succ[node]
             for k, e in G.succ[node][j].items()
             if (node, j, k) in two_steps ]
 
-        print(f"{len(good_edges)}")
-        print("\n".join([ f"{i}\t{j}\t{k}" for i, j, k in good_edges ]))
+        #print(f"{len(good_edges)}")
+        print("Source\tTarget\tLabel\tWeight")
+        print("\n".join([ f"{i}\t{j}\t{k}\t{g:.2f}" for i, j, k, g in good_edges ]))
 
     else:
         assert False, "invalid action."

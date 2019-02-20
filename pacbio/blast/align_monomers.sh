@@ -30,12 +30,22 @@ export PYTHON3=${HC}/venv/bin/python3
 #  Package: blast 2.4.0, build Jun  1 2016 13:39:30
 
 align() {
+
   
   ## This should take the full path of the reads in .fasta.gz
 
   READ=$1
   LOCAL_TMP=${TMP_DIR}/$( basename $READ )
   REF=${LOCAL_TMP}/reads.fasta
+
+  # TODO: remove this later
+  if [[ -e ${LOCAL_TMP}/$( basename $MONOMER_DB ).sam ]]; then
+    echo "exist"
+    ls -lah ${LOCAL_TMP}/$( basename $MONOMER_DB ).sam
+    exit
+  else
+    echo "not exist; go"
+  fi
 
   ## Prepare directory and database
   mkdir -p ${LOCAL_TMP}
@@ -68,6 +78,16 @@ sorted() {
   SAM=${LOCAL_TMP}/$( basename $MONOMER_DB ).sam
   SA=${SAM%%.sam}
 
+    # TODO: temporary
+		gzip ${SA}.sort.read.sam
+		echo "Bd. Done."
+    exit
+
+  if [ ! -e $SAM ]; then
+          echo "$SAM not exists"
+          exit
+  fi
+
 # Convert merged.sam to temporary bam with MD tag.
 		${SAMTOOLS} view -@ 12 -b -F 4 ${SAM} > ${SA}.bam && \
 		${SAMTOOLS} calmd -@ 12 -b ${SA}.bam ${MONOMER_DB} > ${SA}.md.bam 2> /dev/null && \
@@ -82,7 +102,7 @@ sorted() {
 # Convert merged sam to bam sorted in read ID, then get sam to be parsed.
 		${SAMTOOLS} sort -@ 12 -n -o ${SA}.sort.read.bam ${SA}.md.bam && \
 		${SAMTOOLS} view -h ${SA}.sort.read.bam > ${SA}.sort.read.sam
-		gzip ${TARGET}.sort.read.sam
+		gzip ${SA}.sort.read.sam
 		echo "Bc. Got sam sorted by reads. ready to be parsed. deleting temp files..."
 
 # delete temp files
@@ -99,10 +119,8 @@ encode() {
 	source ${VENV_ACT}
 
   # echo debugging...
-	echo "python3 ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.all2.pickle"
-  ${PYTHON3} ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.all2.pickle
-	#echo "python3 ${ENCODEPY} encode_dp --sam ${SAM} --out ${SAM%%.sam.gz}.all.pickle"
-  #${PYTHON3} ${ENCODEPY} encode_dp --sam ${SAM} --out ${SAM%%.sam.gz}.all.pickle
+	echo "python3 ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.pickle"
+  ${PYTHON3} ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.pickle
 
   echo "Done encoding."
 
@@ -111,9 +129,9 @@ encode() {
 # NOTE: HERE IS THE ENTRY POINT OF THE SCRIPT!
 
 
-find $READ_DIR | grep .fasta.gz$ | xargs -P 24 -I % bash -c "align %"
+#find $READ_DIR | grep .fasta.gz$ | xargs -P 24 -I % bash -c "align %"
 
-#find $READ_DIR | grep .fasta.gz$ | head -n 10 | xargs -P 12 -I % bash -c "sorted %"
+#find $READ_DIR | grep .fasta.gz$ | xargs -P 12 -I % bash -c "sorted %"
 
-#find $TMP_DIR | grep .sam.gz$ | head -n 10 | xargs -P 12 -I % bash -c "encode %"
+find $TMP_DIR | grep .sam.gz$ | xargs -P 16 -I % bash -c "encode %"
 

@@ -18,7 +18,7 @@ HOR_Read = namedtuple("HOR_Read", ("name", "mons", "hors", "length", "ori"))
 def load_encoded_reads(pickles, n_max_reads = None):
     reads = []
     for picklefile in [ l.strip() for l in open(pickles, "r").readlines() ]:
-        rds += pickle.load(open(picklefile, "rb"))
+        rds = pickle.load(open(picklefile, "rb"))
         reads += [ r for r in rds if len(r.mons) > 29 ]
         print(f"{len(reads)} reads found... " + "loaded " + picklefile, flush = True)
         if n_max_reads and (len(reads) > n_max_reads):
