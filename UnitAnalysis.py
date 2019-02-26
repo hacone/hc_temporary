@@ -787,14 +787,9 @@ if __name__ == '__main__':
 
         for _k, row in df.iterrows():
             if row.Gap > 40 or (row.Round > 5 and row.Gap > 30):
-            #if row.Gap > 30 or (row.Round > 5 and row.Gap > 25):
                 G.add_edge(int(row.From), int(row.To), key = int(row.K))
                 for k, v in row.items():
                         G.edges[int(row.From), int(row.To), int(row.K)][k] = v
-                #else:
-                #    G.add_edge(int(row.To), int(row.From), key = -int(row.K))
-                #    for k, v in row.items():
-                #            G.edges[int(row.To), int(row.From), -int(row.K)][k] = v
 
 
         # TODO: layout can be a set of layout.
@@ -862,8 +857,8 @@ if __name__ == '__main__':
                 return pruned
 
             def consensus(layout):
-                m, M = 10, -10
-                types = { i : Counter() for i in range(-10, 1000) }
+                m, M = 10000, -10000
+                types = { i : Counter() for i in range(-10000, 10000) }
                 for li, lk in layout:
                     for ii, (h, s, t) in enumerate(arrs[li]):
                         M, m = max(M, lk + ii), min(m, lk + ii)
