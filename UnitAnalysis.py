@@ -780,7 +780,6 @@ if __name__ == '__main__':
                    for i, a in enumerate(arrs) }
 
         Edge = namedtuple("Edge", ("From", "To", "K", "Eov", "Fext", "Rext", "Score", "Gap", "Round"))
-
         df = pd.read_csv(args.edgefile, sep="\t", names = ["From", "To", "K", "Eov", "Fext", "Rext", "Score", "Gap", "Round"])
         G = nx.MultiDiGraph()
         #G = nx.MultiGraph()
@@ -790,6 +789,137 @@ if __name__ == '__main__':
                 G.add_edge(int(row.From), int(row.To), key = int(row.K))
                 for k, v in row.items():
                         G.edges[int(row.From), int(row.To), int(row.K)][k] = v
+
+        print(f"Loaded {len(G.nodes)} nodes.")
+
+        def merge_k(l1, l2, k):
+            """ merge 2 layouts by offset k """
+            return sorted(l1 + [ (n, k+l) for n, l in l2 ], key = lambda x: x[1])
+
+        def bridge(l1, l2, ins = None):
+            """ estimate offset from l1 to l2 ...
+                here, ins is the edges within/between l1/l2 
+            """
+            ls1 = { li: lk for li, lk in l1 }
+            ls2 = { li: lk for li, lk in l2 }
+            _edges = [ (gi, gj, k) for gi, gj, k in (ins if ins else G.edges(keys = True)) if gi in ls1 or gj in ls2 ]
+
+            bridges = Counter()
+            bridges.update([ ls1[gi] - ls2[gj] + k for gi, gj, k in _edges if gi in ls1 and gj in ls2 ])
+            bridges.update([ ls1[gj] - ls2[gi] - k for gi, gj, k in _edges if gj in ls1 and gi in ls2 ])
+            print(f"{bridges.most_common()[:3]} of {sum(bridges.values())}")
+
+            return bridges
+
+        # Initialize
+        layouts = [ [(n, 0)] for n in list(G.nodes) ]
+
+        ins = [ (gi, gj, k)
+            for l in layouts
+            for gi, gj, k in G.edges(keys = True)
+            if len(l) > 1 and {gi, gj} <= { li[0] for li in l } ]
+
+        outs = [ (gi, gj, k) for gi, gj, k in G.edges(keys = True) if (gi, gj, k) not in set(ins) ]
+        # eov sort, filter
+        outs = sorted(outs, key = lambda x: -G.edges[x]["Gap"])
+
+        for eov_t in [9, 8, 7, 6, 5, 4]:
+
+            ins = [ (gi, gj, k)
+                for l in layouts
+                for gi, gj, k in G.edges(keys = True)
+                if len(l) > 1 and {gi, gj} <= { li[0] for li in l } ]
+            outs = [ (gi, gj, k) for gi, gj, k in G.edges(keys = True) if (gi, gj, k) not in set(ins) ]
+            outs = sorted(outs, key = lambda x: -G.edges[x]["Gap"])
+            outs = [ o for o in outs if G.edges[o]["Eov"] > eov_t and G.edges[o]["Gap"] > eov_t * 5 ]
+
+            while outs:
+
+                print(f"{len([l for l in layouts if len(l) > 1])} non-trivial layouts, {len(ins)} ins, {len(outs)} outs;")
+                print([ (o, G.edges[o]["Gap"], G.edges[o]["Eov"]) for o in outs[:10] ])
+
+                gi, gj, k = outs[0]
+                gil = [ l for l in layouts if gi in {li[0] for li in l} ]
+                gjl = [ l for l in layouts if gj in {li[0] for li in l} ]
+                others = [ l for l in layouts if not len({gj, gi} & {li[0] for li in l}) ]
+
+                assert len(gil) == 1, f"len(gil) = {len(gil)} is not 1"
+                assert len(gjl) == 1, f"len(gjl) = {len(gjl)} is not 1"
+
+                bs = bridge(gil[0], gjl[0])
+                bsmc = bs.most_common()[0]
+                print(f"{bsmc} / {sum(bs.values())} = {100*bsmc[1] / sum(bs.values()):.2f}% support.", flush = True)
+
+                if bsmc[1] / sum(bs.values()) < 0.9:
+                    print("continue...", flush = True)
+                    outs = outs[1:]
+                    continue
+
+                merged = merge_k(gil[0], gjl[0], bsmc[0])
+                layouts = others + [merged]
+
+                print(f"layout extended; {len(merged)} rds = {merged}", flush = True)
+                # update ins, outs 
+                ins = list(set(ins + [ (gi, gj, k)
+                    for gi, gj, k in G.edges(keys = True)
+                    if {gi, gj} <= { li[0] for li in merged } ]))
+
+                outs = [ (gi, gj, k) for gi, gj, k in outs if (gi, gj, k) not in set(ins) ]
+                # eov sort, filter
+                outs = sorted(outs, key = lambda x: -G.edges[x]["Gap"])
+                outs = [ o for o in outs if G.edges[o]["Eov"] > 7 ]
+
+                print(f"{len([l for l in layouts if len(l) > 1])} non-trivial layouts, {len(ins)} ins, {len(outs)} outs.", flush = True)
+
+            print(f"{len([l for l in layouts if len(l) > 1])} non-trivial layouts, {len(ins)} ins, {len(outs)} outs at the end of the round for {eov_t}.", flush = True)
+            print("nreads\tlen_in_units\tcontents")
+            print("\n".join([ f"{len(l)}\t{l[-1][1]-l[0][1]}\t{l}" for l in sorted(layouts, key=lambda x: len(x)) if len(l) > 1 ]))
+
+        sys.exit()
+
+        def sanitize(l, dryrun = False):
+            """ sanity of the layout """
+
+            # # global blacklist
+            ls = { li: lk for li, lk in l } # set representation
+            self_edges = [ (gi, gj, k) for gi, gj, k in G.edges(keys = True) if gi in ls and gj in ls ]
+
+            # for each node in layout, list and number of (in)consystencies
+            ics = { li: [ (ls[gj] - ls[gi] - k, gj if gi == li else gi) for gi, gj, k in self_edges ] for li in l }
+            nics = { li: len([ cp for cp in ics[li] if cp[0] ]) for li in l }
+            bads = sorted([ li for li in l if ics[li]], key = lambda x: -(nics[x] / len(ics[x])))
+
+            if dryrun:
+                return nics
+
+            #while bads and bads[0]
+            #for li, lk in l:
+
+            pruned = []
+
+            for li, lk in layout:
+                #[ k == ( ls[gj] - ls[li] if gi == li else ls[li] - li[gi] )
+                # positive lie means expanded layout
+                lie = [ (ls[gj] - ls[gi] - k, gj)  if gi == li else (ls[li] - ls[gi] - k, gi)
+                        for gi, gj, k in G.edges(keys = True)
+                        if (gi == li and gj in ls) or (gi in ls and gj == li) ]
+                        #for gi, gj, k in G.edges(nbunch = [li], keys = True)
+
+                ic = len([ k for k, i in lie if k > 0 or k < 0 ])
+
+                if lie and (ic / len(lie) < t):
+                    pruned += [(li, lk)]
+                else:
+                    blacklist += [li]
+                if lie:
+                    print(f"{li:4d}\t{lk:4d}\t" +\
+                          f"{len(lie)-ic:3d}/{len(lie):3d}\t{1-ic/len(lie):.3f}\t" +\
+                          ",".join(f"{lk + ni}:{t}" for ni, t in nonstd[li]))
+            return pruned
+
+
+
+        sys.exit()
 
 
         # TODO: layout can be a set of layout.
@@ -825,9 +955,6 @@ if __name__ == '__main__':
                     if (ci not in [i for i, k in layout]) and (ci not in blacklist) ]
             print(f"{len(ext_candidates)} candidates")
             print(ext_candidates[:10])
-            #print(ext_candidates)
-            #next_add = ext_candidates[0]
-            #print(next_add)
 
             # sanity check for the layout
 
@@ -882,7 +1009,7 @@ if __name__ == '__main__':
                                 for mk in range(0,12):
                                     units[lk][mk].update(hers[li].mons[h + mk].monomer.snvs)
 
-                cons_hors = [ (i * 12, 12, types[i].most_common()[0][0]) for i in range(m, M+1) ] 
+                cons_hors = [ (i * 12, 12, types[i+m].most_common()[0][0]) for i in range(0, M-m+1) ] 
                 cons_mons = [ AssignedMonomer(begin=lk*2057 + k*171, end=lk*2057 + (k+1)*171, ori="+",
                     monomer = Monomer(
                         name = f"Consensus-{lk}-{k}",
@@ -976,7 +1103,6 @@ if __name__ == '__main__':
         # TODO dotplot of consensus read !!!
 
         sys.exit()
-
 
                 #if k > 0 else (j, node, -k, e)
         """
