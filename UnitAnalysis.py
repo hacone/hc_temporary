@@ -259,11 +259,13 @@ if __name__ == '__main__':
     parser.add_argument('--innum', dest='innum', action='store_const', const=True, help='bases are encoded into int (for plotting)')
     parser.add_argument('--save-to', dest='save', help='pickle variants for later use')
 
-    # For layout, transitive
-    parser.add_argument('--reverse', dest='backwards', action='store_const', const=True, help='report all mismatches')
-    parser.add_argument('--parallel', dest='n_parallel', help='# of cores to be used')
-    parser.add_argument('--park', dest='park', help='you know')
+    # For layout, layout-2
+    parser.add_argument('--reverse', dest='backwards', action='store_const', const=True, help='backwards search')
+    # parser.add_argument('--parallel', dest='n_parallel', help='# of cores to be used') # deprecated
+    parser.add_argument('--park', dest='park', help='for parallelly processing read id = k mod 24')
     parser.add_argument('--edges', dest='edgefile', help='edge list file')
+    parser.add_argument('--layouts', dest='layouts', help='precomputed layouts to be analysed')
+
 
     #parser.add_argument('-o', dest='outfile', help='the file to be output (required for align)')
     args = parser.parse_args()
@@ -785,7 +787,7 @@ if __name__ == '__main__':
         #G = nx.MultiGraph()
 
         for _k, row in df.iterrows():
-            if row.Gap > 40 or (row.Round > 5 and row.Gap > 30):
+            if row.Gap > 30 or (row.Round > 4 and row.Gap > 25):
                 G.add_edge(int(row.From), int(row.To), key = int(row.K))
                 for k, v in row.items():
                         G.edges[int(row.From), int(row.To), int(row.K)][k] = v
@@ -811,6 +813,142 @@ if __name__ == '__main__':
 
             return bridges
 
+        def sanitize(l, ins = None, dryrun = False):
+            """ sanity of the layout, returning list of layouts """
+
+            if len(l) < 2:
+                return [l]
+
+            print(f"sanitizing a layout with {l[0]} of length {len(l)}")
+            ret = []
+
+            ins = ins if ins else G.edges(keys = True)
+            # # global blacklist
+            ls = { li: lk for li, lk in l } # set representation
+            self_edges = [ (gi, gj, k) for gi, gj, k in ins if gi in ls and gj in ls ]
+            # for each node in layout, list and number of (in)consystencies
+            ics = { li[0]: [ (ls[gj] - ls[gi] - k, gj if gi == li[0] else gi)
+                          for gi, gj, k in self_edges if li[0] in [gi, gj]]
+                    for li in l }
+
+            nics = { li[0]: len([ cp for cp in ics[li[0]] if cp[0] != 0 ]) for li in l }
+            bads = sorted([ li[0] for li in l if ics[li[0]]], key = lambda x: -(nics[x] / len(ics[x])))
+
+            # print(ics)
+            print(nics)
+            print(bads)
+
+            while bads and nics[bads[0]]:
+                l = [ li for li in l if li[0] != bads[0] ] # remove the worst
+                ret += [[ (bads[0], 0) ]]
+
+                ls = { li: lk for li, lk in l } # set representation
+                self_edges = [ (gi, gj, k) for gi, gj, k in (ins if ins else G.edges(keys = True)) if gi in ls and gj in ls ]
+                # for each node in layout, list and number of (in)consystencies
+                ics = { li[0]: [ (ls[gj] - ls[gi] - k, gj if gi == li[0] else gi)
+                              for gi, gj, k in self_edges if li[0] in [gi, gj]]
+                        for li in l }
+                nics = { li[0]: len([ cp for cp in ics[li[0]] if cp[0] != 0]) for li in l }
+                bads = sorted([ li[0] for li in l if ics[li[0]]], key = lambda x: -(nics[x] / len(ics[x])))
+                print(",".join([ f"{bi}:{nics[bi]}/{len(ics[bi])}" for bi in bads]))
+
+            if ret:
+                print("fluctured:" + f"{len(ret)} + {len(l)}")
+                print(ret)
+            return [l] + ret
+
+        def consensus(layout):
+            """ take a consensus of the layout """
+            m, M = 10000, -10000
+            types = { i : Counter() for i in range(-10000, 10000) }
+
+            for li, lk in layout:
+                #print(f"arr {li}@{lk} = {arrs[li]}")
+                for ii, (h, s, t) in enumerate(arrs[li]):
+                    M, m = max(M, lk + ii), min(m, lk + ii)
+                    types[lk+ii].update([t])
+                    #print(f"{ii}, {(h, s, t)} => {ii} + {lk} = {ii+lk}")
+
+            units = { i: { k : Counter() for k in range(12) } for i in range(m, M+1) }
+            depth = { i: 0 for i in range(m, M+1) }
+
+            for li, lk in layout:
+                if all([ True or (t == types[lk+ii].most_common()[0][0]) or t == "*"
+                         for ii, (h, s, t) in enumerate(arrs[li]) ]):
+                    for ii, (h, s, t) in enumerate(arrs[li]):
+                        if t == "~":
+                            depth[lk+ii] += 1
+                            for mk in range(0, 12):
+                                units[lk+ii][mk].update(hers[li].mons[h + mk].monomer.snvs)
+
+            cons_hors = [ (i * 12, 12, types[i+m].most_common()[0][0]) for i in range(0, M-m+1) ] 
+            cons_mons = [ AssignedMonomer(begin=lk*2057 + k*171, end=lk*2057 + (k+1)*171, ori="+",
+                monomer = Monomer(
+                    name = f"Consensus-{lk}-{k}",
+                    snvs = [ s for s, sc in units[lk][k].most_common() if sc / depth[lk] > 0.4 ]))
+                for lk in range(m, M+1) for k in range(12) ]
+
+            print("recall, specificity?, fpr, fnr")
+            print("\ni\ttps(%)\ttns(%)\tfps(%)\tfns(%)\tnvars\tdepth\ttypes observed.")
+
+            ## total (default) units 
+            coverage = sum([ depth[lk] for lk in range(m, M+1) ])
+
+            vfs = { lk: 
+                [ sc for k in range(12) for s, sc in units[lk][k].most_common() ]
+                if depth[lk] > 0 and cons_hors[lk-m][2] == "~" else []
+                for lk in range(m, M+1) }
+
+            #print(vfs)
+            name = layout[0][0]
+            for lk in range(m, M+1):
+                if depth[lk] > 0 and vfs[lk]:
+                    print(f"VARS\t{name}\t{lk}\t{depth[lk]} => {Counter(vfs[lk])}")
+                else:
+                    print(f"VARS\t{name}\t{lk}\t* => *")
+
+            print(f"name\tlk\tsc\td\tfq")
+            for lk in range(m, M+1):
+                if depth[lk] > 0 and vfs[lk]:
+                    tps = [ sc for sc in vfs[lk] if sc / depth[lk] > 0.5  ]
+                    fps = [ sc for sc in vfs[lk] if sc / depth[lk] <= 0.5 ]
+                    sensitivity = sum(tps) / (depth[lk]*len(tps)) if tps else 0
+                    specificity = 1 - (sum(fps) / (depth[lk]*(2057-len(tps)))) if fps else 0
+                    #print("\n".join([
+                    #    f"VARS\t{name}\t{lk}\t{sc}\t{depth[lk]}\t{100*sc/depth[lk]:.2f}"
+                    #    for sc in sorted(vfs[lk], key = lambda x: -x/depth[lk])]))
+                    print(f"{lk}" +\
+                          f"\t{sum(tps)}/{len(tps)*depth[lk]} ({100*sensitivity:.2f})" +\
+                          f"\t{sum(fps)}/{(2057-len(tps))*depth[lk]} ({100*specificity:.2f})" +\
+                          f"\t{len(tps)}\t{depth[lk]}\t" +\
+                          "\t".join([ f"{t}:{c}" for t, c in types[lk].most_common()]))
+                else:
+                    print(f"{lk}" +\
+                          f"\t*\t*\t*\t*\t" +\
+                          "\t".join([ f"{t}:{c}" for t, c in types[lk].most_common()]))
+
+
+            hor_read = HOR_Read(name = "Consensus",
+                            mons = cons_mons, hors = cons_hors,
+                            length = (M-m)*2057, ori="+")
+
+            print("readname\tbegin\tend\tidx\tsize\telem\tgap\tvars")
+            print_HOR_read(hor_read)
+            return hor_read
+        
+
+        # if layouts is given
+        if args.layouts:
+
+            # say something about global mismatch distribution.
+            layouts = pickle.load(open(args.layouts, "rb"))
+            layouts = sorted(layouts, key = lambda x: -len(x))
+            for i in range(len(layouts)): 
+                print(f"consensus for {i}")
+                consensus(layouts[i])
+
+            sys.exit()
+
         # Initialize
         layouts = [ [(n, 0)] for n in list(G.nodes) ]
 
@@ -824,6 +962,8 @@ if __name__ == '__main__':
         outs = sorted(outs, key = lambda x: -G.edges[x]["Gap"])
 
         for eov_t in [9, 8, 7, 6, 5, 4]:
+
+            layouts = list(chain.from_iterable([ sanitize(l) for l in layouts ]))
 
             ins = [ (gi, gj, k)
                 for l in layouts
@@ -848,14 +988,43 @@ if __name__ == '__main__':
 
                 bs = bridge(gil[0], gjl[0])
                 bsmc = bs.most_common()[0]
-                print(f"{bsmc} / {sum(bs.values())} = {100*bsmc[1] / sum(bs.values()):.2f}% support.", flush = True)
 
-                if bsmc[1] / sum(bs.values()) < 0.9:
+                print(f"Trying to merge L{gil[0][0][0]} = {len(gil[0])} and L{gjl[0][0][0]} = {len(gjl[0])}")
+                print(f"{bsmc} / {sum(bs.values())} = {100*bsmc[1] / sum(bs.values()):.2f}% support.")
+                print(f"{bsmc} / {sum([ x[1] for x in bs.most_common()[:2] ])}" +\
+                      f"= {100*bsmc[1] / sum([ x[1] for x in bs.most_common()[:2] ]):.2f}% mergin.", flush = True)
+                
+                #if bsmc[1] / sum(bs.values()) < 0.8:
+                if bsmc[1] / sum([ x[1] for x in bs.most_common()[:2] ]) < 0.9:
                     print("continue...", flush = True)
                     outs = outs[1:]
                     continue
 
                 merged = merge_k(gil[0], gjl[0], bsmc[0])
+
+                # Check if merged is OK
+                m, M = 10000, -10000
+                for li, lk in merged:
+                    for ii, (h, s, t) in enumerate(arrs[li]):
+                        M, m = max(M, lk + ii), min(m, lk + ii)
+                types = { i : Counter() for i in range(m, M+1) }
+
+                for li, lk in merged:
+                    for ii, (h, s, t) in enumerate(arrs[li]):
+                        if t in ["D39", "D28"]:
+                            types[lk+ii].update(["5mer"])
+                        elif t in ["D1", "D12"]:
+                            types[lk+ii].update(["10/11mer"])
+                        elif t in ["22U"]:
+                            types[lk+ii].update(["22mer"])
+                        elif t == "~":
+                            types[lk+ii].update(["def"])
+
+                if any([ len(types[i].most_common(n=2)) > 1 for i in range(m, M+1)]):
+                    print("Conflict! continue...", flush = True)
+                    outs = outs[1:]
+                    continue
+
                 layouts = others + [merged]
 
                 print(f"layout extended; {len(merged)} rds = {merged}", flush = True)
@@ -865,259 +1034,18 @@ if __name__ == '__main__':
                     if {gi, gj} <= { li[0] for li in merged } ]))
 
                 outs = [ (gi, gj, k) for gi, gj, k in outs if (gi, gj, k) not in set(ins) ]
-                # eov sort, filter
                 outs = sorted(outs, key = lambda x: -G.edges[x]["Gap"])
-                outs = [ o for o in outs if G.edges[o]["Eov"] > 7 ]
+                outs = [ o for o in outs if G.edges[o]["Eov"] > eov_t and G.edges[o]["Gap"] > eov_t * 5 ]
 
                 print(f"{len([l for l in layouts if len(l) > 1])} non-trivial layouts, {len(ins)} ins, {len(outs)} outs.", flush = True)
 
             print(f"{len([l for l in layouts if len(l) > 1])} non-trivial layouts, {len(ins)} ins, {len(outs)} outs at the end of the round for {eov_t}.", flush = True)
             print("nreads\tlen_in_units\tcontents")
             print("\n".join([ f"{len(l)}\t{l[-1][1]-l[0][1]}\t{l}" for l in sorted(layouts, key=lambda x: len(x)) if len(l) > 1 ]))
+            pickle.dump(layouts, open(f"layouts-190304-noconflict-round-eov{eov_t}.pkl", "wb"))
 
-        sys.exit()
-
-        def sanitize(l, dryrun = False):
-            """ sanity of the layout """
-
-            # # global blacklist
-            ls = { li: lk for li, lk in l } # set representation
-            self_edges = [ (gi, gj, k) for gi, gj, k in G.edges(keys = True) if gi in ls and gj in ls ]
-
-            # for each node in layout, list and number of (in)consystencies
-            ics = { li: [ (ls[gj] - ls[gi] - k, gj if gi == li else gi) for gi, gj, k in self_edges ] for li in l }
-            nics = { li: len([ cp for cp in ics[li] if cp[0] ]) for li in l }
-            bads = sorted([ li for li in l if ics[li]], key = lambda x: -(nics[x] / len(ics[x])))
-
-            if dryrun:
-                return nics
-
-            #while bads and bads[0]
-            #for li, lk in l:
-
-            pruned = []
-
-            for li, lk in layout:
-                #[ k == ( ls[gj] - ls[li] if gi == li else ls[li] - li[gi] )
-                # positive lie means expanded layout
-                lie = [ (ls[gj] - ls[gi] - k, gj)  if gi == li else (ls[li] - ls[gi] - k, gi)
-                        for gi, gj, k in G.edges(keys = True)
-                        if (gi == li and gj in ls) or (gi in ls and gj == li) ]
-                        #for gi, gj, k in G.edges(nbunch = [li], keys = True)
-
-                ic = len([ k for k, i in lie if k > 0 or k < 0 ])
-
-                if lie and (ic / len(lie) < t):
-                    pruned += [(li, lk)]
-                else:
-                    blacklist += [li]
-                if lie:
-                    print(f"{li:4d}\t{lk:4d}\t" +\
-                          f"{len(lie)-ic:3d}/{len(lie):3d}\t{1-ic/len(lie):.3f}\t" +\
-                          ",".join(f"{lk + ni}:{t}" for ni, t in nonstd[li]))
-            return pruned
-
-
-
-        sys.exit()
-
-
-        # TODO: layout can be a set of layout.
-        layout = [(1440, -1), (40, 0)]
-        #layout = [(1400, 0)]
-        #layout = [(1820, 188)]
-        #layout = [(3985, 166)]
-        #layout = [(1969, 315)]
-        blacklist = []
-        last = False
-        niter = 0
-        while niter < 10000:
-
-            niter += 1
-            layout = sorted(list(set(layout)), key = lambda x: x[1])
-            far = layout[-1][1]
-            is_in_lt = [ ii for ii, kk in layout if far - kk < 30 ]
-            print(f"{len(layout)} nodes in the layout:")
-            print(layout, flush = True)
-
-            # neighborhood of i in layout
-            from itertools import chain
-            contacts = list(set(chain.from_iterable(
-                [[i, j] for i, j, k in G.edges if i in is_in_lt or j in is_in_lt]
-            )))
-            print(f"{len(contacts)} contacts")
-            print(contacts[:10])
-
-            # i xor j in layout
-            #ext_candidates = [ (i, j, k) for i, j, k in contacts if i not in is_in_lt or j not in is_in_lt ]
-            #ext_candidates = sorted(ext_candidates, key=lambda x: - G.edges[x]["Gap"])
-            ext_candidates = [ ci for ci in contacts 
-                    if (ci not in [i for i, k in layout]) and (ci not in blacklist) ]
-            print(f"{len(ext_candidates)} candidates")
-            print(ext_candidates[:10])
-
-            # sanity check for the layout
-
-            def prune(layout, t = 0.5):
-
-                global blacklist
-                ls = { li: lk for li, lk in layout }
-                pruned = []
-                for li, lk in layout:
-                    #[ k == ( ls[gj] - ls[li] if gi == li else ls[li] - li[gi] )
-                    # positive lie means expanded layout
-                    lie = [ (ls[gj] - ls[gi] - k, gj)  if gi == li else (ls[li] - ls[gi] - k, gi)
-                            for gi, gj, k in G.edges(keys = True)
-                            if (gi == li and gj in ls) or (gi in ls and gj == li) ]
-                            #for gi, gj, k in G.edges(nbunch = [li], keys = True)
-
-                    ic = len([ k for k, i in lie if k > 0 or k < 0 ])
-
-                    if lie and (ic / len(lie) < t):
-                        pruned += [(li, lk)]
-                    else:
-                        blacklist += [li]
-                    if lie:
-                        print(f"{li:4d}\t{lk:4d}\t" +\
-                              f"{len(lie)-ic:3d}/{len(lie):3d}\t{1-ic/len(lie):.3f}\t" +\
-                              ",".join(f"{lk + ni}:{t}" for ni, t in nonstd[li]))
-                return pruned
-
-            def consensus(layout):
-                m, M = 10000, -10000
-                types = { i : Counter() for i in range(-10000, 10000) }
-                for li, lk in layout:
-                    for ii, (h, s, t) in enumerate(arrs[li]):
-                        M, m = max(M, lk + ii), min(m, lk + ii)
-                        types[lk+ii].update([t])
-
-                print("\nconsensus types of units:")
-                for i in range(m, M+1):
-                    print(f"{i}\t" + "\t".join([
-                        f"{t}/{c}" for t, c in types[i].most_common()]))
-
-                units = { i: { k : Counter() for k in range(12) } for i in range(m, M+1) }
-                depth = { i: 0 for i in range(m, M+1) }
-
-                for li, lk in layout:
-                    if all([ (t == types[lk+ii].most_common()[0][0]) or t == "*"
-                             for ii, (h, s, t) in enumerate(arrs[li]) ]):
-
-                        for h, s, t in arrs[li]:
-                            if t == "~":
-                                depth[lk] += 1
-                                for mk in range(0,12):
-                                    units[lk][mk].update(hers[li].mons[h + mk].monomer.snvs)
-
-                cons_hors = [ (i * 12, 12, types[i+m].most_common()[0][0]) for i in range(0, M-m+1) ] 
-                cons_mons = [ AssignedMonomer(begin=lk*2057 + k*171, end=lk*2057 + (k+1)*171, ori="+",
-                    monomer = Monomer(
-                        name = f"Consensus-{lk}-{k}",
-                        snvs = [ s for s, sc in units[lk][k].most_common() if sc / depth[lk] > 0.5 ]))
-                    for lk in range(m, M+1) for k in range(12) ]
-
-                return HOR_Read(name = "Consensus",
-                                mons = cons_mons, hors = cons_hors,
-                                length = (M-m)*2057, ori="+")
-
-            if niter % 5 == 0:
-                print("sanity check")
-                print(f"pruned layout to {len(layout)}")
-                layout = prune(layout)
-                consensus_read = consensus(layout)
-
-                print("This is the consensus:")
-                for h,s,t in consensus_read.hors:
-                    if t == "~":
-                        nvars = sum([ len(m.monomer.snvs) for m in consensus_read.mons[h:h+12] ])
-                    else:
-                        nvars = 0
-                    print(f"{h/12}\t{t}\t{nvars}")
-
-
-            pures = []
-            print(ext_candidates)
-            for cj in ext_candidates:
-                connections = Counter()
-                connections.update(
-                        [ lk + k for li, lk in layout
-                                 for gi, gj, k in G.edges(nbunch = [li], keys = True) if gj == cj ])
-                connections.update(
-                        [ lk - k for li, lk in layout
-                                 for gi, gj, k in G.edges(nbunch = [cj], keys = True) if gj == li ])
-
-                if connections:
-                     mc = connections.most_common()[0][1]
-                     tot = sum(connections.values())
-                     purity = mc / tot
-                     #purity = min(1.0, (mc / tot) + 0.05) - max((1.0 / tot) - 0.2, 0)
-                     offset = connections.most_common()[0][0]
-                     pures += [(cj, mc, tot, purity, offset)]
-
-            pures = sorted(pures, key = lambda x: (-x[3], -x[2], -x[4]))
-            print("pures[:7]:")
-            print(pures[:7])
-
-            if pures and pures[0][3] > 0.8:
-                cj, mc, tot, cp, coff = pures[0]
-                layout += [(cj, coff)]
-                pures = pures[1:]
-                print(f"add good {cj} @ {coff}")
-                last = False
-            elif pures and pures[0][2] > 0 and pures[0][1]/pures[0][2] > 0.5:
-                pures = sorted(pures, key = lambda x: -x[4])
-                cj, mc, tot, cp, coff = pures[0]
-                layout += [(cj, coff)]
-                print(f"extend {cj} @ {coff}")
-                last = False
-
-            elif last:
-                print("terminate")
-                break
-
-            else:
-                layout = prune(layout, t = 0.01)
-                last = True
-
-        layout = prune(layout)
-        consensus_read = consensus(layout)
-
-        print("This is the consensus:")
-        for h,s,t in consensus_read.hors:
-            if t == "~":
-                nvars = sum([ len(m.monomer.snvs) for m in consensus_read.mons[h:h+12] ])
-            else:
-                nvars = 0
-            print(f"{h/12}\t{t}\t{nvars}")
-
-        consensus_arr = fillx(consensus_read, verbose = True)
-        consensus_var = var([consensus_read], comprehensive = True)
-
-        print("variants:")
-        print_snvs(consensus_var)
-
-        print("similarity")
-        sim = acomp(consensus_read, consensus_arr, consensus_read, consensus_arr)
-        print(sim)
-
-        # TODO dotplot of consensus read !!!
-
-        sys.exit()
-
-                #if k > 0 else (j, node, -k, e)
-        """
-        good_edges = [ (node, j, k, e) 
-            for node in list(G.nodes)
-            for j in G.succ[node]
-            for k, e in G.succ[node][j].items()
-            if (node, j, k) in two_steps ]
-
-        print("Source\tTarget\tLabel\tFext\tRext\tGap\tSpecicals")
-        print("\n".join([ f"{i}\t{j}\t{k}\t{int(e['Fext'])}\t{int(e['Rext'])}\t{e['Gap']}\t" +\
-                          ",".join([ f"{t}@{ii}" for ii, t in nonstd[i] ])  + "\t" +\
-                          ",".join([ f"{t}@{ii}" for ii, t in nonstd[j] ])
-                          for i, j, k, e in good_edges ]))
-        """
+        pickle.dump(layouts, open("layouts-190304.pkl", "wb"))
+        print("done")
 
     else:
         assert False, "invalid action."

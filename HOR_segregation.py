@@ -194,29 +194,31 @@ def show_HOR(hors):
     show_svg_HOR(dwg, ers_show, hor_show)
     dwg.save()
 
+def print_HOR_read(r):
+    """ exposed for later use. """
+    for _idx, _size, elem in r.hors:
+
+        idx, size = int(_idx), int(_size)
+
+        if r.ori == '+':
+            b, e = r.mons[idx].begin, r.mons[idx + size - 1].end
+            gap = 0 if idx == 0 else r.mons[idx].begin - r.mons[idx-1].end # gap before me.
+        else:
+            b, e = r.mons[idx].end, r.mons[idx + size - 1].begin
+            gap = 0 if idx == 0 else -(r.mons[idx].end - r.mons[idx-1].begin)
+
+        nvars = sum([ len(m.monomer.snvs) for m in r.mons[idx:idx+size] ])
+        print( f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t{gap}\t{nvars}")
+    print("")
+
 def print_HOR(pkl):
     """ taking a pickled HOR encoded reads, outputs HOR structure of the reads. """
 
     hors = pickle.load(open(pkl, "rb"))
-
     print("readname\tbegin\tend\tidx\tsize\telem\tgap\tvars")
-
     for r in sorted(hors, key=lambda x: -len(x.mons)):
+        print_HOR_read(r)
 
-        for _idx, _size, elem in r.hors:
-
-            idx, size = int(_idx), int(_size)
-
-            if r.ori == '+':
-                b, e = r.mons[idx].begin, r.mons[idx + size - 1].end
-                gap = 0 if idx == 0 else r.mons[idx].begin - r.mons[idx-1].end # gap before me.
-            else:
-                b, e = r.mons[idx].end, r.mons[idx + size - 1].begin
-                gap = 0 if idx == 0 else -(r.mons[idx].end - r.mons[idx-1].begin)
-
-            nvars = sum([ len(m.monomer.snvs) for m in r.mons[idx:idx+size] ])
-            print( f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t{gap}\t{nvars}")
-        print("")
 
 def HOR_encoding(pkl, path_merged, path_patterns):
 
