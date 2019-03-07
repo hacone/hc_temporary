@@ -148,6 +148,7 @@ def ucomp(rd1, h1, rd2, h2, snvs = None):
         _snv = { (int(s["k"]), int(s["p"]), s["b"]) for s in snvs }
         return len(d & _snv) / len(snvs)
     else:
+        # no SNV filter
         return len(d) / 2057.0
 
 def acomp(rd1, a1, rd2, a2, snvs = None):
@@ -163,9 +164,11 @@ def acomp(rd1, a1, rd2, a2, snvs = None):
             if t1 == "~" and t2 == "~":
                 m += [1.0 - ucomp(rd1, h1, rd2, h2, snvs)]
             elif t1 == t2: # variant unit match
-                m += [-1]
+                #m += [-1]
+                m += [np.nan]
             else: # variant unit inconsistency
-                m += [-2]
+                #m += [-2]
+                m += [np.nan]
 
     return np.array(m).reshape(len(a1), len(a2))
 
@@ -272,10 +275,11 @@ if __name__ == '__main__':
     assert args.hors, "specify HOR-encoded reads"
     hers = pickle.load(open(args.hors, "rb"))
     arrs = [ fillx(her) for her in hers ]
-
     hor_type = args.hor_type if args.hor_type else "~"
     units = [ (her, h) for her in hers for h, s, t in fillx(her) if t == hor_type ]
     skips = [ int(i) for i in args.skips.split(",") ] if args.skips else []
+    import datetime
+    datetimestr = datetime.datetime.now().strftime("%Y.%m%d.%H%M")
 
     # Print SNVs detected
     if args.action == "print-var":
@@ -444,6 +448,8 @@ if __name__ == '__main__':
         plt.close()
 
     elif args.action == "layout":
+        """ This action calculates list of viable edges using proper measure
+            along with some nice figures. """
 
         ## common data structures and helper function to calculate proper similarity scores
         class error_tensor:
@@ -778,6 +784,13 @@ if __name__ == '__main__':
 
     elif args.action == "layout-2":
 
+        v_major = var(hers, hor_type = "~", err_rate = 0.05,
+            fq_upper_bound = 1.1, skips = skips,
+            comprehensive = False)
+        v_all = var(hers, hor_type = "~", err_rate = 0.05,
+            fq_upper_bound = 1.1, skips = skips,
+            comprehensive = True)
+
         nonstd = { i:  [ (ii, t) for ii, (h, s, t) in enumerate(a) if t != "~" ]
                    for i, a in enumerate(arrs) }
 
@@ -935,7 +948,33 @@ if __name__ == '__main__':
             print("readname\tbegin\tend\tidx\tsize\telem\tgap\tvars")
             print_HOR_read(hor_read)
             return hor_read
-        
+
+        def show_layout(layout):
+            """ visualize consensus read """
+
+            cons_read = consensus(layout)
+            cons_arr = fillx(cons_read)
+            snvs = var([ hers[li] for li, lk in layout ])
+            print(f"{len(snvs)} SNVs detected among the {len(layout)} reads making up the layout.")
+            print_snvs(snvs)
+
+            #snvs_read = var([cons_read], comprehensive = True)
+            snvs_read = var([cons_read], err_rate = 0.01, comprehensive = False)
+            print(f"Total {len(snvs_read)} SNVs on this layout.")
+            print_snvs(snvs_read)
+
+            # using reads SNVs
+            for vs, name in [(v_all, "global"), (v_major, "gl-freq"), (snvs, "local"), (snvs_read, "consensus")]:
+                dots = acomp(cons_read, cons_arr, cons_read, cons_arr, snvs = vs)
+                fig = plt.figure(figsize=(10, 8))
+                plt.axis("off")
+                ax1 = fig.add_subplot(1, 1, 1)
+                g1 = sns.heatmap(dots,
+                        vmin=np.nanmin(dots), vmax=np.nanmax(dots),
+                        cmap="coolwarm", ax = ax1)
+                ax1.set_title(f"Layout-{layout[0][0]}; {len(layout)} rds; {len(cons_arr)} units; with {len(vs)} of {name} vars")
+                plt.savefig(f"Layout-{layout[0][0]}-{name}.png")
+                plt.close()
 
         # if layouts is given
         if args.layouts:
@@ -943,9 +982,11 @@ if __name__ == '__main__':
             # say something about global mismatch distribution.
             layouts = pickle.load(open(args.layouts, "rb"))
             layouts = sorted(layouts, key = lambda x: -len(x))
+
             for i in range(len(layouts)): 
-                print(f"consensus for {i}")
-                consensus(layouts[i])
+                if len(layouts[i]) > 4:
+                    print(f"consensus for {i}")
+                    show_layout(layouts[i])
 
             sys.exit()
 
@@ -1042,9 +1083,10 @@ if __name__ == '__main__':
             print(f"{len([l for l in layouts if len(l) > 1])} non-trivial layouts, {len(ins)} ins, {len(outs)} outs at the end of the round for {eov_t}.", flush = True)
             print("nreads\tlen_in_units\tcontents")
             print("\n".join([ f"{len(l)}\t{l[-1][1]-l[0][1]}\t{l}" for l in sorted(layouts, key=lambda x: len(x)) if len(l) > 1 ]))
-            pickle.dump(layouts, open(f"layouts-190304-noconflict-round-eov{eov_t}.pkl", "wb"))
 
-        pickle.dump(layouts, open("layouts-190304.pkl", "wb"))
+            pickle.dump(layouts, open(f"layouts-{datetimestr}-noconflict-round-eov{eov_t}.pkl", "wb"))
+        
+        pickle.dump(layouts, open("layouts-{datetimestr}.pkl", "wb"))
         print("done")
 
     else:
