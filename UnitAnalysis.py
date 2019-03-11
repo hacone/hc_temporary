@@ -1037,7 +1037,11 @@ if __name__ == '__main__':
                 
                 #if bsmc[1] / sum(bs.values()) < 0.8:
                 if bsmc[1] / sum([ x[1] for x in bs.most_common()[:2] ]) < 0.9:
-                    print("continue...", flush = True)
+                    print("do not reject alternative; continue...", flush = True)
+                    outs = outs[1:]
+                    continue
+                if (len(gil[0]) + len(gjl[0])) > 2 and bsmc[1] < 2:
+                    print("not enough support continue...", flush = True)
                     outs = outs[1:]
                     continue
 

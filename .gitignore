@@ -20,12 +20,12 @@
 *.swp
 *.tgz
 *.pickle
+*.pkl
 *.stats
 *log*
 
 data/
 venv/
-*hd1khd
 
 __pycache__/
 minialign/
