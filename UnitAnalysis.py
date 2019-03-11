@@ -8,9 +8,6 @@ from collections import namedtuple
 import numpy as np
 import pandas as pd
 import networkx as nx
-
-from joblib import Parallel, delayed
-import joblib
 import pickle
 
 import matplotlib
@@ -20,6 +17,7 @@ import seaborn as sns
 
 import random
 random.seed(42)
+import sys
 
 # TODO: I just need datatype definition. That can be separated from other codes.
 from EncodedRead import *
@@ -150,6 +148,7 @@ def ucomp(rd1, h1, rd2, h2, snvs = None):
         _snv = { (int(s["k"]), int(s["p"]), s["b"]) for s in snvs }
         return len(d & _snv) / len(snvs)
     else:
+        # no SNV filter
         return len(d) / 2057.0
 
 def acomp(rd1, a1, rd2, a2, snvs = None):
@@ -165,9 +164,11 @@ def acomp(rd1, a1, rd2, a2, snvs = None):
             if t1 == "~" and t2 == "~":
                 m += [1.0 - ucomp(rd1, h1, rd2, h2, snvs)]
             elif t1 == t2: # variant unit match
-                m += [-1]
+                #m += [-1]
+                m += [np.nan]
             else: # variant unit inconsistency
-                m += [-2]
+                #m += [-2]
+                m += [np.nan]
 
     return np.array(m).reshape(len(a1), len(a2))
 
@@ -261,20 +262,24 @@ if __name__ == '__main__':
     parser.add_argument('--innum', dest='innum', action='store_const', const=True, help='bases are encoded into int (for plotting)')
     parser.add_argument('--save-to', dest='save', help='pickle variants for later use')
 
-    # For layout, transitive
-    parser.add_argument('--parallel', dest='n_parallel', help='# of cores to be used')
-    parser.add_argument('--park', dest='park', help='you know')
+    # For layout, layout-2
+    parser.add_argument('--reverse', dest='backwards', action='store_const', const=True, help='backwards search')
+    # parser.add_argument('--parallel', dest='n_parallel', help='# of cores to be used') # deprecated
+    parser.add_argument('--park', dest='park', help='for parallelly processing read id = k mod 24')
     parser.add_argument('--edges', dest='edgefile', help='edge list file')
+    parser.add_argument('--layouts', dest='layouts', help='precomputed layouts to be analysed')
+
 
     #parser.add_argument('-o', dest='outfile', help='the file to be output (required for align)')
     args = parser.parse_args()
     assert args.hors, "specify HOR-encoded reads"
     hers = pickle.load(open(args.hors, "rb"))
     arrs = [ fillx(her) for her in hers ]
-
     hor_type = args.hor_type if args.hor_type else "~"
     units = [ (her, h) for her in hers for h, s, t in fillx(her) if t == hor_type ]
     skips = [ int(i) for i in args.skips.split(",") ] if args.skips else []
+    import datetime
+    datetimestr = datetime.datetime.now().strftime("%Y.%m%d.%H%M")
 
     # Print SNVs detected
     if args.action == "print-var":
@@ -443,6 +448,8 @@ if __name__ == '__main__':
         plt.close()
 
     elif args.action == "layout":
+        """ This action calculates list of viable edges using proper measure
+            along with some nice figures. """
 
         ## common data structures and helper function to calculate proper similarity scores
         class error_tensor:
@@ -520,7 +527,8 @@ if __name__ == '__main__':
         print("\n#\tid\tmons\tunits\treadname")
         print("\n".join([ f"{n+1}\t{i}\t{len(hers[i].mons)}\t{bits[i].shape[0]}\t{hers[i].name}" for n, i in enumerate(keys_sorted) if len(arrs[i]) > 7 ]))
 
-        def dotplot(i, j, errt = errt, vf = vf, bits = bits):
+        def dotplot(i, j, errt = errt, vf = vf, bits = bits,
+                naive = False, vs = []):
             """ calculate each cell of dotplot of prop. sim.
                 required context: arrs """
 
@@ -528,6 +536,31 @@ if __name__ == '__main__':
             lj = bits[j].shape[0]
             result = np.zeros(li*lj).reshape(li, lj)
             result[:] = np.nan
+
+            if naive:
+                ## Naive comparison; just counting the mismatched SNVs
+                si = { n: { (k, snv.pos, snv.base)
+                            for k in range(s) for snv in hers[i].mons[h+k].monomer.snvs }
+                       for n in range(li) for h, s, t in [arrs[i][n]] if t == "~" }
+
+                sj = { n: { (k, snv.pos, snv.base)
+                            for k in range(s) for snv in hers[j].mons[h+k].monomer.snvs }
+                       for n in range(lj) for h, s, t in [arrs[j][n]] if t == "~" }
+
+                vs_set = { (v["k"], v["p"], v["b"]) for v in vs }
+
+                for n in range(li):
+                    if arrs[i][n][2] != "~":
+                        continue
+                    for m in range(lj):
+                        if arrs[j][m][2] != "~":
+                            continue
+                        if vs:
+                            result[n,m] = 1 - (len((si[n] ^ sj[m]) & vs_set) / len(vs_set))
+                        else:
+                            result[n,m] = 1 - (len(si[n] ^ sj[m]) / 2057.0)
+                return result
+
             t2_ve = np.tensordot(np.stack([1-vf, vf]), errt.dsq, [0, 1])
             plup = [ b_to_plup(bits[i][n,], vf) for n in range(li) ]
             denomis = [ denomi(plup[n], errt) for n in range(li) ]
@@ -673,7 +706,7 @@ if __name__ == '__main__':
                     line += f"\n{balns.i:4d}\t{balns.j:4d}\t{balns.aln.koff:3d}\t{balns.aln.eov:3d}\t" + \
                             f"{balns.aln.fext:3d}+\t{balns.aln.rext:3d}-\t{balns.aln.score:.2f}\t{100*balns.gap:.1f} %\t{balns.nround}"
 
-                print(line)
+                print(line, flush=True)
 
                 # NOTE: update target, vf, bits
                 n_long_target = int(n_long_target*0.6)
@@ -703,150 +736,362 @@ if __name__ == '__main__':
                     est_units = int(vs_local[0]["c"] / vs_local[0]["f"])
                     print(f"Next for {i}: {len(vs_local)} local SNVs found for ~{est_units} units from {len(best_long_js)} long / {len(best_short_js)} short reads.")
 
+
+            print("\n".join([ f"{i}\t{aln.j}\t{aln.aln.koff}\t{aln.aln.eov}\t{aln.aln.fext}\t{aln.aln.rext}\t" +\
+                              f"{100*aln.aln.score:.2f}\t{100*aln.gap:.2f}\t{aln.nround}" for aln in plus + minus + embed ]),
+                  file=open(f"read-{i}.{'rev' if backwards else 'fwd'}.ext", "w"), flush=True)
+
             import matplotlib
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
 
-            for aln in plus[:3]:
-                # j, eov+fex, %gap
-                for nr in range(aln.nround + 1):
-                    fig = plt.figure(figsize=(10, 8))
-                    plt.axis("off")
-                    ax1 = fig.add_subplot(1, 1, 1)
-                    dots = squarify(dotplot(i, aln.j, vf = vf_history[nr], bits = bits_history[nr]), np.nan)
-                    g1 = sns.heatmap(dots,
-                            vmin=np.nanmin(dots), vmax=np.nanmax(dots),
-                            cmap="coolwarm", ax = ax1)
-                    ax1.set_title(f"{i}-{aln.j}; {aln.aln.eov}+{aln.aln.fext}-{aln.aln.rext}; R{nr}~{100*aln.gap:.1f}%@{aln.nround}")
-                    plt.savefig(f"{i}-to-{aln.j}-pl-r-{nr}.png")
-                    plt.close()
+            alns_to_plot = [(embed, "embed")]
+            if backwards:
+                alns_to_plot += [(minus, "minus")]
+            else:
+                alns_to_plot += [(plus, "plus")]
 
-            for aln in sorted(minus + embed, key=lambda x: -x.gap)[:3]:
-                for nr in range(aln.nround + 1):
-                    fig = plt.figure(figsize=(10, 8))
-                    plt.axis("off")
-                    ax1 = fig.add_subplot(1, 1, 1)
-                    dots = squarify(dotplot(i, aln.j, vf = vf_history[nr], bits = bits_history[nr]), np.nan)
-                    g1 = sns.heatmap(dots,
-                            vmin=np.nanmin(dots), vmax=np.nanmax(dots),
-                            cmap="coolwarm", ax = ax1)
-                    ax1.set_title(f"{i}-{aln.j}; {aln.aln.eov}+{aln.aln.fext}-{aln.aln.rext}; R{nr}~{100*aln.gap:.1f}%@{aln.nround}")
-                    plt.savefig(f"{i}-to-{aln.j}-me-r-{nr}.png")
-                    plt.close()
-
-            print("\n".join([ f"{i}\t{aln.j}\t{aln.aln.koff}\t{aln.aln.eov}\t{aln.aln.fext}\t{aln.aln.rext}\t" +\
-                              f"{100*aln.aln.score:.2f}\t{100*aln.gap:.2f}\t{aln.nround}" for aln in plus + minus + embed ]),
-                  file=open(f"read-{i}.ext", "w"))
+            for alns, name in alns_to_plot:
+                for aln in alns[:3]:
+                    # j, eov+fex, %gap
+                    for nr in range(-1, aln.nround + 1):
+                        fig = plt.figure(figsize=(10, 8))
+                        plt.axis("off")
+                        ax1 = fig.add_subplot(1, 1, 1)
+                        if nr == -1:
+                            dots = squarify(dotplot(i, aln.j, vf = vf_history[aln.nround],
+                                bits = bits_history[aln.nround], naive = True), np.nan)
+                        elif nr == 0:
+                            dots = squarify(dotplot(i, aln.j, vf = vf_history[aln.nround],
+                                bits = bits_history[aln.nround], naive = True, vs = v_major), np.nan)
+                        else:
+                            dots = squarify(dotplot(i, aln.j, vf = vf_history[nr],
+                                bits = bits_history[nr]), np.nan)
+                        g1 = sns.heatmap(dots,
+                                vmin=np.nanmin(dots), vmax=np.nanmax(dots),
+                                cmap="coolwarm", ax = ax1)
+                        ax1.set_title(f"{i}-{aln.j}; @{aln.aln.koff}~{aln.aln.eov}+{aln.aln.fext}-{aln.aln.rext}; R{nr}/{aln.nround}; S={100*aln.aln.score:.1f}% G={100*aln.gap:.1f}%.")
+                        plt.savefig(f"{i}-to-{aln.j}-{name}-R{nr}.png")
+                        plt.close()
 
             exts = Extension(i = i, plus = plus, minus = minus, embed = embed, vf_history = vf_history)
-            #pickle.dump(exts, open(f"exts-{i}.pickle", "wb"))
-            #joblib.dump(exts, f"exts-{i}.pickle")
             return exts
 
-        seen = []
-        layout = []
+        ## NOTE: always parallelised by 24 
+        exts = [ extension(i, backwards = args.backwards) for i in keys_long if i % 24 == int(args.park) ]
+        outfile = f"exts-rev-mod{int(args.park)}.pickle" if args.backwards else f"exts-fwd-mod{int(args.park)}.pickle"
+        pickle.dump(exts, open(outfile, "wb"))
 
-        #exts = Parallel(n_jobs=8, backend="threading")([ delayed(extension)(i) for i in keys_long[:8] ])
-        exts = [ extension(i, backwards = True) for i in keys_long if i % 24 == int(args.park) ]
-        pickle.dump(exts, open(f"exts-rev-mod{int(args.park)}.pickle", "wb"))
-        #print(exts)
+    elif args.action == "layout-2":
 
-        import sys
-        sys.exit()
+        v_major = var(hers, hor_type = "~", err_rate = 0.05,
+            fq_upper_bound = 1.1, skips = skips,
+            comprehensive = False)
+        v_all = var(hers, hor_type = "~", err_rate = 0.05,
+            fq_upper_bound = 1.1, skips = skips,
+            comprehensive = True)
 
-        #for i in keys_long[:50]:
-        for i in [40, 1440]:
+        nonstd = { i:  [ (ii, t) for ii, (h, s, t) in enumerate(a) if t != "~" ]
+                   for i, a in enumerate(arrs) }
 
-            layout_i = []
-            if i in seen:
-                continue
-
-            print(f"### START\t{i}")
-            ctg_idx += 1
-            origin, nexts = i, [(i,0)]
-            n, koff, kall = 0, 0, 0
-
-
-            # while next_if >= 0 and (next_if not in seen):
-            while nexts:
-
-                if nexts[0][0] in seen:
-                    print(f"skip {nexts[0]}")
-                    nexts = nexts[1:]
-
-                else:
-                    print(f"nexts = {nexts}")
-                    n += 1
-                    seen += [ nexts[0][0] ]
-
-                    ext  = extension(nexts[0][0], backwards = False)
-
-                    ## TODO: output with rank
-                    plus = [ p for p in ext.plus if p.gap > 0.3 ][:5]
-                    minusembed = [ me for me in sorted(ext.minus + ext.embed, key = lambda x: -x.gap) if me.gap > 0.3][:5]
-                    print(f"****\tOffOrig\tFrom\tTo\tOff\tEovlp\t+Ext\t-Ext\tScore\tGap")
-                    print( "\n".join([ 
-                        f"EDGE\t{nexts[0][1]}\t{nexts[0][0]}\t{p.j}\t{p.aln.koff}\t" +\
-                        f"{p.aln.eov}\t+{p.aln.fext}\t-{p.aln.rext}\t{100*p.aln.score:.2f}\t{100*p.gap:.2f}" for p in plus + minusembed ]) )
-
-                    # from, to, offset, offset_from_origin, score, gap
-                    layout_i += [ (nexts[0], p.j, p.aln.koff, nexts[0][1]+p.aln.koff, p.aln.score, p.gap) for p in plus ]
-                    # to, offset_from_origin 
-                    nexts = [ (pp.j, nexts[0][1] + pp.aln.koff) for pp in plus if pp.j not in seen ][:3] + \
-                            [ (pp.j, nexts[0][1] + pp.aln.koff) for pp in minusembed if pp.j not in seen ][:3] + nexts[1:]
-                    nexts = sorted(list(set(nexts)), key=lambda x: -x[1])
-
-            print(f"### END NO EXT @\t{i}\t{n}")
-            print("\nOrigin\tFrom\tTo\tOffset\tOffOrig\tScore\tGap")
-            print("\n".join([ f"{i}\t{l[0]}\t{l[1]}\t{l[2]}\t{l[3]}\t{100*l[4]:.2f}\t{100*l[5]:.2f}" for l in layout_i ]))
-
-    elif args.action == "transitive":
-
+        Edge = namedtuple("Edge", ("From", "To", "K", "Eov", "Fext", "Rext", "Score", "Gap", "Round"))
         df = pd.read_csv(args.edgefile, sep="\t", names = ["From", "To", "K", "Eov", "Fext", "Rext", "Score", "Gap", "Round"])
         G = nx.MultiDiGraph()
+        #G = nx.MultiGraph()
 
         for _k, row in df.iterrows():
-            if row.Gap > 50:
+            if row.Gap > 30 or (row.Round > 4 and row.Gap > 25):
                 G.add_edge(int(row.From), int(row.To), key = int(row.K))
                 for k, v in row.items():
                         G.edges[int(row.From), int(row.To), int(row.K)][k] = v
 
-        # (i, j, k, e) 
-        two_steps = []
-        for node in list(G.nodes):
-            #print(G.succ[node])
-            #outs = [[j, es] for j, es in G.succ[node]]
-            # two_steps = [] # NOTE: temp
-            outs = [(j, k, e) for j in G.succ[node] for k, e in G.succ[node][j].items()]
-            ins  = [(h, -k, e) for h in G.pred[node] for k, e in G.pred[node][h].items()]
-            for j, jk, je in outs+ins:
-                for h, hk, he in outs+ins:
-                    if j == h:
-                        continue
-                    #two_steps += [(j, h, -jk+hk, je, he)]
-                    two_steps += [(j, h, -jk+hk), (h, j, jk-hk)]
+        print(f"Loaded {len(G.nodes)} nodes.")
 
-            #print(f"NODE = {node}")
-            #print(G.succ[node])
-            #print(G.pred[node])
-            #print("TS = " + ",".join([ f"{(j,h,sep)}" for j, h, sep, je, he in two_steps ]))
-            #print(f"{node},", end = "", flush = True)
+        def merge_k(l1, l2, k):
+            """ merge 2 layouts by offset k """
+            return sorted(l1 + [ (n, k+l) for n, l in l2 ], key = lambda x: x[1])
 
-        #print(f"{len(list(two_steps))} => {len(list(set(two_steps)))}")
+        def bridge(l1, l2, ins = None):
+            """ estimate offset from l1 to l2 ...
+                here, ins is the edges within/between l1/l2 
+            """
+            ls1 = { li: lk for li, lk in l1 }
+            ls2 = { li: lk for li, lk in l2 }
+            _edges = [ (gi, gj, k) for gi, gj, k in (ins if ins else G.edges(keys = True)) if gi in ls1 or gj in ls2 ]
 
-        nonstd = { i:  [ (ii, t) for ii, (h, s, t) in enumerate(a) if t != "~" ] for i, a in enumerate(arrs) }
+            bridges = Counter()
+            bridges.update([ ls1[gi] - ls2[gj] + k for gi, gj, k in _edges if gi in ls1 and gj in ls2 ])
+            bridges.update([ ls1[gj] - ls2[gi] - k for gi, gj, k in _edges if gj in ls1 and gi in ls2 ])
+            print(f"{bridges.most_common()[:3]} of {sum(bridges.values())}")
 
-        good_edges = [ (node, j, k, e["Gap"]) 
-            for node in list(G.nodes)
-            for j in G.succ[node]
-            for k, e in G.succ[node][j].items()
-            if (node, j, k) in two_steps ]
+            return bridges
 
-        print("Source\tTarget\tLabel\tGap\tSpecicals")
-        print("\n".join([ f"{i}\t{j}\t{k}\t{g}" +\
-                          ",".join([ f"{t}@{ii}" for ii, t in nonstd[i] ])  + "\t" +\
-                          ",".join([ f"{t}@{ii}" for ii, t in nonstd[j] ])
-                          for i, j, k, g in good_edges ]))
+        def sanitize(l, ins = None, dryrun = False):
+            """ sanity of the layout, returning list of layouts """
+
+            if len(l) < 2:
+                return [l]
+
+            print(f"sanitizing a layout with {l[0]} of length {len(l)}")
+            ret = []
+
+            ins = ins if ins else G.edges(keys = True)
+            # # global blacklist
+            ls = { li: lk for li, lk in l } # set representation
+            self_edges = [ (gi, gj, k) for gi, gj, k in ins if gi in ls and gj in ls ]
+            # for each node in layout, list and number of (in)consystencies
+            ics = { li[0]: [ (ls[gj] - ls[gi] - k, gj if gi == li[0] else gi)
+                          for gi, gj, k in self_edges if li[0] in [gi, gj]]
+                    for li in l }
+
+            nics = { li[0]: len([ cp for cp in ics[li[0]] if cp[0] != 0 ]) for li in l }
+            bads = sorted([ li[0] for li in l if ics[li[0]]], key = lambda x: -(nics[x] / len(ics[x])))
+
+            # print(ics)
+            print(nics)
+            print(bads)
+
+            while bads and nics[bads[0]]:
+                l = [ li for li in l if li[0] != bads[0] ] # remove the worst
+                ret += [[ (bads[0], 0) ]]
+
+                ls = { li: lk for li, lk in l } # set representation
+                self_edges = [ (gi, gj, k) for gi, gj, k in (ins if ins else G.edges(keys = True)) if gi in ls and gj in ls ]
+                # for each node in layout, list and number of (in)consystencies
+                ics = { li[0]: [ (ls[gj] - ls[gi] - k, gj if gi == li[0] else gi)
+                              for gi, gj, k in self_edges if li[0] in [gi, gj]]
+                        for li in l }
+                nics = { li[0]: len([ cp for cp in ics[li[0]] if cp[0] != 0]) for li in l }
+                bads = sorted([ li[0] for li in l if ics[li[0]]], key = lambda x: -(nics[x] / len(ics[x])))
+                print(",".join([ f"{bi}:{nics[bi]}/{len(ics[bi])}" for bi in bads]))
+
+            if ret:
+                print("fluctured:" + f"{len(ret)} + {len(l)}")
+                print(ret)
+            return [l] + ret
+
+        def consensus(layout):
+            """ take a consensus of the layout """
+            m, M = 10000, -10000
+            types = { i : Counter() for i in range(-10000, 10000) }
+
+            for li, lk in layout:
+                #print(f"arr {li}@{lk} = {arrs[li]}")
+                for ii, (h, s, t) in enumerate(arrs[li]):
+                    M, m = max(M, lk + ii), min(m, lk + ii)
+                    types[lk+ii].update([t])
+                    #print(f"{ii}, {(h, s, t)} => {ii} + {lk} = {ii+lk}")
+
+            units = { i: { k : Counter() for k in range(12) } for i in range(m, M+1) }
+            depth = { i: 0 for i in range(m, M+1) }
+
+            for li, lk in layout:
+                if all([ True or (t == types[lk+ii].most_common()[0][0]) or t == "*"
+                         for ii, (h, s, t) in enumerate(arrs[li]) ]):
+                    for ii, (h, s, t) in enumerate(arrs[li]):
+                        if t == "~":
+                            depth[lk+ii] += 1
+                            for mk in range(0, 12):
+                                units[lk+ii][mk].update(hers[li].mons[h + mk].monomer.snvs)
+
+            cons_hors = [ (i * 12, 12, types[i+m].most_common()[0][0]) for i in range(0, M-m+1) ] 
+            cons_mons = [ AssignedMonomer(begin=lk*2057 + k*171, end=lk*2057 + (k+1)*171, ori="+",
+                monomer = Monomer(
+                    name = f"Consensus-{lk}-{k}",
+                    snvs = [ s for s, sc in units[lk][k].most_common() if sc / depth[lk] > 0.4 ]))
+                for lk in range(m, M+1) for k in range(12) ]
+
+            print("recall, specificity?, fpr, fnr")
+            print("\ni\ttps(%)\ttns(%)\tfps(%)\tfns(%)\tnvars\tdepth\ttypes observed.")
+
+            ## total (default) units 
+            coverage = sum([ depth[lk] for lk in range(m, M+1) ])
+
+            vfs = { lk: 
+                [ sc for k in range(12) for s, sc in units[lk][k].most_common() ]
+                if depth[lk] > 0 and cons_hors[lk-m][2] == "~" else []
+                for lk in range(m, M+1) }
+
+            #print(vfs)
+            name = layout[0][0]
+            for lk in range(m, M+1):
+                if depth[lk] > 0 and vfs[lk]:
+                    print(f"VARS\t{name}\t{lk}\t{depth[lk]} => {Counter(vfs[lk])}")
+                else:
+                    print(f"VARS\t{name}\t{lk}\t* => *")
+
+            print(f"name\tlk\tsc\td\tfq")
+            for lk in range(m, M+1):
+                if depth[lk] > 0 and vfs[lk]:
+                    tps = [ sc for sc in vfs[lk] if sc / depth[lk] > 0.5  ]
+                    fps = [ sc for sc in vfs[lk] if sc / depth[lk] <= 0.5 ]
+                    sensitivity = sum(tps) / (depth[lk]*len(tps)) if tps else 0
+                    specificity = 1 - (sum(fps) / (depth[lk]*(2057-len(tps)))) if fps else 0
+                    #print("\n".join([
+                    #    f"VARS\t{name}\t{lk}\t{sc}\t{depth[lk]}\t{100*sc/depth[lk]:.2f}"
+                    #    for sc in sorted(vfs[lk], key = lambda x: -x/depth[lk])]))
+                    print(f"{lk}" +\
+                          f"\t{sum(tps)}/{len(tps)*depth[lk]} ({100*sensitivity:.2f})" +\
+                          f"\t{sum(fps)}/{(2057-len(tps))*depth[lk]} ({100*specificity:.2f})" +\
+                          f"\t{len(tps)}\t{depth[lk]}\t" +\
+                          "\t".join([ f"{t}:{c}" for t, c in types[lk].most_common()]))
+                else:
+                    print(f"{lk}" +\
+                          f"\t*\t*\t*\t*\t" +\
+                          "\t".join([ f"{t}:{c}" for t, c in types[lk].most_common()]))
+
+
+            hor_read = HOR_Read(name = "Consensus",
+                            mons = cons_mons, hors = cons_hors,
+                            length = (M-m)*2057, ori="+")
+
+            print("readname\tbegin\tend\tidx\tsize\telem\tgap\tvars")
+            print_HOR_read(hor_read)
+            return hor_read
+
+        def show_layout(layout):
+            """ visualize consensus read """
+
+            cons_read = consensus(layout)
+            cons_arr = fillx(cons_read)
+            snvs = var([ hers[li] for li, lk in layout ])
+            print(f"{len(snvs)} SNVs detected among the {len(layout)} reads making up the layout.")
+            print_snvs(snvs)
+
+            #snvs_read = var([cons_read], comprehensive = True)
+            snvs_read = var([cons_read], err_rate = 0.01, comprehensive = False)
+            print(f"Total {len(snvs_read)} SNVs on this layout.")
+            print_snvs(snvs_read)
+
+            # using reads SNVs
+            for vs, name in [(v_all, "global"), (v_major, "gl-freq"), (snvs, "local"), (snvs_read, "consensus")]:
+                dots = acomp(cons_read, cons_arr, cons_read, cons_arr, snvs = vs)
+                fig = plt.figure(figsize=(10, 8))
+                plt.axis("off")
+                ax1 = fig.add_subplot(1, 1, 1)
+                g1 = sns.heatmap(dots,
+                        vmin=np.nanmin(dots), vmax=np.nanmax(dots),
+                        cmap="coolwarm", ax = ax1)
+                ax1.set_title(f"Layout-{layout[0][0]}; {len(layout)} rds; {len(cons_arr)} units; with {len(vs)} of {name} vars")
+                plt.savefig(f"Layout-{layout[0][0]}-{name}.png")
+                plt.close()
+
+        # if layouts is given
+        if args.layouts:
+
+            # say something about global mismatch distribution.
+            layouts = pickle.load(open(args.layouts, "rb"))
+            layouts = sorted(layouts, key = lambda x: -len(x))
+
+            for i in range(len(layouts)): 
+                if len(layouts[i]) > 4:
+                    print(f"consensus for {i}")
+                    show_layout(layouts[i])
+
+            sys.exit()
+
+        # Initialize
+        layouts = [ [(n, 0)] for n in list(G.nodes) ]
+
+        ins = [ (gi, gj, k)
+            for l in layouts
+            for gi, gj, k in G.edges(keys = True)
+            if len(l) > 1 and {gi, gj} <= { li[0] for li in l } ]
+
+        outs = [ (gi, gj, k) for gi, gj, k in G.edges(keys = True) if (gi, gj, k) not in set(ins) ]
+        # eov sort, filter
+        outs = sorted(outs, key = lambda x: -G.edges[x]["Gap"])
+
+        for eov_t in [9, 8, 7, 6, 5, 4]:
+
+            layouts = list(chain.from_iterable([ sanitize(l) for l in layouts ]))
+
+            ins = [ (gi, gj, k)
+                for l in layouts
+                for gi, gj, k in G.edges(keys = True)
+                if len(l) > 1 and {gi, gj} <= { li[0] for li in l } ]
+            outs = [ (gi, gj, k) for gi, gj, k in G.edges(keys = True) if (gi, gj, k) not in set(ins) ]
+            outs = sorted(outs, key = lambda x: -G.edges[x]["Gap"])
+            outs = [ o for o in outs if G.edges[o]["Eov"] > eov_t and G.edges[o]["Gap"] > eov_t * 5 ]
+
+            while outs:
+
+                print(f"{len([l for l in layouts if len(l) > 1])} non-trivial layouts, {len(ins)} ins, {len(outs)} outs;")
+                print([ (o, G.edges[o]["Gap"], G.edges[o]["Eov"]) for o in outs[:10] ])
+
+                gi, gj, k = outs[0]
+                gil = [ l for l in layouts if gi in {li[0] for li in l} ]
+                gjl = [ l for l in layouts if gj in {li[0] for li in l} ]
+                others = [ l for l in layouts if not len({gj, gi} & {li[0] for li in l}) ]
+
+                assert len(gil) == 1, f"len(gil) = {len(gil)} is not 1"
+                assert len(gjl) == 1, f"len(gjl) = {len(gjl)} is not 1"
+
+                bs = bridge(gil[0], gjl[0])
+                bsmc = bs.most_common()[0]
+
+                print(f"Trying to merge L{gil[0][0][0]} = {len(gil[0])} and L{gjl[0][0][0]} = {len(gjl[0])}")
+                print(f"{bsmc} / {sum(bs.values())} = {100*bsmc[1] / sum(bs.values()):.2f}% support.")
+                print(f"{bsmc} / {sum([ x[1] for x in bs.most_common()[:2] ])}" +\
+                      f"= {100*bsmc[1] / sum([ x[1] for x in bs.most_common()[:2] ]):.2f}% mergin.", flush = True)
+                
+                #if bsmc[1] / sum(bs.values()) < 0.8:
+                if bsmc[1] / sum([ x[1] for x in bs.most_common()[:2] ]) < 0.9:
+                    print("do not reject alternative; continue...", flush = True)
+                    outs = outs[1:]
+                    continue
+                if (len(gil[0]) + len(gjl[0])) > 2 and bsmc[1] < 2:
+                    print("not enough support continue...", flush = True)
+                    outs = outs[1:]
+                    continue
+
+                merged = merge_k(gil[0], gjl[0], bsmc[0])
+
+                # Check if merged is OK
+                m, M = 10000, -10000
+                for li, lk in merged:
+                    for ii, (h, s, t) in enumerate(arrs[li]):
+                        M, m = max(M, lk + ii), min(m, lk + ii)
+                types = { i : Counter() for i in range(m, M+1) }
+
+                for li, lk in merged:
+                    for ii, (h, s, t) in enumerate(arrs[li]):
+                        if t in ["D39", "D28"]:
+                            types[lk+ii].update(["5mer"])
+                        elif t in ["D1", "D12"]:
+                            types[lk+ii].update(["10/11mer"])
+                        elif t in ["22U"]:
+                            types[lk+ii].update(["22mer"])
+                        elif t == "~":
+                            types[lk+ii].update(["def"])
+
+                if any([ len(types[i].most_common(n=2)) > 1 for i in range(m, M+1)]):
+                    print("Conflict! continue...", flush = True)
+                    outs = outs[1:]
+                    continue
+
+                layouts = others + [merged]
+
+                print(f"layout extended; {len(merged)} rds = {merged}", flush = True)
+                # update ins, outs 
+                ins = list(set(ins + [ (gi, gj, k)
+                    for gi, gj, k in G.edges(keys = True)
+                    if {gi, gj} <= { li[0] for li in merged } ]))
+
+                outs = [ (gi, gj, k) for gi, gj, k in outs if (gi, gj, k) not in set(ins) ]
+                outs = sorted(outs, key = lambda x: -G.edges[x]["Gap"])
+                outs = [ o for o in outs if G.edges[o]["Eov"] > eov_t and G.edges[o]["Gap"] > eov_t * 5 ]
+
+                print(f"{len([l for l in layouts if len(l) > 1])} non-trivial layouts, {len(ins)} ins, {len(outs)} outs.", flush = True)
+
+            print(f"{len([l for l in layouts if len(l) > 1])} non-trivial layouts, {len(ins)} ins, {len(outs)} outs at the end of the round for {eov_t}.", flush = True)
+            print("nreads\tlen_in_units\tcontents")
+            print("\n".join([ f"{len(l)}\t{l[-1][1]-l[0][1]}\t{l}" for l in sorted(layouts, key=lambda x: len(x)) if len(l) > 1 ]))
+
+            pickle.dump(layouts, open(f"layouts-{datetimestr}-noconflict-round-eov{eov_t}.pkl", "wb"))
+        
+        pickle.dump(layouts, open("layouts-{datetimestr}.pkl", "wb"))
+        print("done")
 
     else:
         assert False, "invalid action."
