@@ -264,6 +264,7 @@ if __name__ == '__main__':
 
     # For layout, layout-2
     parser.add_argument('--reverse', dest='backwards', action='store_const', const=True, help='backwards search')
+    parser.add_argument('--range', dest='sizeranges', help='size ranges to be used')
     # parser.add_argument('--parallel', dest='n_parallel', help='# of cores to be used') # deprecated
     parser.add_argument('--park', dest='park', help='for parallelly processing read id = k mod 24')
     parser.add_argument('--edges', dest='edgefile', help='edge list file')
@@ -516,13 +517,12 @@ if __name__ == '__main__':
         keys_sorted = sorted(
                 [ i for i in range(len(hers)) if arrs[i] and len(arrs[i]) > 1 ],
                 key = lambda x: -1 * len(arrs[x]))
-        keys_long = [ i for i in keys_sorted if len(arrs[i]) > 7 ]
-        keys_short = [ i for i in keys_sorted if len(arrs[i]) <= 8 ]
+        sizeranges = [ int(n) for n in args.sizeranges.split(",") ] if args.sizeranges else [8, 0]
+        keys_long = [ i for i in keys_sorted if len(arrs[i]) >= sizeranges[0] ]
+        keys_short = [ i for i in keys_sorted
+                if len(arrs[i]) < sizeranges[0] and len(arrs[i]) >= sizeranges[1] ]
 
-        print(f"{len(keys_long)} long (>7) arrs, {len(keys_short)} short arrs, of total {len(hers)} reads")
-
-        # TODO: rename as this not depend on bits
-        # bits_keys_longer = sorted(bits.keys(), key = lambda x: -bits[x].shape[0])
+        print(f"{len(keys_long)} long (>={sizeranges[0]}) arrs, {len(keys_short)} short (>={sizeranges[1]}) arrs, of total {len(hers)} reads")
 
         print("\n#\tid\tmons\tunits\treadname")
         print("\n".join([ f"{n+1}\t{i}\t{len(hers[i].mons)}\t{bits[i].shape[0]}\t{hers[i].name}" for n, i in enumerate(keys_sorted) if len(arrs[i]) > 7 ]))
@@ -745,10 +745,11 @@ if __name__ == '__main__':
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
 
-            alns_to_plot = [(embed, "embed")]
             if backwards:
+                alns_to_plot = [(embed, "embed-rev")]
                 alns_to_plot += [(minus, "minus")]
             else:
+                alns_to_plot = [(embed, "embed")]
                 alns_to_plot += [(plus, "plus")]
 
             for alns, name in alns_to_plot:
@@ -767,11 +768,14 @@ if __name__ == '__main__':
                         else:
                             dots = squarify(dotplot(i, aln.j, vf = vf_history[nr],
                                 bits = bits_history[nr]), np.nan)
+
                         g1 = sns.heatmap(dots,
                                 vmin=np.nanmin(dots), vmax=np.nanmax(dots),
-                                cmap="coolwarm", ax = ax1)
-                        ax1.set_title(f"{i}-{aln.j}; @{aln.aln.koff}~{aln.aln.eov}+{aln.aln.fext}-{aln.aln.rext}; R{nr}/{aln.nround}; S={100*aln.aln.score:.1f}% G={100*aln.gap:.1f}%.")
-                        plt.savefig(f"{i}-to-{aln.j}-{name}-R{nr}.png")
+                                cmap="YlGn" if nr > 0 else "Reds", ax = ax1)
+                                #cmap="coolwarm" if nr > 0 else , ax = ax1)
+
+                        ax1.set_title(f"{i}-{aln.j}; @{aln.aln.koff}~{aln.aln.eov}+{aln.aln.fext}-{aln.aln.rext}; R{nr if nr > -1 else 'x'}/{aln.nround}; Score={100*aln.aln.score:.1f}% SG={100*aln.gap:.1f}%.")
+                        plt.savefig(f"{i}-to-{aln.j}-{name}-R{nr if nr > -1 else 'x'}.png")
                         plt.close()
 
             exts = Extension(i = i, plus = plus, minus = minus, embed = embed, vf_history = vf_history)
