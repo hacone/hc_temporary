@@ -1,0 +1,56 @@
+#!/bin/bash
+
+#as squeakr does not like ultra-long centromeric reads, 20 kbp heads and tails of ONT reads are fed to squeakr to identify core-centromeric reads.
+
+## Fetch raw reads
+#wget https://s3.amazonaws.com/nanopore-human-wgs/chm13/nanopore/rel2/rel2.fastq.gz
+
+## Prepare seqkit
+#wget https://github.com/shenwei356/seqkit/releases/download/v0.10.1/seqkit_linux_amd64.tar.gz
+#tar xf seqkit_linux_amd64.tar.gz 
+#rm seqkit_linux_amd64.tar.gz 
+
+## Filter in >10 kbp, split 10k reads per file.
+# ./seqkit seq -m 10000 rel2.fastq.gz | ./seqkit split -s 10000 -O chunked
+
+function head_tail() {
+        cat $1 | ./seqkit subseq -r 1:20000 > ${1%%.fastq}".head.fastq"
+        mv ${1%%.fastq}".head.fastq" headtail/
+        echo "done/head for $1"
+        cat $1 | ./seqkit subseq -r -20000:-1 \
+               |./seqkit seq -m 20000 > ${1%%.fastq}".tail.fastq"
+        mv ${1%%.fastq}".tail.fastq" headtail/
+        echo "done/tail for $1"
+
+}; export -f head_tail;
+
+#ls chunked/stdin.part_*.fastq | xargs -P 12 -n 1 -I % bash -c "head_tail %"
+
+## NOTE: run squeakr here.
+
+function to_fa() {
+        echo "./seqkit fq2fa $1 > ${1%%.fastq}.fa"
+        ./seqkit fq2fa $1 > ${1%%.fastq}.fa
+        echo "samtools faidx ${1%%.fastq}.fa"
+        samtools faidx ${1%%.fastq}.fa
+        echo "done $1"
+}; export -f to_fa;
+
+#ls chunked/stdin.part_*.fastq | xargs -P 12 -n 1 -I % bash -c "to_fa %"
+
+function get_centro() {
+        BN=${1%%.head.fasta.gz}
+        FA="./chunked/"${BN##*chunked_filtered/}".fa"
+        HEAD=$1
+        TAIL="${BN}.tail.fasta.gz"
+
+        zcat $HEAD | ./seqkit seq -n -i > ${BN}.ids
+        zcat $TAIL | ./seqkit seq -n -i >> ${BN}.ids
+        sort ${BN}.ids | uniq > ${BN}.uniq.ids
+
+        echo "generating for $BN"
+        cat ${BN}.uniq.ids | xargs -P1 -n1 -I% samtools faidx ${FA} % > ${BN}.centro.fa
+        echo "done $BN"
+}; export -f get_centro;
+
+# ls chunked_filtered/*.head.fasta.gz | xargs -P 12 -n 1 -I % bash -c "get_centro %"
