@@ -13,7 +13,10 @@ import pickle
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import seaborn as sns
+
+import svgwrite
 
 import random
 random.seed(42)
@@ -22,6 +25,11 @@ import sys
 # TODO: I just need datatype definition. That can be separated from other codes.
 from EncodedRead import *
 from HOR_segregation import *
+
+t2c = {"*": "*", "~": "", "D1":"Y", "D12":"X", "22U":"U", "D39":"V", "D28":"W"}
+t2col = {"*": "black", "~": "white",
+         "D1":"yellow", "D12":"green",
+         "22U":"brown", "D39":"orange", "D28":"red"}
 
 def squarify(M,val):
     a , b = M.shape
@@ -752,12 +760,13 @@ if __name__ == '__main__':
                 alns_to_plot = [(embed, "embed")]
                 alns_to_plot += [(plus, "plus")]
 
+            xlabels = [ t2c[t] for h, s, t in arrs[i] ]
             for alns, name in alns_to_plot:
                 for aln in alns[:3]:
                     # j, eov+fex, %gap
                     for nr in range(-1, aln.nround + 1):
-                        fig = plt.figure(figsize=(10, 8))
-                        plt.axis("off")
+                        fig = plt.figure(figsize=(15, 12))
+                        # plt.axis("off")
                         ax1 = fig.add_subplot(1, 1, 1)
                         if nr == -1:
                             dots = squarify(dotplot(i, aln.j, vf = vf_history[aln.nround],
@@ -768,10 +777,11 @@ if __name__ == '__main__':
                         else:
                             dots = squarify(dotplot(i, aln.j, vf = vf_history[nr],
                                 bits = bits_history[nr]), np.nan)
-
+                        ylabels = [ t2c[t] for h, s, t in arrs[aln.j] ]
                         g1 = sns.heatmap(dots,
                                 vmin=np.nanmin(dots), vmax=np.nanmax(dots),
-                                cmap="YlGn" if nr > 0 else "Reds", ax = ax1)
+                                cmap="YlGn" if nr > 0 else "Reds", ax = ax1,
+                                xticklabels = xlabels, yticklabels = ylabels)
                                 #cmap="coolwarm" if nr > 0 else , ax = ax1)
 
                         ax1.set_title(f"{i}-{aln.j}; @{aln.aln.koff}~{aln.aln.eov}+{aln.aln.fext}-{aln.aln.rext}; R{nr if nr > -1 else 'x'}/{aln.nround}; Score={100*aln.aln.score:.1f}% SG={100*aln.gap:.1f}%.")
@@ -959,26 +969,49 @@ if __name__ == '__main__':
             cons_read = consensus(layout)
             cons_arr = fillx(cons_read)
             snvs = var([ hers[li] for li, lk in layout ])
-            print(f"{len(snvs)} SNVs detected among the {len(layout)} reads making up the layout.")
             print_snvs(snvs)
 
-            #snvs_read = var([cons_read], comprehensive = True)
             snvs_read = var([cons_read], err_rate = 0.01, comprehensive = False)
             print(f"Total {len(snvs_read)} SNVs on this layout.")
             print_snvs(snvs_read)
 
+            # t2c = {"*": "*", "~": "", "D1":"Y", "D12":"X", "22U":"U", "D39":"V", "D28":"W"}
+
+            labels = [ t2c[t] for h, s, t in cons_read.hors ]
+
             # using reads SNVs
             for vs, name in [(v_all, "global"), (v_major, "gl-freq"), (snvs, "local"), (snvs_read, "consensus")]:
+            # for vs, name in [(v_major, "gl-freq"), (snvs, "local"), (snvs_read, "consensus")]:
                 dots = acomp(cons_read, cons_arr, cons_read, cons_arr, snvs = vs)
-                fig = plt.figure(figsize=(10, 8))
-                plt.axis("off")
+                fig = plt.figure(figsize=(20, 16))
+                # plt.axis("off")
                 ax1 = fig.add_subplot(1, 1, 1)
                 g1 = sns.heatmap(dots,
                         vmin=np.nanmin(dots), vmax=np.nanmax(dots),
-                        cmap="coolwarm", ax = ax1)
+                        cmap="coolwarm", ax = ax1,
+                        xticklabels = labels, yticklabels = labels)
                 ax1.set_title(f"Layout-{layout[0][0]}; {len(layout)} rds; {len(cons_arr)} units; with {len(vs)} of {name} vars")
                 plt.savefig(f"Layout-{layout[0][0]}-{name}.png")
                 plt.close()
+
+            dwg = svgwrite.Drawing(filename=f"Layout-{layout[0][0]}-str.svg")
+            lkmin = min([ lk for li, lk in layout ])
+
+            for i, (li, lk) in enumerate(layout):
+                read = dwg.add(dwg.g(id=f"rd{li}", stroke='green'))
+                #fig = plt.figure(figsize=(10, 8))
+                #ax1 = fig.add_subplot(1, 1, 1)
+                #ax1.set_xlim(-1, 1500)
+                #ax1.set_ylim(-1, 300)
+                for n, (h, s, t) in enumerate(arrs[li]):
+                    read.add(
+                        dwg.rect(insert=((n + lk - lkmin)*5,i*5), size=(4,4),
+                        fill=t2col[t], stroke='black', stroke_width=0.5))
+                    # ax1.text((lk + n) * 1, i * 1, t2c[t], fontsize=9) 
+            dwg.save()
+
+            #plt.savefig(f"Layout-{layout[0][0]}-str.svg")
+            #plt.close()
 
         # if layouts is given
         if args.layouts:
@@ -1016,7 +1049,9 @@ if __name__ == '__main__':
                 if len(l) > 1 and {gi, gj} <= { li[0] for li in l } ]
             outs = [ (gi, gj, k) for gi, gj, k in G.edges(keys = True) if (gi, gj, k) not in set(ins) ]
             outs = sorted(outs, key = lambda x: -G.edges[x]["Gap"])
-            outs = [ o for o in outs if G.edges[o]["Eov"] > eov_t and G.edges[o]["Gap"] > eov_t * 5 ]
+            # NOTE: for ONT
+            outs = [ o for o in outs if G.edges[o]["Eov"] > eov_t * 5 and G.edges[o]["Gap"] > eov_t * 5 ]
+            #outs = [ o for o in outs if G.edges[o]["Eov"] > eov_t and G.edges[o]["Gap"] > eov_t * 5 ]
 
             while outs:
 
@@ -1044,10 +1079,10 @@ if __name__ == '__main__':
                     print("do not reject alternative; continue...", flush = True)
                     outs = outs[1:]
                     continue
-                if (len(gil[0]) + len(gjl[0])) > 2 and bsmc[1] < 2:
-                    print("not enough support continue...", flush = True)
-                    outs = outs[1:]
-                    continue
+                #if (len(gil[0]) + len(gjl[0])) > 2 and bsmc[1] < 2:
+                #    print("not enough support continue...", flush = True)
+                #    outs = outs[1:]
+                #    continue
 
                 merged = merge_k(gil[0], gjl[0], bsmc[0])
 

@@ -169,9 +169,11 @@ def encodeSAM_DP(samfile, usemons = None):
     """
 
     def readname2len(s):
-        import re
-        a = re.sub(".*/", "", s).split("_")
-        return int(a[1]) - int(a[0])
+        #import re
+        #a = re.sub(".*/", "", s).split("_")
+        #return int(a[1]) - int(a[0])
+        # NOTE: for ONT
+        return 10000
 
     aln = pysam.AlignmentFile(samfile)
 
