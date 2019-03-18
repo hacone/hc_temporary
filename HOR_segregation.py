@@ -1,14 +1,19 @@
 # segregate/encode reads by HOR patterns contianed in it.
-
 from collections import Counter 
 from EncodedRead import *
 import numpy as np
 import os
 import pickle
 import re
+
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import svgwrite
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+# import seaborn as sns
 
 # NOTE: here's data structure for HOR encoded reads (cf. EncodedRead.py for other lower-level representation)
 # hors := (index, size, symbol)
@@ -20,7 +25,7 @@ def load_encoded_reads(pickles, n_max_reads = None):
     for picklefile in [ l.strip() for l in open(pickles, "r").readlines() ]:
         rds = pickle.load(open(picklefile, "rb"))
         reads += [ r for r in rds if len(r.mons) > 29 ]
-        print(f"{len(reads)} reads found... " + "loaded " + picklefile, flush = True)
+        # print(f"{len(reads)} reads found... " + "loaded " + picklefile, flush = True)
         if n_max_reads and (len(reads) > n_max_reads):
             break
     return reads
@@ -35,7 +40,6 @@ def monomers_in_reads(reads, ref = "d0.fasta.fai"):
     l = np.loadtxt(ref, dtype = "U20", delimiter = "\t", usecols = (0))
     mon_to_id = { i:n for n, i in enumerate(l) }
     nmons = len(mon_to_id)
-
     occ = np.zeros(len(reads)*nmons).reshape(len(reads), nmons)
     for i, r in enumerate(reads):
         for m in r.mons:
@@ -85,10 +89,17 @@ def print_reads(pkl):
 def draw_cluster(pickles, outfile, precomputed = False):
     """ t-SNE / PCA embedding of reads based on monomer sharing to visualize the clusters. """
 
+    n_clusters = 30
     reads = load_encoded_reads(pickles)
     # NOTE: use 20k reads with most monomers 
     occ = monomers_in_reads(sorted(reads,
         key=lambda x: -len(x.mons))[:20000])
+
+    l = np.loadtxt("d0.fasta.fai", dtype = "U20", delimiter = "\t", usecols = (0))
+    mon_to_id = { n: i for i, n in enumerate(l) }
+    id_to_mon = { i: n.replace("horID_", "").replace(".mon_", "-")
+            for i, n in enumerate(l) }
+    nmons = len(mon_to_id)
 
     if not precomputed:
         # Normalize
@@ -101,25 +112,44 @@ def draw_cluster(pickles, outfile, precomputed = False):
         pca_red = PCA(n_components=2, random_state=0).fit_transform(occ_n)
         print("pca done")
         np.save(f"{outfile}.pca.npy", pca_red)
-   else:
+    else:
         tsne_red = np.load(f"{outfile}.tsne.npy")
         pca_red = np.load(f"{outfile}.pca.npy")
 
     # calculate clusters (n_clusters = 40)
-    cls = cluster_reads(occ)
+    cls = cluster_reads(occ, n_clusters = n_clusters)
 
-    # NOTE: charm
-    import matplotlib
-    matplotlib.use('Agg')
     # mycm = plt.get_cmap("tab20b") + plt.get_cmap("tab20c") # TODO: how can i concatenate?
+    print("Cluster\t" + "\t".join([
+        f"{id_to_mon[i]}" for i in range(len(id_to_mon)) ]),
+        file=open(f"{outfile}.tsv", "a"))
+
+    for c in range(n_clusters):
+        print(f"C{c}\t" + "\t".join([
+            f"{d}" for d in np.sum(occ[[ cls[i] == c for i in range(20000) ], :], axis=0)]),
+            file=open(f"{outfile}.tsv", "a"))
+
     plt.scatter(
             tsne_red[:, 0], tsne_red[:, 1], c=cls,
             s=6, alpha=0.5, edgecolors="none", cmap=plt.get_cmap("tab20b"))
+    for c in range(n_clusters):
+        xs = [ tsne_red[i, 0] for i in range(20000) if cls[i] == c ]
+        ys = [ tsne_red[i, 1] for i in range(20000) if cls[i] == c ]
+        plt.text(sum(xs)/len(xs), sum(ys)/len(ys), f"{c}",
+            horizontalalignment = "center", verticalalignment = "center")
     plt.savefig(f"{outfile}.tsne.svg")
+    plt.close()
+
     plt.scatter(
             pca_red[:, 0], pca_red[:, 1], c=cls,
             s=6, alpha=0.5, edgecolors="none", cmap=plt.get_cmap("tab20b"))
+    for c in range(n_clusters):
+        xs = [ pca_red[i, 0] for i in range(20000) if cls[i] == c ]
+        ys = [ pca_red[i, 1] for i in range(20000) if cls[i] == c ]
+        plt.text(sum(xs)/len(xs), sum(ys)/len(ys), f"{c}",
+            horizontalalignment = "center", verticalalignment = "center")
     plt.savefig(f"{outfile}.pca.svg")
+    plt.close()
 
 def extract_kmonomers(pkl, k):
 
@@ -348,7 +378,8 @@ if __name__ == '__main__':
     elif args.action == "draw-cluster":
         assert args.pickles, "pickle fofn is not specified"
         assert args.outfile, "specify output svg filename"
-        draw_cluster(args.pickles, args.outfile)
+        draw_cluster(args.pickles, args.outfile, precomputed = False)
+        #draw_cluster(args.pickles, args.outfile, precomputed = True)
 
     elif args.action == "print":
         #NOTE: this is temporary

@@ -14,7 +14,8 @@ export SAMTOOLS=samtools
 # Required for `encode`
 export VENV_ACT=${HC}/venv/bin/activate
 export ENCODEPY=${HC}/EncodedRead.py
-export MONLIST=${HC}/resource/monomers/s14-for-X.txt
+#export MONLIST=${HC}/resource/monomers/s14-for-X.txt
+export MONLIST=${HC}/resource/monomers/s14-for-32.txt
 
 # in case it can't reach the correct one
 export PYTHON3=${HC}/venv/bin/python3
@@ -117,10 +118,11 @@ encode() {
 
 	SAM=$1
 	source ${VENV_ACT}
+  RAND=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 12 | head -n 1)
 
   # echo debugging...
-	echo "python3 ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.pickle"
-  ${PYTHON3} ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.pickle
+	echo "python3 ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}-32.$RAND.pickle"
+  ${PYTHON3} ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}-32.$RAND.pickle
 
   echo "Done encoding."
 
