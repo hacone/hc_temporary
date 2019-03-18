@@ -55,8 +55,6 @@ def cluster_reads(occ, n_clusters = 40):
     ## NOTE: may i use the subset??
     from sklearn.cluster import KMeans
     kmeans = KMeans(n_clusters=n_clusters, random_state=0, verbose=1, n_jobs=-3).fit(occ_n)
-    # pickle.dump(kmeans, open("{n_clusters}_cls.kmeans.pkl", 'wb'))
-
     return kmeans.predict(occ_n)
 
 
@@ -84,21 +82,44 @@ def print_reads(pkl):
             last_end = m.end
 
 # NOTE: currently not visible from the menu
-def tsne_reads(occ):
-    """ t-SNE embedding of reads based on monomer sharing to visualize the clusters. """
+def draw_cluster(pickles, outfile, precomputed = False):
+    """ t-SNE / PCA embedding of reads based on monomer sharing to visualize the clusters. """
+
+    reads = load_encoded_reads(pickles)
+    # NOTE: use 20k reads with most monomers 
+    occ = monomers_in_reads(sorted(reads,
+        key=lambda x: -len(x.mons))[:20000])
+
+    if not precomputed:
+        # Normalize
+        occ_n = occ.copy()
+        for i in range(occ.shape[0]):
+            occ_n[i] = occ[i] / sum([ occ[i,j] for j in range(occ.shape[1]) ])
+        tsne_red = TSNE(n_components=2, random_state=0, verbose=1).fit_transform(occ_n)
+        np.save(f"{outfile}.tsne.npy", tsne_red)
+        print("tsne done")
+        pca_red = PCA(n_components=2, random_state=0).fit_transform(occ_n)
+        print("pca done")
+        np.save(f"{outfile}.pca.npy", pca_red)
+   else:
+        tsne_red = np.load(f"{outfile}.tsne.npy")
+        pca_red = np.load(f"{outfile}.pca.npy")
+
+    # calculate clusters (n_clusters = 40)
+    cls = cluster_reads(occ)
 
     # NOTE: charm
     import matplotlib
     matplotlib.use('Agg')
-
-    # reduced = TSNE(n_components=2, random_state=0, verbose=1).fit_transform(all_data)
-    # np.save("20k_reads.tsne.npy", reduced)
-    reduced = np.load("20k_reads.tsne.npy")
     # mycm = plt.get_cmap("tab20b") + plt.get_cmap("tab20c") # TODO: how can i concatenate?
     plt.scatter(
-            reduced[:, 0], reduced[:, 1], c=cls,
+            tsne_red[:, 0], tsne_red[:, 1], c=cls,
             s=6, alpha=0.5, edgecolors="none", cmap=plt.get_cmap("tab20b"))
-    plt.savefig("TSNE_encoded_reads_20k_40c.svg")
+    plt.savefig(f"{outfile}.tsne.svg")
+    plt.scatter(
+            pca_red[:, 0], pca_red[:, 1], c=cls,
+            s=6, alpha=0.5, edgecolors="none", cmap=plt.get_cmap("tab20b"))
+    plt.savefig(f"{outfile}.pca.svg")
 
 def extract_kmonomers(pkl, k):
 
@@ -323,6 +344,11 @@ if __name__ == '__main__':
         assert args.pickles, "pickle fofn is not specified"
         assert args.outdir, "output dir is not specified"
         segregate_reads(args.pickles, args.outdir)
+
+    elif args.action == "draw-cluster":
+        assert args.pickles, "pickle fofn is not specified"
+        assert args.outfile, "specify output svg filename"
+        draw_cluster(args.pickles, args.outfile)
 
     elif args.action == "print":
         #NOTE: this is temporary
