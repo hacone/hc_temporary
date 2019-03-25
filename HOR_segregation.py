@@ -89,7 +89,7 @@ def print_reads(pkl):
 def draw_cluster(pickles, outfile, precomputed = False):
     """ t-SNE / PCA embedding of reads based on monomer sharing to visualize the clusters. """
 
-    n_clusters = 30
+    n_clusters = 40
     reads = load_encoded_reads(pickles)
     # NOTE: use 20k reads with most monomers 
     occ = monomers_in_reads(sorted(reads,
@@ -117,7 +117,9 @@ def draw_cluster(pickles, outfile, precomputed = False):
         pca_red = np.load(f"{outfile}.pca.npy")
 
     # calculate clusters (n_clusters = 40)
-    cls = cluster_reads(occ, n_clusters = n_clusters)
+    occ_all = monomers_in_reads(sorted(reads,
+        key=lambda x: -len(x.mons)))
+    cls = cluster_reads(occ_all, n_clusters = n_clusters)[:20000]
 
     # mycm = plt.get_cmap("tab20b") + plt.get_cmap("tab20c") # TODO: how can i concatenate?
     print("Cluster\t" + "\t".join([
