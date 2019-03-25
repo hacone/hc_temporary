@@ -752,6 +752,7 @@ if __name__ == '__main__':
             import matplotlib
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
+            sns.set(font_scale=1.5)
 
             if backwards:
                 alns_to_plot = [(embed, "embed-rev")]
@@ -760,7 +761,7 @@ if __name__ == '__main__':
                 alns_to_plot = [(embed, "embed")]
                 alns_to_plot += [(plus, "plus")]
 
-            xlabels = [ t2c[t] for h, s, t in arrs[i] ]
+            ylabels = [ t2c[t] for h, s, t in arrs[i] ]
             for alns, name in alns_to_plot:
                 for aln in alns[:3]:
                     # j, eov+fex, %gap
@@ -777,7 +778,7 @@ if __name__ == '__main__':
                         else:
                             dots = squarify(dotplot(i, aln.j, vf = vf_history[nr],
                                 bits = bits_history[nr]), np.nan)
-                        ylabels = [ t2c[t] for h, s, t in arrs[aln.j] ]
+                        xlabels = [ t2c[t] for h, s, t in arrs[aln.j] ]
                         g1 = sns.heatmap(dots,
                                 vmin=np.nanmin(dots), vmax=np.nanmax(dots),
                                 cmap="YlGn" if nr > 0 else "Reds", ax = ax1,
@@ -984,6 +985,7 @@ if __name__ == '__main__':
             # for vs, name in [(v_major, "gl-freq"), (snvs, "local"), (snvs_read, "consensus")]:
                 dots = acomp(cons_read, cons_arr, cons_read, cons_arr, snvs = vs)
                 fig = plt.figure(figsize=(20, 16))
+                sns.set(font_scale=2)
                 # plt.axis("off")
                 ax1 = fig.add_subplot(1, 1, 1)
                 g1 = sns.heatmap(dots,
