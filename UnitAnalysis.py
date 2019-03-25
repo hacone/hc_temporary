@@ -46,7 +46,6 @@ BestAln = namedtuple("BestAln", ("i", "j", "aln", "gap", "nround"))
 # plus, minus, embed are list of BestAln
 Extension = namedtuple("Extension", ("i", "plus", "minus", "embed", "vf_history"))
 
-
 # TODO: can this be abstracted to work with other chromosomes?
 def fillx(read, verbose = False):
 
@@ -279,7 +278,8 @@ if __name__ == '__main__':
     parser.add_argument('--layouts', dest='layouts', help='precomputed layouts to be analysed')
 
 
-    #parser.add_argument('-o', dest='outfile', help='the file to be output (required for align)')
+    parser.add_argument('-o', dest='outfile', help='the file to be output (consensus reads pickle)')
+
     args = parser.parse_args()
     assert args.hors, "specify HOR-encoded reads"
     hers = pickle.load(open(args.hors, "rb"))
@@ -1008,7 +1008,10 @@ if __name__ == '__main__':
                         dwg.rect(insert=((n + lk - lkmin)*5,i*5), size=(4,4),
                         fill=t2col[t], stroke='black', stroke_width=0.5))
                     # ax1.text((lk + n) * 1, i * 1, t2c[t], fontsize=9) 
+
             dwg.save()
+
+            return cons_read
 
             #plt.savefig(f"Layout-{layout[0][0]}-str.svg")
             #plt.close()
@@ -1020,10 +1023,17 @@ if __name__ == '__main__':
             layouts = pickle.load(open(args.layouts, "rb"))
             layouts = sorted(layouts, key = lambda x: -len(x))
 
+            cons_reads = []
+
             for i in range(len(layouts)): 
                 if len(layouts[i]) > 4:
                     print(f"consensus for {i}")
-                    show_layout(layouts[i])
+                    # cons_reads += [ show_layout(layouts[i]) ]
+                    cons_reads += [ consensus(layouts[i]) ]
+
+            # TODO
+            if args.outfile:
+                pickle.dump(cons_reads, open(args.outfile, "wb"))
 
             sys.exit()
 
