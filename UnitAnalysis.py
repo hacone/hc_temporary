@@ -256,6 +256,9 @@ if __name__ == '__main__':
     parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads')
     parser.add_argument('--vars', dest='vars', help='pickled variant sites (disable auto detection)')
 
+    # For draw-units-pca
+    parser.add_argument('--mal', dest='mal', help='minimum of array length to be considered; 4 for Hi-Fi, 10 for others')
+
     # For print-snv-evolution
     parser.add_argument('--rand', dest='random', action='store_const', const=True, help='compare 50k random pairs of units')
     parser.add_argument('--nvars', dest='nvars', help='number of variants to be used')
@@ -276,6 +279,7 @@ if __name__ == '__main__':
     parser.add_argument('--park', dest='park', help='for parallelly processing read id = k mod 24')
     parser.add_argument('--edges', dest='edgefile', help='edge list file')
     parser.add_argument('--layouts', dest='layouts', help='precomputed layouts to be analysed')
+    # also accept --err-rate in action layout
 
 
     parser.add_argument('-o', dest='outfile', help='the file to be output (consensus reads pickle)')
@@ -330,7 +334,7 @@ if __name__ == '__main__':
 
         a, n, ridx = [], 0, []
         for i in range(len(hers)):
-            if not arrs[i] or (len(arrs[i]) < 10):
+            if not arrs[i] or ( len(arrs[i]) < int(args.mal) if args.mal else 10 ):
                 ridx.append([n, n])
                 continue
 
@@ -383,7 +387,8 @@ if __name__ == '__main__':
         ylim = min(Xrd[:,1]), max(Xrd[:,1])
 
         # take reads upto 5000 units, sorting by x-coord in PCA.
-        gi = [ i for i in range(len(hers)) if ridx[i][1] -ridx[i][0] > 9 and ridx[i][0] < Xrd.shape[0] ][:200]
+        mal = int(args.mal) if args.mal else 9
+        gi = [ i for i in range(len(hers)) if ridx[i][1] -ridx[i][0] > mal and ridx[i][0] < Xrd.shape[0] ][:200]
         gi = sorted(gi, key = lambda i: Xrd[ridx[i][0],0])
 
         for j, i in enumerate(gi):
@@ -456,6 +461,7 @@ if __name__ == '__main__':
         plt.savefig(f"units-divergence-{len(v_major)}vars.svg")
         plt.close()
 
+    # TODO: should I make this an independent script?
     elif args.action == "layout":
         """ This action calculates list of viable edges using proper measure
             along with some nice figures. """
@@ -489,19 +495,21 @@ if __name__ == '__main__':
 
         ## entry point of this action.
 
+        err_rate = float(args.err_rate) if args.err_rate else 0.05
         if args.vars:
             v_major = pickle.load(open(args.vars, "rb"))
         else:
-            v_major = var(hers, hor_type = "~", err_rate = 0.05,
+            v_major = var(hers, hor_type = "~", err_rate = err_rate,
                 fq_upper_bound = 1.1, skips = skips,
                 comprehensive = False)
         vf = np.array([ v["f"] for v in v_major ]).reshape(len(v_major))
 
-        v_all = var(hers, hor_type = "~", err_rate = 0.05,
+        v_all = var(hers, hor_type = "~", err_rate = err_rate,
             fq_upper_bound = 1.1, skips = skips,
             comprehensive = True)
         vf_all = np.array([ v["f"] for v in v_all ]).reshape(len(v_all))
 
+        # NOTE: this part is not yet parametrised
         errt = error_tensor(e0 = 0.03, e1 = 0.10) # for PacBio
         # errt = error_tensor(e0 = 0.06, e1 = 0.20) # for ONT?
         # errt_lev = error_tensor(e0 = 0.10, e1 = 0.10)
@@ -566,7 +574,7 @@ if __name__ == '__main__':
                         if vs:
                             result[n,m] = 1 - (len((si[n] ^ sj[m]) & vs_set) / len(vs_set))
                         else:
-                            result[n,m] = 1 - (len(si[n] ^ sj[m]) / 2057.0)
+                            result[n,m] = 1 - (len(si[n] ^ sj[m]) / 2057.0) # NOTE: X specific!!
                 return result
 
             t2_ve = np.tensordot(np.stack([1-vf, vf]), errt.dsq, [0, 1])
@@ -677,15 +685,23 @@ if __name__ == '__main__':
                 result_i_short = get_result_i(i, vf_local, bits_local, targets = best_short_js) # 2~7 us
                 best_short_js = sorted(result_i_short.keys(), key = lambda j: (-1) * result_i_short[j][0].score)
 
+                # TODO: parametrize HERE !! # NOTE: eov_t does exist in the action layout-2
+
+                if args.alignparams:
+                    _ap = alignparams.split(",")
+                    score_t, prom_t, eov_t = (float(_ap[0]), float(_ap[1]), int(_ap[2]))
+                else
+                    score_t, prom_t, eov_t = (0.6, 0.3, 4)
+
                 def gap(alns):
-                    if not [ a for a in alns if a.score > 0.6 ]:
+                    if not [ a for a in alns if a.score > score_t ]:
                         return 0.0
-                    elif len(alns) < 2:
+                    elif len(alns) < 2: # It's the only alignment found
                         return 1.0
                     else: 
                         return (alns[0].score - alns[1].score) / alns[0].score
 
-                uniques = sorted([ j for j in best_long_js if gap(result_i_long[j]) > 0.30 ], key = lambda x: -result_i_long[x][0].eov)
+                uniques = sorted([ j for j in best_long_js if gap(result_i_long[j]) > prom_t ], key = lambda x: -result_i_long[x][0].eov)
 
                 def pickbest(l):
                     # l is aln
@@ -697,15 +713,15 @@ if __name__ == '__main__':
 
                 ## j, aln, gap, round
                 plus += [ BestAln(i = i, j = j, aln = result_i_long[j][0], gap = gap(result_i_long[j]), nround = nround)
-                          for j in uniques if result_i_long[j][0].fext > 0 and result_i_long[j][0].eov > 4 ]
+                          for j in uniques if result_i_long[j][0].fext > 0 and result_i_long[j][0].eov > eov_t ]
                 plus = pickbest(sorted(plus, key = lambda x: (-x.gap, -x.aln.eov)))
 
                 minus += [ BestAln(i = i, j = j, aln = result_i_long[j][0], gap = gap(result_i_long[j]), nround = nround)
-                           for j in uniques if result_i_long[j][0].rext > 0 and result_i_long[j][0].eov > 4 ]
+                           for j in uniques if result_i_long[j][0].rext > 0 and result_i_long[j][0].eov > eov_t ]
                 minus = pickbest(sorted(minus, key = lambda x: (-x.gap, -x.aln.eov)))
 
                 embed += [ BestAln(i = i, j = j, aln = result_i_long[j][0], gap = gap(result_i_long[j]), nround = nround)
-                           for j in uniques if result_i_long[j][0].fext == 0 and result_i_long[j][0].rext == 0 and result_i_long[j][0].eov > 4 ]
+                           for j in uniques if result_i_long[j][0].fext == 0 and result_i_long[j][0].rext == 0 and result_i_long[j][0].eov > eov_t ]
                 embed = pickbest(sorted(embed, key = lambda x: (-x.gap, -x.aln.eov)))
 
                 line = f"\n(+{len(plus)}, -{len(minus)}, ^{len(embed)}) uniques for {i} upto round {nround}."
@@ -731,7 +747,7 @@ if __name__ == '__main__':
 
                 nround += 1
                 vs_local = var([ hers[j] for j in best_long_js + best_short_js ],
-                    hor_type = "~", err_rate = 0.05,
+                    hor_type = "~", err_rate = err_rate,
                     fq_upper_bound = 1.1, skips = skips,
                     comprehensive = False)
 
@@ -799,6 +815,7 @@ if __name__ == '__main__':
 
     elif args.action == "layout-2":
 
+        # NOTE: do i need to change err_rate (if it affect anything)?
         v_major = var(hers, hor_type = "~", err_rate = 0.05,
             fq_upper_bound = 1.1, skips = skips,
             comprehensive = False)
