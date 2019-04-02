@@ -110,30 +110,32 @@ def var(reads, units = None, hor_type = "~", skips = [],
 
     # Here I'll return every detected variants positions!
     if comprehensive:
-        return [ dict(k = k, p = p, b = b, f = c/len(units), c = c, binom_p = 1 - binom.cdf(c, len(units), err_rate)) for (k, p, b), c in counter.most_common() ]
+        return [ dict(k = k, p = p, b = b, f = c/len(units), c = c,
+                      binom_p = 1 - binom.cdf(c, len(units), err_rate))
+                 for (k, p, b), c in counter.most_common() ]
 
     # remove too frequent ones, and allow <1 false positives
     if not comprehensive:
-        _tmp = [ (k, p, b, c / len(units), c) for (k, p, b), c in counter.most_common() if c / len(units) < fq_upper_bound ]
-        _nt_vars = [ dict(k = k, p = p, b = b, f = c/len(units), c = c, binom_p = 1 - binom.cdf(c, len(units), err_rate)) for k, p, b, f, c in _tmp ]
+        _tmp = [ (k, p, b, c / len(units), c)
+                 for (k, p, b), c in counter.most_common()
+                 if c / len(units) < fq_upper_bound ]
+        _nt_vars = [ dict(k = k, p = p, b = b, f = c/len(units), c = c,
+                          binom_p = 1 - binom.cdf(c, len(units), err_rate))
+                     for k, p, b, f, c in _tmp ]
         return [ s for s in _nt_vars if s["binom_p"] * n_tests < 1.0 ]
 
 def vec(read, h, snvs):
     """ bit array for a single HOR unit, starting at h-th monomers of a read """
     def has_s(s):
         # i.e., if s in t
-        return any([ (t.pos, t.base) == (int(s["p"]), s["b"]) for t in read.mons[h+int(s["k"])].monomer.snvs ])
+        return any([ (t.pos, t.base) == (int(s["p"]), s["b"])
+                     for t in read.mons[h+int(s["k"])].monomer.snvs ])
     return [ 1 if has_s(s) else -1 for s in snvs ]
 
 def ba(read, arr, snvs):
     """ bit array for a single array """
     zeros, v = [0] * len(snvs), []
-
-    #print(f"arr = {arr}\nlen(mons) = {len(read.mons)}")
-    #print([ (i, m.monomer.name) for i, m in enumerate(read.mons) ])
-
     for h, s, t in arr:
-        #print(h)
         if t == "~":
             v += vec(read, h, snvs)
         else:
@@ -181,7 +183,7 @@ def acomp(rd1, a1, rd2, a2, snvs = None):
 
 def print_snvs(snvs, sort = "freq", n_tests = 2057, alt_snvs = None, innum = False):
 
-    """ Show SNVs """
+    """ Show SNVs; sorted by position if sort == \"position\" """
 
     lines = "midx\tpos\tbas\tcount\tfreq\t   p-val\t cfd."
     lines += "\t f.gl\n" if alt_snvs else "\n"
@@ -196,7 +198,6 @@ def print_snvs(snvs, sort = "freq", n_tests = 2057, alt_snvs = None, innum = Fal
 
         if innum:
             b = {'A':0, 'C':1, 'G':2, 'T':3}[b]
-
         if alt_snvs:
             alt_f = [ a["f"] for a in alt_snvs if (k, p, b) == (a["k"], a["p"], a["b"]) ]
             alt_info = f"{100*alt_f[0]:>5.2f}" if alt_f else "    *"
@@ -206,6 +207,7 @@ def print_snvs(snvs, sort = "freq", n_tests = 2057, alt_snvs = None, innum = Fal
 
     print(lines)
 
+# TODO: I need draw_align as well
 def print_align(aln, bits, arrs):
     """ Visualize an alignment in text to clarify the overlap. """
     pair_to_char = {
@@ -275,11 +277,13 @@ if __name__ == '__main__':
     # For layout, layout-2
     parser.add_argument('--reverse', dest='backwards', action='store_const', const=True, help='backwards search')
     parser.add_argument('--range', dest='sizeranges', help='size ranges to be used')
-    # parser.add_argument('--parallel', dest='n_parallel', help='# of cores to be used') # deprecated
+    parser.add_argument('--params', dest='alignparams',
+            help='parameters for alignment; default to score_t, prom_t, eov_t = .6, .3, 4')
+    # also accept --err-rate in action layout
+
     parser.add_argument('--park', dest='park', help='for parallelly processing read id = k mod 24')
     parser.add_argument('--edges', dest='edgefile', help='edge list file')
     parser.add_argument('--layouts', dest='layouts', help='precomputed layouts to be analysed')
-    # also accept --err-rate in action layout
 
 
     parser.add_argument('-o', dest='outfile', help='the file to be output (consensus reads pickle)')
@@ -403,7 +407,6 @@ if __name__ == '__main__':
             plt.close()
             print("|" if j%10 else ".", flush = True)
 
-
     elif args.action == "print-snv-evolution":
 
         if args.vars:
@@ -453,7 +456,6 @@ if __name__ == '__main__':
             data = np.array(a).reshape(int(len(a)/3), 3),
             columns = ["d", "All", "Snv"]))
 
-
         df = pd.melt(df, id_vars = ["d"], var_name = "class", value_name = "pDiv") #, value_vars = data.columns[:-2].tolist())
 
         g = sns.boxplot(x='d', y="pDiv", hue='class', data=df, palette="PRGn")
@@ -496,6 +498,7 @@ if __name__ == '__main__':
         ## entry point of this action.
 
         err_rate = float(args.err_rate) if args.err_rate else 0.05
+
         if args.vars:
             v_major = pickle.load(open(args.vars, "rb"))
         else:
@@ -523,12 +526,10 @@ if __name__ == '__main__':
 
         print(f"\nvf = {len(v_major)} global vars:")
         print(vf)
-        print(f"\nvf_all = {len(v_all)} comprehensive vars: suppressed...")
-
-        koff = 0
-        origin = 0
+        print(f"\nvf_all = {len(v_all)} comprehensive vars: output suppressed...")
 
         bits = { i: ba(her, arrs[i], v_major) for i, her in enumerate(hers) if arrs[i] and len(arrs[i]) > 1 }
+        bits_all = { i: ba(her, arrs[i], v_all) for i, her in enumerate(hers) if arrs[i] and len(arrs[i]) > 1 }
 
         keys_sorted = sorted(
                 [ i for i in range(len(hers)) if arrs[i] and len(arrs[i]) > 1 ],
@@ -538,10 +539,12 @@ if __name__ == '__main__':
         keys_short = [ i for i in keys_sorted
                 if len(arrs[i]) < sizeranges[0] and len(arrs[i]) >= sizeranges[1] ]
 
-        print(f"{len(keys_long)} long (>={sizeranges[0]}) arrs, {len(keys_short)} short (>={sizeranges[1]}) arrs, of total {len(hers)} reads")
+        print(f"{len(keys_long)} long (>={sizeranges[0]}) arrs, " +\
+              f"{len(keys_short)} short (>={sizeranges[1]}) arrs, of total {len(hers)} reads\n")
 
         print("\n#\tid\tmons\tunits\treadname")
-        print("\n".join([ f"{n+1}\t{i}\t{len(hers[i].mons)}\t{bits[i].shape[0]}\t{hers[i].name}" for n, i in enumerate(keys_sorted) if len(arrs[i]) > 7 ]))
+        print("\n".join([ f"{n+1}\t{i}\t{len(hers[i].mons)}\t{bits[i].shape[0]}\t{hers[i].name}"
+                          for n, i in enumerate(keys_sorted) if len(arrs[i]) >= sizeranges[0] ]))
 
         def dotplot(i, j, errt = errt, vf = vf, bits = bits,
                 naive = False, vs = []):
@@ -591,8 +594,7 @@ if __name__ == '__main__':
 
             return result
 
-        # TODO: temporary naming, obviously
-        def get_result_i(i, vf = vf, bits = bits, targets = None, verbose = False):
+        def get_result_i(i, vf = vf, bits = bits, targets = None, verbose = False, naive = False):
             """ assumes errt in context """
 
             # aln for i
@@ -622,14 +624,26 @@ if __name__ == '__main__':
                         # NOTE: xi = bits[i][k:(k+lov),] is aligned to xj = bits[j][0:lov,]
                         for n in [ n for n in range(lov) if arrs[i][k+n][2] == "~" and arrs[j][n][2] == "~"]:
                             e += 1
-                            s += numeri(plup[k+n], bits[j][n,], errt, t2_ve) / (denomis[k+n] + 0.0001)
+                            if not naive:
+                                s += numeri(plup[k+n], bits[j][n,], errt, t2_ve) / (denomis[k+n] + 0.0001)
+                            else:
+                                # NOTE: compare k+n in i to n in j !
+                                _m = np.multiply(bits[i][k+n,], bits[j][n,])
+                                _m2 = np.multiply(_m, _m) + 0.0001
+                                s += 0.5 * np.sum(_m + _m2) / np.sum(_m2)
 
                     else:
                         lov =  min(li, k+lj) # length of overlap
                         # NOTE: xi = bits[i][0:lov,] is aligned to xj = bits[j][-k:(-k+lov),]
                         for n in [ n for n in range(lov) if arrs[i][n][2] == "~" and arrs[j][n-k][2] == "~"]:
                             e += 1
-                            s += numeri(plup[n], bits[j][n-k,], errt, t2_ve) / (denomis[n] + 0.0001)
+                            if not naive:
+                                s += numeri(plup[n], bits[j][n-k,], errt, t2_ve) / (denomis[n] + 0.0001)
+                            else:
+                                # NOTE: compare n in i to n-k in j !
+                                _m = np.multiply(bits[i][n,], bits[j][n-k,])
+                                _m2 = np.multiply(_m, _m) + 0.0001
+                                s += 0.5 * np.sum(_m + _m2) / np.sum(_m2)
 
                     if e >= 2:
                         s = s / e
@@ -646,7 +660,7 @@ if __name__ == '__main__':
             return result_i
 
         # layout is like [(j0, k0), (j1, k1), (j2, k2)...]
-        # extension into the right
+        # extension into the right, or left if backwards is true
         def extension(i, backwards = False):
 
             vf_history = []
@@ -671,40 +685,56 @@ if __name__ == '__main__':
             minus = []
             embed = []
 
-            #global fig_idx
-            #global ctg_idx
+            # NOTE: parametrize # NOTE: eov_t does exist in the action layout-2
+            if args.alignparams:
+                _ap = args.alignparams.split(",")
+                score_t, prom_t, eov_t = (float(_ap[0]), float(_ap[1]), int(_ap[2]))
+            else:
+                score_t, prom_t, eov_t = (0.6, 0.3, 4)
 
-            # NOTE: n_units must be >100
+            def gap(alns, st = score_t):
+                if not [ a for a in alns if a.score > st ]:
+                    return 0.0
+                elif len(alns) < 2: # It's the only alignment found
+                    return 1.0
+                else: 
+                    return (alns[0].score - alns[1].score) / alns[0].score
+
+            # NOTE before it dives into iterative scrubbing process, let me show
+            # how complex the overlap graph can be, with the naive identity metric.
+            result_i_long = get_result_i(i, vf_all, bits_all, targets = best_long_js, naive = True)
+            best_long_js = sorted(result_i_long.keys(), key = lambda j: (-1) * result_i_long[j][0].score)
+            print(f"*best_edges*\ti\tj\trank\ttopS\t2ndS\tnvars\tround")
+            for rj, j in enumerate(best_long_js[:10]):
+                prom = gap(result_i_long[j], st = 0)
+                best_score = result_i_long[j][0].score
+                second_best_score = best_score * (1.0 - prom)
+                print(f"BEST_EDGES\t{i}\t{j}\t{rj}\t{best_score:.3f}\t{second_best_score:.3f}\t{len(v_all)}\t-1")
+
+            # NOTE: n_units must be >100, or >50
             while nround < 15 and \
                   best_long_js and best_short_js and \
-                  vs_local and (vs_local[0]["c"] / vs_local[0]["f"]) > 100:
+                  vs_local and (vs_local[0]["c"] / vs_local[0]["f"]) > 50:
 
-                result_i_long = get_result_i(i, vf_local, bits_local, targets = best_long_js) # ~7 us
+                result_i_long = get_result_i(i, vf_local, bits_local, targets = best_long_js)
                 best_long_js = sorted(result_i_long.keys(), key = lambda j: (-1) * result_i_long[j][0].score)
 
-                result_i_short = get_result_i(i, vf_local, bits_local, targets = best_short_js) # 2~7 us
+                result_i_short = get_result_i(i, vf_local, bits_local, targets = best_short_js)
                 best_short_js = sorted(result_i_short.keys(), key = lambda j: (-1) * result_i_short[j][0].score)
 
-                # TODO: parametrize HERE !! # NOTE: eov_t does exist in the action layout-2
+                # TODO: say something here!
+                print(f"*best_edges*\ti\tj\trank\ttopS\t2ndS\tnvars\tround")
+                for rj, j in enumerate(best_long_js[:10]):
+                    prom = gap(result_i_long[j], st = 0)
+                    best_score = result_i_long[j][0].score
+                    second_best_score = best_score * (1.0 - prom)
+                    print(f"BEST_EDGES\t{i}\t{j}\t{rj}\t{best_score:.3f}\t{second_best_score:.3f}\t{len(vs_local)}\t{nround}")
 
-                if args.alignparams:
-                    _ap = alignparams.split(",")
-                    score_t, prom_t, eov_t = (float(_ap[0]), float(_ap[1]), int(_ap[2]))
-                else
-                    score_t, prom_t, eov_t = (0.6, 0.3, 4)
-
-                def gap(alns):
-                    if not [ a for a in alns if a.score > score_t ]:
-                        return 0.0
-                    elif len(alns) < 2: # It's the only alignment found
-                        return 1.0
-                    else: 
-                        return (alns[0].score - alns[1].score) / alns[0].score
-
-                uniques = sorted([ j for j in best_long_js if gap(result_i_long[j]) > prom_t ], key = lambda x: -result_i_long[x][0].eov)
+                uniques = sorted([ j for j in best_long_js if gap(result_i_long[j]) > prom_t ],
+                                   key = lambda x: -result_i_long[x][0].eov)
 
                 def pickbest(l):
-                    # l is aln
+                    # remove duplicate where later ones are discarded; l is aln (list of BestAln?)
                     _l, li = [], list(range(len(l)))
                     while li:
                         _l += [ l[li[0]] ]
@@ -714,21 +744,22 @@ if __name__ == '__main__':
                 ## j, aln, gap, round
                 plus += [ BestAln(i = i, j = j, aln = result_i_long[j][0], gap = gap(result_i_long[j]), nround = nround)
                           for j in uniques if result_i_long[j][0].fext > 0 and result_i_long[j][0].eov > eov_t ]
-                plus = pickbest(sorted(plus, key = lambda x: (-x.gap, -x.aln.eov)))
+                plus = pickbest(sorted(plus, key = lambda x: (-x.aln.score, -x.gap, -x.aln.eov)))
 
                 minus += [ BestAln(i = i, j = j, aln = result_i_long[j][0], gap = gap(result_i_long[j]), nround = nround)
                            for j in uniques if result_i_long[j][0].rext > 0 and result_i_long[j][0].eov > eov_t ]
-                minus = pickbest(sorted(minus, key = lambda x: (-x.gap, -x.aln.eov)))
+                minus = pickbest(sorted(minus, key = lambda x: (-x.aln.score, -x.gap, -x.aln.eov)))
 
                 embed += [ BestAln(i = i, j = j, aln = result_i_long[j][0], gap = gap(result_i_long[j]), nround = nround)
                            for j in uniques if result_i_long[j][0].fext == 0 and result_i_long[j][0].rext == 0 and result_i_long[j][0].eov > eov_t ]
-                embed = pickbest(sorted(embed, key = lambda x: (-x.gap, -x.aln.eov)))
+                embed = pickbest(sorted(embed, key = lambda x: (-x.aln.score, -x.gap, -x.aln.eov)))
 
                 line = f"\n(+{len(plus)}, -{len(minus)}, ^{len(embed)}) uniques for {i} upto round {nround}."
-                line += f"\n   i\t   j\t  k\t  e\tfex\trex\tscr\t%gap\tround"
+                line += f"\n   i\t   j\t  k\t  e\tfex\trex\tscr\t%gap\tnvars\tround"
                 for balns in plus[:10] + minus[:10] + embed[:10]:
                     line += f"\n{balns.i:4d}\t{balns.j:4d}\t{balns.aln.koff:3d}\t{balns.aln.eov:3d}\t" + \
-                            f"{balns.aln.fext:3d}+\t{balns.aln.rext:3d}-\t{balns.aln.score:.2f}\t{100*balns.gap:.1f} %\t{balns.nround}"
+                            f"{balns.aln.fext:3d}+\t{balns.aln.rext:3d}-\t{balns.aln.score:.2f}\t" + \
+                            f"{100*balns.gap:.1f} %\t{len(vs_local)}\t{balns.nround}"
 
                 print(line, flush=True)
 
@@ -737,7 +768,6 @@ if __name__ == '__main__':
                 n_short_target = int(n_short_target*0.6)
 
                 # take ones with plus extension
-                # TODO: also for shorter reads!
                 if backwards:
                     best_long_js = [ j for j in best_long_js if result_i_long[j][0].rext > 0 ][:n_long_target]
                     best_short_js = [ j for j in best_short_js if result_i_short[j][0].fext == 0 ][:n_short_target]
@@ -745,6 +775,7 @@ if __name__ == '__main__':
                     best_long_js = [ j for j in best_long_js if result_i_long[j][0].fext > 0 ][:n_long_target]
                     best_short_js = [ j for j in best_short_js if result_i_short[j][0].koff >= 0 ][:n_short_target]
 
+                # NOTE: calculating variables used in next step.
                 nround += 1
                 vs_local = var([ hers[j] for j in best_long_js + best_short_js ],
                     hor_type = "~", err_rate = err_rate,
@@ -758,24 +789,26 @@ if __name__ == '__main__':
 
                 if vs_local:
                     est_units = int(vs_local[0]["c"] / vs_local[0]["f"])
-                    print(f"Next for {i}: {len(vs_local)} local SNVs found for ~{est_units} units from {len(best_long_js)} long / {len(best_short_js)} short reads.")
-
+                    print(f"Next for {i}: {len(vs_local)} local SNVs found for ~{est_units} units " +\
+                          f"from {len(best_long_js)} long / {len(best_short_js)} short reads.")
 
             print("\n".join([ f"{i}\t{aln.j}\t{aln.aln.koff}\t{aln.aln.eov}\t{aln.aln.fext}\t{aln.aln.rext}\t" +\
-                              f"{100*aln.aln.score:.2f}\t{100*aln.gap:.2f}\t{aln.nround}" for aln in plus + minus + embed ]),
+                              f"{100*aln.aln.score:.2f}\t{100*aln.gap:.2f}\t{len(vf_history[aln.nround])}\t{aln.nround}" for aln in plus + minus + embed ]),
                   file=open(f"read-{i}.{'rev' if backwards else 'fwd'}.ext", "w"), flush=True)
 
+
+            # NOTE: generate figures !!
             import matplotlib
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
             sns.set(font_scale=1.5)
 
             if backwards:
-                alns_to_plot = [(embed, "embed-rev")]
-                alns_to_plot += [(minus, "minus")]
+                #alns_to_plot = [(embed, "embed-rev")]
+                alns_to_plot = [(minus, "minus")]
             else:
-                alns_to_plot = [(embed, "embed")]
-                alns_to_plot += [(plus, "plus")]
+                #alns_to_plot = [(embed, "embed")]
+                alns_to_plot = [(plus, "plus")]
 
             ylabels = [ t2c[t] for h, s, t in arrs[i] ]
             for alns, name in alns_to_plot:
@@ -783,9 +816,9 @@ if __name__ == '__main__':
                     # j, eov+fex, %gap
                     for nr in range(-1, aln.nround + 1):
                         fig = plt.figure(figsize=(15, 12))
-                        # plt.axis("off")
                         ax1 = fig.add_subplot(1, 1, 1)
                         if nr == -1:
+                            # vf, bits are not relevant
                             dots = squarify(dotplot(i, aln.j, vf = vf_history[aln.nround],
                                 bits = bits_history[aln.nround], naive = True), np.nan)
                         elif nr == 0:
@@ -794,14 +827,18 @@ if __name__ == '__main__':
                         else:
                             dots = squarify(dotplot(i, aln.j, vf = vf_history[nr],
                                 bits = bits_history[nr]), np.nan)
+
                         xlabels = [ t2c[t] for h, s, t in arrs[aln.j] ]
                         g1 = sns.heatmap(dots,
                                 vmin=np.nanmin(dots), vmax=np.nanmax(dots),
                                 cmap="YlGn" if nr > 0 else "Reds", ax = ax1,
                                 xticklabels = xlabels, yticklabels = ylabels)
-                                #cmap="coolwarm" if nr > 0 else , ax = ax1)
 
-                        ax1.set_title(f"{i}-{aln.j}; @{aln.aln.koff}~{aln.aln.eov}+{aln.aln.fext}-{aln.aln.rext}; R{nr if nr > -1 else 'x'}/{aln.nround}; Score={100*aln.aln.score:.1f}% SG={100*aln.gap:.1f}%.")
+                        nv = len(vf_history[nr]) if nr > 0 else "*"
+                        ax1.set_title(
+                                f"{i}-{aln.j}; @{aln.aln.koff}~{aln.aln.eov}+{aln.aln.fext}-{aln.aln.rext};" +\
+                                f"R{nr if nr > -1 else 'x'}/{aln.nround};\n" +\
+                                f"PI={100*aln.aln.score:.1f}% Prom={100*aln.gap:.1f}% #v={nv}.")
                         plt.savefig(f"{i}-to-{aln.j}-{name}-R{nr if nr > -1 else 'x'}.png")
                         plt.close()
 
