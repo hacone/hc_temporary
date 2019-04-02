@@ -663,8 +663,6 @@ if __name__ == '__main__':
         # extension into the right, or left if backwards is true
         def extension(i, backwards = False):
 
-            vf_history = []
-            bits_history = []
 
             # initialize for round 0
             nround = 0
@@ -678,14 +676,13 @@ if __name__ == '__main__':
             vs_local = v_major
             vf_local = vf
             bits_local = bits
-            vf_history += [vf_local]
-            bits_history += [bits_local]
+            vf_history = [vf_local] # zeroth element
+            bits_history = [bits_local]
 
             plus = []
             minus = []
             embed = []
 
-            # NOTE: parametrize # NOTE: eov_t does exist in the action layout-2
             if args.alignparams:
                 _ap = args.alignparams.split(",")
                 score_t, prom_t, eov_t = (float(_ap[0]), float(_ap[1]), int(_ap[2]))
@@ -693,6 +690,7 @@ if __name__ == '__main__':
                 score_t, prom_t, eov_t = (0.6, 0.3, 4)
 
             def gap(alns, st = score_t):
+                # this considers all alignments with >=2 units
                 if not [ a for a in alns if a.score > st ]:
                     return 0.0
                 elif len(alns) < 2: # It's the only alignment found
@@ -704,12 +702,15 @@ if __name__ == '__main__':
             # how complex the overlap graph can be, with the naive identity metric.
             result_i_long = get_result_i(i, vf_all, bits_all, targets = best_long_js, naive = True)
             best_long_js = sorted(result_i_long.keys(), key = lambda j: (-1) * result_i_long[j][0].score)
-            print(f"*best_edges*\ti\tj\trank\ttopS\t2ndS\tnvars\tround")
+
+            print(f"*best_edges*\ti\tj\trank\ttopS\t2ndS\teov\tnvars\tround")
             for rj, j in enumerate(best_long_js[:10]):
                 prom = gap(result_i_long[j], st = 0)
                 best_score = result_i_long[j][0].score
                 second_best_score = best_score * (1.0 - prom)
-                print(f"BEST_EDGES\t{i}\t{j}\t{rj}\t{best_score:.3f}\t{second_best_score:.3f}\t{len(v_all)}\t-1")
+                if result_i_long[j][0].eov > eov_t:
+                    print(f"BEST_EDGES\t{i}\t{j}\t{rj}\t{best_score:.3f}\t{second_best_score:.3f}\t" +\
+                          f"{result_i_long[j][0].eov}\t{len(v_all)}\t-1", flush=True)
 
             # NOTE: n_units must be >100, or >50
             while nround < 15 and \
@@ -722,13 +723,14 @@ if __name__ == '__main__':
                 result_i_short = get_result_i(i, vf_local, bits_local, targets = best_short_js)
                 best_short_js = sorted(result_i_short.keys(), key = lambda j: (-1) * result_i_short[j][0].score)
 
-                # TODO: say something here!
-                print(f"*best_edges*\ti\tj\trank\ttopS\t2ndS\tnvars\tround")
+                print(f"*best_edges*\ti\tj\trank\ttopS\t2ndS\teov\tnvars\tround")
                 for rj, j in enumerate(best_long_js[:10]):
                     prom = gap(result_i_long[j], st = 0)
                     best_score = result_i_long[j][0].score
                     second_best_score = best_score * (1.0 - prom)
-                    print(f"BEST_EDGES\t{i}\t{j}\t{rj}\t{best_score:.3f}\t{second_best_score:.3f}\t{len(vs_local)}\t{nround}")
+                    if result_i_long[j][0].eov > eov_t:
+                        print(f"BEST_EDGES\t{i}\t{j}\t{rj}\t{best_score:.3f}\t{second_best_score:.3f}\t" +\
+                              f"{result_i_long[j][0].eov}\t{len(vf_local)}\t{nround}", flush=True)
 
                 uniques = sorted([ j for j in best_long_js if gap(result_i_long[j]) > prom_t ],
                                    key = lambda x: -result_i_long[x][0].eov)
@@ -751,14 +753,15 @@ if __name__ == '__main__':
                 minus = pickbest(sorted(minus, key = lambda x: (-x.aln.score, -x.gap, -x.aln.eov)))
 
                 embed += [ BestAln(i = i, j = j, aln = result_i_long[j][0], gap = gap(result_i_long[j]), nround = nround)
-                           for j in uniques if result_i_long[j][0].fext == 0 and result_i_long[j][0].rext == 0 and result_i_long[j][0].eov > eov_t ]
+                           for j in uniques if result_i_long[j][0].fext == 0 \
+                                   and result_i_long[j][0].rext == 0 and result_i_long[j][0].eov > eov_t ]
                 embed = pickbest(sorted(embed, key = lambda x: (-x.aln.score, -x.gap, -x.aln.eov)))
 
                 line = f"\n(+{len(plus)}, -{len(minus)}, ^{len(embed)}) uniques for {i} upto round {nround}."
                 line += f"\n   i\t   j\t  k\t  e\tfex\trex\tscr\t%gap\tnvars\tround"
                 for balns in plus[:10] + minus[:10] + embed[:10]:
                     line += f"\n{balns.i:4d}\t{balns.j:4d}\t{balns.aln.koff:3d}\t{balns.aln.eov:3d}\t" + \
-                            f"{balns.aln.fext:3d}+\t{balns.aln.rext:3d}-\t{balns.aln.score:.2f}\t" + \
+                            f"{balns.aln.fext:3d}+\t{balns.aln.rext:3d}-\t{balns.aln.score:.3f}\t" + \
                             f"{100*balns.gap:.1f} %\t{len(vs_local)}\t{balns.nround}"
 
                 print(line, flush=True)
@@ -793,7 +796,8 @@ if __name__ == '__main__':
                           f"from {len(best_long_js)} long / {len(best_short_js)} short reads.")
 
             print("\n".join([ f"{i}\t{aln.j}\t{aln.aln.koff}\t{aln.aln.eov}\t{aln.aln.fext}\t{aln.aln.rext}\t" +\
-                              f"{100*aln.aln.score:.2f}\t{100*aln.gap:.2f}\t{len(vf_history[aln.nround])}\t{aln.nround}" for aln in plus + minus + embed ]),
+                              f"{100*aln.aln.score:.2f}\t{100*aln.gap:.2f}\t{len(vf_history[aln.nround])}\t{aln.nround}"
+                              for aln in plus + minus + embed ]),
                   file=open(f"read-{i}.{'rev' if backwards else 'fwd'}.ext", "w"), flush=True)
 
 
