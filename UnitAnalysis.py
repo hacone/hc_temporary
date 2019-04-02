@@ -838,7 +838,7 @@ if __name__ == '__main__':
                                 cmap="YlGn" if nr > 0 else "Reds", ax = ax1,
                                 xticklabels = xlabels, yticklabels = ylabels)
 
-                        nv = len(vf_history[nr]) if nr > 0 else "*"
+                        nv = len(vf_history[nr]) if nr >= 0 else "*"
                         ax1.set_title(
                                 f"{i}-{aln.j}; @{aln.aln.koff}~{aln.aln.eov}+{aln.aln.fext}-{aln.aln.rext};" +\
                                 f"R{nr if nr > -1 else 'x'}/{aln.nround};\n" +\
