@@ -714,7 +714,7 @@ if __name__ == '__main__':
 
             # NOTE: n_units must be >100, or >50
             while nround < 15 and \
-                  best_long_js and \
+                  best_long_js and best_short_js and \
                   vs_local and (vs_local[0]["c"] / vs_local[0]["f"]) > 50:
 
                 result_i_long = get_result_i(i, vf_local, bits_local, targets = best_long_js)
