@@ -714,7 +714,7 @@ if __name__ == '__main__':
 
             # NOTE: n_units must be >100, or >50
             while nround < 15 and \
-                  best_long_js and best_short_js and \
+                  best_long_js and \
                   vs_local and (vs_local[0]["c"] / vs_local[0]["f"]) > 50:
 
                 result_i_long = get_result_i(i, vf_local, bits_local, targets = best_long_js)
@@ -736,7 +736,7 @@ if __name__ == '__main__':
                                    key = lambda x: -result_i_long[x][0].eov)
 
                 def pickbest(l):
-                    # remove duplicate where later ones are discarded; l is aln (list of BestAln?)
+                    # remove duplicate j where later ones are discarded; l is aln (list of BestAln?)
                     _l, li = [], list(range(len(l)))
                     while li:
                         _l += [ l[li[0]] ]
@@ -746,16 +746,16 @@ if __name__ == '__main__':
                 ## j, aln, gap, round
                 plus += [ BestAln(i = i, j = j, aln = result_i_long[j][0], gap = gap(result_i_long[j]), nround = nround)
                           for j in uniques if result_i_long[j][0].fext > 0 and result_i_long[j][0].eov > eov_t ]
-                plus = pickbest(sorted(plus, key = lambda x: (-x.aln.score, -x.gap, -x.aln.eov)))
+                plus = pickbest(sorted(plus, key = lambda x: (-x.gap, -x.aln.eov)))
 
                 minus += [ BestAln(i = i, j = j, aln = result_i_long[j][0], gap = gap(result_i_long[j]), nround = nround)
                            for j in uniques if result_i_long[j][0].rext > 0 and result_i_long[j][0].eov > eov_t ]
-                minus = pickbest(sorted(minus, key = lambda x: (-x.aln.score, -x.gap, -x.aln.eov)))
+                minus = pickbest(sorted(minus, key = lambda x: (-x.gap, -x.aln.eov)))
 
                 embed += [ BestAln(i = i, j = j, aln = result_i_long[j][0], gap = gap(result_i_long[j]), nround = nround)
                            for j in uniques if result_i_long[j][0].fext == 0 \
                                    and result_i_long[j][0].rext == 0 and result_i_long[j][0].eov > eov_t ]
-                embed = pickbest(sorted(embed, key = lambda x: (-x.aln.score, -x.gap, -x.aln.eov)))
+                embed = pickbest(sorted(embed, key = lambda x: (-x.gap, -x.aln.eov)))
 
                 line = f"\n(+{len(plus)}, -{len(minus)}, ^{len(embed)}) uniques for {i} upto round {nround}."
                 line += f"\n   i\t   j\t  k\t  e\tfex\trex\tscr\t%gap\tnvars\tround"
