@@ -279,12 +279,11 @@ if __name__ == '__main__':
     parser.add_argument('--range', dest='sizeranges', help='size ranges to be used')
     parser.add_argument('--params', dest='alignparams',
             help='parameters for alignment; default to score_t, prom_t, eov_t = .6, .3, 4')
-    # also accept --err-rate in action layout
+    # NOTE it also accepts --err-rate in action layout
 
     parser.add_argument('--park', dest='park', help='for parallelly processing read id = k mod 24')
     parser.add_argument('--edges', dest='edgefile', help='edge list file')
     parser.add_argument('--layouts', dest='layouts', help='precomputed layouts to be analysed')
-
 
     parser.add_argument('-o', dest='outfile', help='the file to be output (consensus reads pickle)')
 
@@ -703,14 +702,14 @@ if __name__ == '__main__':
             result_i_long = get_result_i(i, vf_all, bits_all, targets = best_long_js, naive = True)
             best_long_js = sorted(result_i_long.keys(), key = lambda j: (-1) * result_i_long[j][0].score)
 
-            print(f"*best_edges*\ti\tj\trank\ttopS\t2ndS\teov\tnvars\tround")
+            print(f"*best_edges*\ti\tj\trank\ttopS\t2ndS\tprom\teov\tnvars\tround")
             for rj, j in enumerate(best_long_js[:10]):
                 prom = gap(result_i_long[j], st = 0)
                 best_score = result_i_long[j][0].score
                 second_best_score = best_score * (1.0 - prom)
                 if result_i_long[j][0].eov > eov_t:
                     print(f"BEST_EDGES\t{i}\t{j}\t{rj}\t{best_score:.3f}\t{second_best_score:.3f}\t" +\
-                          f"{result_i_long[j][0].eov}\t{len(v_all)}\t-1", flush=True)
+                          f"{prom:.3f}\t{result_i_long[j][0].eov}\t{len(v_all)}\t-1", flush=True)
 
             # NOTE: n_units must be >100, or >50
             while nround < 15 and \
@@ -720,17 +719,20 @@ if __name__ == '__main__':
                 result_i_long = get_result_i(i, vf_local, bits_local, targets = best_long_js)
                 best_long_js = sorted(result_i_long.keys(), key = lambda j: (-1) * result_i_long[j][0].score)
 
-                result_i_short = get_result_i(i, vf_local, bits_local, targets = best_short_js)
-                best_short_js = sorted(result_i_short.keys(), key = lambda j: (-1) * result_i_short[j][0].score)
+                if best_short_js:
+                    result_i_short = get_result_i(i, vf_local, bits_local, targets = best_short_js)
+                    best_short_js = sorted(result_i_short.keys(), key = lambda j: (-1) * result_i_short[j][0].score)
+                else:
+                    result_i_short = []
 
-                print(f"*best_edges*\ti\tj\trank\ttopS\t2ndS\teov\tnvars\tround")
+                print(f"*best_edges*\ti\tj\trank\ttopS\t2ndS\tprom\teov\tnvars\tround")
                 for rj, j in enumerate(best_long_js[:10]):
                     prom = gap(result_i_long[j], st = 0)
                     best_score = result_i_long[j][0].score
                     second_best_score = best_score * (1.0 - prom)
                     if result_i_long[j][0].eov > eov_t:
                         print(f"BEST_EDGES\t{i}\t{j}\t{rj}\t{best_score:.3f}\t{second_best_score:.3f}\t" +\
-                              f"{result_i_long[j][0].eov}\t{len(vf_local)}\t{nround}", flush=True)
+                              f"{prom}\t{result_i_long[j][0].eov}\t{len(vf_local)}\t{nround}", flush=True)
 
                 uniques = sorted([ j for j in best_long_js if gap(result_i_long[j]) > prom_t ],
                                    key = lambda x: -result_i_long[x][0].eov)
@@ -1199,7 +1201,7 @@ if __name__ == '__main__':
 
             pickle.dump(layouts, open(f"layouts-{datetimestr}-noconflict-round-eov{eov_t}.pkl", "wb"))
         
-        pickle.dump(layouts, open("layouts-{datetimestr}.pkl", "wb"))
+        pickle.dump(layouts, open(f"layouts-{datetimestr}.pkl", "wb"))
         print("done")
 
     else:
