@@ -820,32 +820,37 @@ if __name__ == '__main__':
             for alns, name in alns_to_plot:
                 for aln in alns[:3]:
                     # j, eov+fex, %gap
-                    for nr in range(-1, aln.nround + 1):
+                    for nr in range(-2, aln.nround + 1):
                         fig = plt.figure(figsize=(15, 12))
                         ax1 = fig.add_subplot(1, 1, 1)
-                        if nr == -1:
-                            # vf, bits are not relevant
+                        if nr == -2: # naive id using all vars
+                            # vf, bits are not relevant. 
                             dots = squarify(dotplot(i, aln.j, vf = vf_history[aln.nround],
                                 bits = bits_history[aln.nround], naive = True), np.nan)
-                        elif nr == 0:
+                            nv = "*"
+                            nrname = "x"
+                        elif nr == -1: # naive id using major vars
                             dots = squarify(dotplot(i, aln.j, vf = vf_history[aln.nround],
                                 bits = bits_history[aln.nround], naive = True, vs = v_major), np.nan)
+                            nv = len(v_major)
+                            nrname = "z"
                         else:
                             dots = squarify(dotplot(i, aln.j, vf = vf_history[nr],
                                 bits = bits_history[nr]), np.nan)
+                            nv = len(vf_history[nr])
+                            nrname = f"{nr}"
 
                         xlabels = [ t2c[t] for h, s, t in arrs[aln.j] ]
                         g1 = sns.heatmap(dots,
                                 vmin=np.nanmin(dots), vmax=np.nanmax(dots),
-                                cmap="YlGn" if nr > 0 else "Reds", ax = ax1,
+                                cmap="YlGn" if nr >= 0 else "Reds", ax = ax1,
                                 xticklabels = xlabels, yticklabels = ylabels)
 
-                        nv = len(vf_history[nr]) if nr >= 0 else "*"
                         ax1.set_title(
                                 f"{i}-{aln.j}; @{aln.aln.koff}~{aln.aln.eov}+{aln.aln.fext}-{aln.aln.rext};" +\
-                                f"R{nr if nr > -1 else 'x'}/{aln.nround};\n" +\
+                                f"R{nrname}/{aln.nround};\n" +\
                                 f"PI={100*aln.aln.score:.2f}% Prom={100*aln.gap:.2f}% #v={nv}.")
-                        plt.savefig(f"{i}-to-{aln.j}-{name}-R{nr if nr > -1 else 'x'}.png")
+                        plt.savefig(f"{i}-to-{aln.j}-{name}-R{nrname}.png")
                         plt.close()
 
             exts = Extension(i = i, plus = plus, minus = minus, embed = embed, vf_history = vf_history)
