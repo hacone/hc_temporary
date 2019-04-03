@@ -708,12 +708,12 @@ if __name__ == '__main__':
                 best_score = result_i_long[j][0].score
                 second_best_score = best_score * (1.0 - prom)
                 if result_i_long[j][0].eov > eov_t:
-                    print(f"BEST_EDGES\t{i}\t{j}\t{rj}\t{best_score:.3f}\t{second_best_score:.3f}\t" +\
-                          f"{prom:.3f}\t{result_i_long[j][0].eov}\t{len(v_all)}\t-1", flush=True)
+                    print(f"BEST_EDGES\t{i}\t{j}\t{rj}\t{100*best_score:.3f}\t{100*second_best_score:.3f}\t" +\
+                          f"{100*prom:.3f}\t{result_i_long[j][0].eov}\t{len(v_all)}\t-1", flush=True)
 
             # NOTE: n_units must be >100, or >50
             while nround < 15 and \
-                  best_long_js and best_short_js and \
+                  best_long_js and \
                   vs_local and (vs_local[0]["c"] / vs_local[0]["f"]) > 50:
 
                 result_i_long = get_result_i(i, vf_local, bits_local, targets = best_long_js)
@@ -731,8 +731,8 @@ if __name__ == '__main__':
                     best_score = result_i_long[j][0].score
                     second_best_score = best_score * (1.0 - prom)
                     if result_i_long[j][0].eov > eov_t:
-                        print(f"BEST_EDGES\t{i}\t{j}\t{rj}\t{best_score:.3f}\t{second_best_score:.3f}\t" +\
-                              f"{prom}\t{result_i_long[j][0].eov}\t{len(vf_local)}\t{nround}", flush=True)
+                        print(f"BEST_EDGES\t{i}\t{j}\t{rj}\t{100*best_score:.3f}\t{100*second_best_score:.3f}\t" +\
+                                f"{100*prom:.3f}\t{result_i_long[j][0].eov}\t{len(vf_local)}\t{nround}", flush=True)
 
                 uniques = sorted([ j for j in best_long_js if gap(result_i_long[j]) > prom_t ],
                                    key = lambda x: -result_i_long[x][0].eov)
@@ -763,8 +763,8 @@ if __name__ == '__main__':
                 line += f"\n   i\t   j\t  k\t  e\tfex\trex\tscr\t%gap\tnvars\tround"
                 for balns in plus[:10] + minus[:10] + embed[:10]:
                     line += f"\n{balns.i:4d}\t{balns.j:4d}\t{balns.aln.koff:3d}\t{balns.aln.eov:3d}\t" + \
-                            f"{balns.aln.fext:3d}+\t{balns.aln.rext:3d}-\t{balns.aln.score:.3f}\t" + \
-                            f"{100*balns.gap:.1f} %\t{len(vs_local)}\t{balns.nround}"
+                            f"{balns.aln.fext:3d}+\t{balns.aln.rext:3d}-\t{100*balns.aln.score:.3f}\t" + \
+                            f"{100*balns.gap:.3f} %\t{len(vf_history[balns.nround])}\t{balns.nround}"
 
                 print(line, flush=True)
 
@@ -798,7 +798,7 @@ if __name__ == '__main__':
                           f"from {len(best_long_js)} long / {len(best_short_js)} short reads.")
 
             print("\n".join([ f"{i}\t{aln.j}\t{aln.aln.koff}\t{aln.aln.eov}\t{aln.aln.fext}\t{aln.aln.rext}\t" +\
-                              f"{100*aln.aln.score:.2f}\t{100*aln.gap:.2f}\t{len(vf_history[aln.nround])}\t{aln.nround}"
+                              f"{100*aln.aln.score:.3f}\t{100*aln.gap:.3f}\t{len(vf_history[aln.nround])}\t{aln.nround}"
                               for aln in plus + minus + embed ]),
                   file=open(f"read-{i}.{'rev' if backwards else 'fwd'}.ext", "w"), flush=True)
 
@@ -844,7 +844,7 @@ if __name__ == '__main__':
                         ax1.set_title(
                                 f"{i}-{aln.j}; @{aln.aln.koff}~{aln.aln.eov}+{aln.aln.fext}-{aln.aln.rext};" +\
                                 f"R{nr if nr > -1 else 'x'}/{aln.nround};\n" +\
-                                f"PI={100*aln.aln.score:.1f}% Prom={100*aln.gap:.1f}% #v={nv}.")
+                                f"PI={100*aln.aln.score:.2f}% Prom={100*aln.gap:.2f}% #v={nv}.")
                         plt.savefig(f"{i}-to-{aln.j}-{name}-R{nr if nr > -1 else 'x'}.png")
                         plt.close()
 
