@@ -1,0 +1,432 @@
+########################################
+# Program: needle
+# Rundate: Tue  9 Apr 2019 14:48:17
+# Commandline: needle
+#    -asequence CENP-B-box.fa
+#    -bsequence chrX-monomers.fa
+# Align_format: srspair
+# Report_file: cenpb-box-core.needle
+########################################
+
+#=======================================
+#
+# Aligned_sequences: 2
+# 1: CENPB-BOX-CORE
+# 2: horID_17.mon_0
+# Matrix: EDNAFULL
+# Gap_penalty: 10.0
+# Extend_penalty: 0.5
+#
+# Length: 171
+# Identity:       8/171 ( 4.7%)
+# Similarity:     8/171 ( 4.7%)
+# Gaps:         154/171 (90.1%)
+# Score: 20.0
+# 
+#
+#=======================================
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_      1 AGCATTCTCAGAAAGTTTTCTGCGATGACTGCATTCAACTCACAGAGTTG     50
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_     51 AACAATCCTTCTGATGGAGCAGTTTTGAAACCCTCTTTCTTTGGAATCTG    100
+
+CENPB-BOX-COR      1 ----------------------------NTTCGNNNNANNCGGGN-----     17
+                                                  |||.    |  ||||      
+horID_17.mon_    101 CAAGGGGATATGTGGACCTCTTTGAAGATTTCACTGGAAACGGGATCATC    150
+
+CENPB-BOX-COR     17 ---------------------     17
+                                          
+horID_17.mon_    151 TTCACATAAAAACTAAACAGA    171
+
+
+#=======================================
+#
+# Aligned_sequences: 2
+# 1: CENPB-BOX-CORE
+# 2: horID_17.mon_1
+# Matrix: EDNAFULL
+# Gap_penalty: 10.0
+# Extend_penalty: 0.5
+#
+# Length: 178
+# Identity:       6/178 ( 3.4%)
+# Similarity:     6/178 ( 3.4%)
+# Gaps:         168/178 (94.4%)
+# Score: 7.0
+# 
+#
+#=======================================
+
+CENPB-BOX-COR      1 ---NTTCGNNNNANNCGGGN------------------------------     17
+                         |||        |||.                               
+horID_17.mon_      1 AGCATTC-------TCGGAAACTACTTTGTGATGTTTGTATTCAACTCCC     43
+
+CENPB-BOX-COR     17 --------------------------------------------------     17
+                                                                       
+horID_17.mon_     44 AGAGTTGAACTTTCCTTTTGAAAGAGCAGCTATGAAACACTCTTTTTCGA     93
+
+CENPB-BOX-COR     17 --------------------------------------------------     17
+                                                                       
+horID_17.mon_     94 GAATCTGCAAGTGGACGTTTGGAGGGCTTTGAGGCCTGTGGTGGAAAAGG    143
+
+CENPB-BOX-COR     17 ----------------------------     17
+                                                 
+horID_17.mon_    144 AAATATCTTCACATAAAAACTAGATAGA    171
+
+
+#=======================================
+#
+# Aligned_sequences: 2
+# 1: CENPB-BOX-CORE
+# 2: horID_17.mon_2
+# Matrix: EDNAFULL
+# Gap_penalty: 10.0
+# Extend_penalty: 0.5
+#
+# Length: 175
+# Identity:       8/175 ( 4.6%)
+# Similarity:     8/175 ( 4.6%)
+# Gaps:         162/175 (92.6%)
+# Score: 3.0
+# 
+#
+#=======================================
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_      1 AGCATTCTCAGAAACGACTTTGTGAGGATGGCATTCAACTCATGGAGTTG     50
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_     51 AACAATCCTATTGATAGAGCAGATTGGAATCACTCTTTTTGTAGAATCTG    100
+
+CENPB-BOX-COR      1 -------------------------------------------------N      1
+                                                                       
+horID_17.mon_    101 CAAATGGAGATTTGGACTGCTTTGAGGCCTACGGTCGTATAGGAAGGAAC    150
+
+CENPB-BOX-COR      2 TTC---------GNNNNANNCGGGN     17
+                     |||         |    |  |||. 
+horID_17.mon_    151 TTCATATAAAAGG---CAAACGGA-    171
+
+
+#=======================================
+#
+# Aligned_sequences: 2
+# 1: CENPB-BOX-CORE
+# 2: horID_17.mon_3
+# Matrix: EDNAFULL
+# Gap_penalty: 10.0
+# Extend_penalty: 0.5
+#
+# Length: 168
+# Identity:       9/168 ( 5.4%)
+# Similarity:     9/168 ( 5.4%)
+# Gaps:         151/168 (89.9%)
+# Score: 29.0
+# 
+#
+#=======================================
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_      1 AGCATTCTCAGAATATTCTTTGTGATGATGGAGTTTCACTCACAGAGCTG     50
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_     51 AACATGCCTTTTGATGGAGCAGTTTCCAAATACACTTTTGGTAGAATCTG    100
+
+CENPB-BOX-COR      1 ----------------------------NTTCGNNNNANNCGGGN-----     17
+                                                  ||||    |  ||||      
+horID_17.mon_    101 CAGGTGGATATTTGGAGCTCTCTGAGGATTTCGTTGGAAACGGGAATAAT    150
+
+CENPB-BOX-COR     17 ------------------     17
+                                       
+horID_17.mon_    151 TTCCCATAACTAAACACA    168
+
+
+#=======================================
+#
+# Aligned_sequences: 2
+# 1: CENPB-BOX-CORE
+# 2: horID_17.mon_4
+# Matrix: EDNAFULL
+# Gap_penalty: 10.0
+# Extend_penalty: 0.5
+#
+# Length: 170
+# Identity:       9/170 ( 5.3%)
+# Similarity:     9/170 ( 5.3%)
+# Gaps:         153/170 (90.0%)
+# Score: 29.0
+# 
+#
+#=======================================
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_      1 AACACTCTGAGAAAGTTCTTCATGATGAATGCATTTAACTCGCAGAGATG     50
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_     51 AACCTGCCTTTGAGAGTTCAGGTTCGAAACACTCTTTCTGTAGAATCTGC    100
+
+CENPB-BOX-COR      1 ---------------------------NTTCGNNNNANNCGGGN------     17
+                                                 ||||    |  ||||       
+horID_17.mon_    101 AAGTGGATATTTGGACCACTGGGTGGCCTTCGTTCGAAACGGGTATATGT    150
+
+CENPB-BOX-COR     17 --------------------     17
+                                         
+horID_17.mon_    151 TCACGTAAAAACTAAAGAGA    170
+
+
+#=======================================
+#
+# Aligned_sequences: 2
+# 1: CENPB-BOX-CORE
+# 2: horID_17.mon_5
+# Matrix: EDNAFULL
+# Gap_penalty: 10.0
+# Extend_penalty: 0.5
+#
+# Length: 171
+# Identity:       8/171 ( 4.7%)
+# Similarity:     8/171 ( 4.7%)
+# Gaps:         154/171 (90.1%)
+# Score: 20.0
+# 
+#
+#=======================================
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_      1 AGCATTCTCAGAAACTTCTGAGTGATGATTGCATTCAAGTCACACAGTTG     50
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_     51 AACCCTCCTTTTGATGGAGCAGTTTTGAAACTGTCTTTTTGTAGAATCTG    100
+
+CENPB-BOX-COR      1 ----------------------------NTTCGNNNNANNCGGGN-----     17
+                                                  |||.    |  ||||      
+horID_17.mon_    101 TAAGTGGATACGTGGACCTCTTTGAAGATTTCTTTGGAAACGGGAATATT    150
+
+CENPB-BOX-COR     17 ---------------------     17
+                                          
+horID_17.mon_    151 TCCACAGAAAAACTAAACTGA    171
+
+
+#=======================================
+#
+# Aligned_sequences: 2
+# 1: CENPB-BOX-CORE
+# 2: horID_17.mon_6
+# Matrix: EDNAFULL
+# Gap_penalty: 10.0
+# Extend_penalty: 0.5
+#
+# Length: 190
+# Identity:       8/190 ( 4.2%)
+# Similarity:     8/190 ( 4.2%)
+# Gaps:         177/190 (93.2%)
+# Score: 5.5
+# 
+#
+#=======================================
+
+CENPB-BOX-COR      1 --------------------------------NTTCGNNNNANNC---GG     15
+                                                      ||||    |  |   |.
+horID_17.mon_      1 AGCATTCTCAGAAACTGCTTTGTGATGTTTGTGTTCG----AGCCACAGA     46
+
+CENPB-BOX-COR     16 GN------------------------------------------------     17
+                     |                                                 
+horID_17.mon_     47 GTTTAACATTGCTTTTCATAGAGCAGTTTTGAAATATTCTTTTGGCAGAA     96
+
+CENPB-BOX-COR     17 --------------------------------------------------     17
+                                                                       
+horID_17.mon_     97 TCTGCAAGTGGACATTTGGAGCGCTTTCAGGCCTGTGGTGGAAAAGGCCT    146
+
+CENPB-BOX-COR     17 ----------------------------------------     17
+                                                             
+horID_17.mon_    147 GAAAGCCTTTTCCTTTATCTTCACAGAAAGACGAGAGAGA    186
+
+
+#=======================================
+#
+# Aligned_sequences: 2
+# 1: CENPB-BOX-CORE
+# 2: horID_17.mon_7
+# Matrix: EDNAFULL
+# Gap_penalty: 10.0
+# Extend_penalty: 0.5
+#
+# Length: 171
+# Identity:       9/171 ( 5.3%)
+# Similarity:     9/171 ( 5.3%)
+# Gaps:         154/171 (90.1%)
+# Score: 29.0
+# 
+#
+#=======================================
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_      1 AGCATTGTCAGAAACTTCTTTGTGATGATTGCATTCAACTCACAGAGTTG     50
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_     51 AAGATTCCTTTTGAAACAGCAGTTTCGAAACACTCTTTCTGTGGGATCCG    100
+
+CENPB-BOX-COR      1 ----------------------------NTTCGNNNNANNCGGGN-----     17
+                                                  ||||    |  ||||      
+horID_17.mon_    101 CAAGGGGATATTTGGACCTCTTTGAAGGTTTCGTTGGAAACGGGATAATC    150
+
+CENPB-BOX-COR     17 ---------------------     17
+                                          
+horID_17.mon_    151 TTCACCTAAAAGCTAAACGGA    171
+
+
+#=======================================
+#
+# Aligned_sequences: 2
+# 1: CENPB-BOX-CORE
+# 2: horID_17.mon_8
+# Matrix: EDNAFULL
+# Gap_penalty: 10.0
+# Extend_penalty: 0.5
+#
+# Length: 176
+# Identity:       7/176 ( 4.0%)
+# Similarity:     7/176 ( 4.0%)
+# Gaps:         166/176 (94.3%)
+# Score: 14.0
+# 
+#
+#=======================================
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_      1 AGCATTCTCAGAAACTTCTTTGGGATGTTTGCATTCACCTCACAGAGTTG     50
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_     51 AACTTTCCCTTTGATAGCGCAGCTTTGACACACTTTTTCTACAATGTGCA    100
+
+CENPB-BOX-COR      1 --------NTTCGNNNNANNCGGGN-------------------------     17
+                              ||.|       ||||                          
+horID_17.mon_    101 AGTGGCTATTTAG-------CGGGCTTGGAGGACTGTGTTGGAAAAGGAA    143
+
+CENPB-BOX-COR     17 --------------------------     17
+                                               
+horID_17.mon_    144 ATATCTTCTCCTAAAAACGACATAGA    169
+
+
+#=======================================
+#
+# Aligned_sequences: 2
+# 1: CENPB-BOX-CORE
+# 2: horID_17.mon_9
+# Matrix: EDNAFULL
+# Gap_penalty: 10.0
+# Extend_penalty: 0.5
+#
+# Length: 186
+# Identity:       1/186 ( 0.5%)
+# Similarity:     1/186 ( 0.5%)
+# Gaps:         184/186 (98.9%)
+# Score: 3.0
+# 
+#
+#=======================================
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_      1 AGCATTCTCAGAAACTGCTCTGTGATGATTGCATTCAACTCCCAGAGTTG     50
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_     51 AACATTCCTTTTGATAGAGCAGTTTGCAAACACTCTTTTTGTAGAATCTG    100
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_    101 CAAGTGGAGATTTGGACCGCTTTGAGGCCTGTGGTAGTGAAGGAAAGAAC    150
+
+CENPB-BOX-COR      1 -------------------NTTCGNNNNANNCGGGN     17
+                                         |               
+horID_17.mon_    151 TTCATATAAAAACCAGACGGT---------------    171
+
+
+#=======================================
+#
+# Aligned_sequences: 2
+# 1: CENPB-BOX-CORE
+# 2: horID_17.mon_10
+# Matrix: EDNAFULL
+# Gap_penalty: 10.0
+# Extend_penalty: 0.5
+#
+# Length: 168
+# Identity:       9/168 ( 5.4%)
+# Similarity:     9/168 ( 5.4%)
+# Gaps:         151/168 (89.9%)
+# Score: 29.0
+# 
+#
+#=======================================
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_      1 AGCACTCTCAGAAAATTCTTTGTGACGATGGAGTTTAACTCAGGGAGCTG     50
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_     51 AACATTCGTTATGATGGAGCAGTTTCCAAACACACGTTTTGTAGAATCTG    100
+
+CENPB-BOX-COR      1 ----------------------------NTTCGNNNNANNCGGGN-----     17
+                                                  ||||    |  ||||      
+horID_17.mon_    101 CAAGGGGATATTTGGACCTCTCTGAGGATTTCGTTGGAAACGGGATCAAC    150
+
+CENPB-BOX-COR     17 ------------------     17
+                                       
+horID_17.mon_    151 TTCCCATAACTGAACGGA    168
+
+
+#=======================================
+#
+# Aligned_sequences: 2
+# 1: CENPB-BOX-CORE
+# 2: horID_17.mon_11
+# Matrix: EDNAFULL
+# Gap_penalty: 10.0
+# Extend_penalty: 0.5
+#
+# Length: 170
+# Identity:       7/170 ( 4.1%)
+# Similarity:     7/170 ( 4.1%)
+# Gaps:         153/170 (90.0%)
+# Score: 11.0
+# 
+#
+#=======================================
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_      1 AGCAAACTCAGAACATTCTTTGTGATGTTTGTATTCAACTCACAGAGTTG     50
+
+CENPB-BOX-COR      0 --------------------------------------------------      0
+                                                                       
+horID_17.mon_     51 AACCTTCCTTTGATAGTTCAGGTTTGCAACACCCTTGTAGTAGAATCTGC    100
+
+CENPB-BOX-COR      1 ---------------------------NTTCGNNNNANNCGGGN------     17
+                                                 ||||    |  ||..       
+horID_17.mon_    101 AAGTGTATATTTTGACCACTTTGTAGCCTTCGTTTGAAACGTCTATATCT    150
+
+CENPB-BOX-COR     17 --------------------     17
+                                         
+horID_17.mon_    151 TCACATCAAACCTAGACAGA    170
+
+
+#---------------------------------------
+#---------------------------------------
