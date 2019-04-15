@@ -24,12 +24,12 @@ from EncodedRead import *
 from HOR_segregation import *
 from UnitAnalysis import *
 
-def loadEdges(edges, score_t = 100, prom_t = 30, round_t = -1):
+def loadEdges(edges, score_t = 100, prom_t = 30, round_t = -1, redundant = False, no_lateral = False):
 
     # colnames for edge list
-    # Edge = namedtuple("Edge", ("From", "To", "K", "Eov", "Fext", "Rext", "Score", "Prom", "nVars", "Round"))
     df = pd.read_csv(edges, sep="\t", names = ["From", "To", "K", "Eov", "Fext", "Rext", "Score", "Prom", "nVars", "Round"])
     G = nx.MultiDiGraph()
+
     #G = nx.DiGraph()
     #G = nx.MultiGraph()
 
@@ -37,23 +37,37 @@ def loadEdges(edges, score_t = 100, prom_t = 30, round_t = -1):
     for _k, row in [ (_k, r) for _k, r in df.iterrows()
             if r.Score > score_t and r.Prom > prom_t and r.Round > round_t]:
 
-        #if only_positive and row.Fext < 1:
-        #if only_positive and row.K < 1:
-        #    continue
+        if no_lateral and int(row.K) == 0:
+            continue
 
-        e = ( int(row.From), int(row.To), int(row.K) )
-        if e in G.edges:
-            if G.edges[e]["Score"] >= row.Score:
-                continue
-            # replace with better an edge
-            G.remove_edge(int(row.From), int(row.To), key = int(row.K))
-            G.remove_edge(int(row.To), int(row.From), key = -1 * int(row.K))
+        if int(row.K) >= 0:
+            e = ( int(row.From), int(row.To), int(row.K) )
+        else:
+            e = ( int(row.To), int(row.From), -int(row.K) )
 
-        G.add_edge(int(row.From), int(row.To), key = int(row.K))
-        G.add_edge(int(row.To), int(row.From), key = -1 * int(row.K))
-        for k, v in row.items():
-            G.edges[int(row.From), int(row.To), int(row.K)][k] = v
-            G.edges[int(row.To), int(row.From), -1 * int(row.K)][k] = v
+        # Takes only the edge with best score
+        if e in G.edges and G.edges[e]["Score"] >= row.Score:
+            continue
+
+        if int(row.K) >= 0:
+            G.add_edge(int(row.From), int(row.To), key = int(row.K))
+            for k, v in row.items():
+                G.edges[int(row.From), int(row.To), int(row.K)][k] = v
+        else:
+            G.add_edge(int(row.To), int(row.From), key = -int(row.K))
+            for k, v in row.items():
+                G.edges[int(row.To), int(row.From), -int(row.K)][k] = v
+
+        # if you need redundat graph, add edges with negative direction
+        if redundant:
+            if int(row.K) >= 0:
+                G.add_edge(int(row.To), int(row.From), key = -int(row.K))
+                for k, v in row.items():
+                    G.edges[int(row.To), int(row.From), -int(row.K)][k] = v
+            else:
+                G.add_edge(int(row.From), int(row.To), key = int(row.K))
+                for k, v in row.items():
+                    G.edges[int(row.From), int(row.To), int(row.K)][k] = v
 
     print(f"Loaded {len(G.nodes)} nodes.")
     print(f"describe the graph here.")

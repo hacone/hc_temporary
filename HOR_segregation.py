@@ -247,7 +247,46 @@ def show_HOR(hors):
     show_svg_HOR(dwg, ers_show, hor_show)
     dwg.save()
 
-def print_HOR_read(r):
+# NOTE: for X only; TODO move to the impl of print-hor
+def cenpb_vars(rd, h, summary = False):
+    """ takes a unit (specified by encoded read obj and index),
+    and returns 9x7 (0,3,4,5,7,10,11) matrix which expresses statuses of variants 
+    on CENP-B box recognition motif. The default pattern would be 
+    [
+    [0,0,0,1,0,0,0,0,0], // 0
+    [0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0], // 4*
+    [0,0,0,1,0,0,0,0,0], // 5
+    [0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,1,1]  // 11*
+    ].
+    If `summary` is set, just returns tuple like (59, 4),
+    that is, the number of intact sites, motifs """
+
+    v = { (k, t.pos) for k in [0, 3, 4, 5, 7, 10, 11] for t in rd.mons[h+k].monomer.snvs }
+    os = { 0:0, 3:0, 4:-1, 5:0, 7:0, 10:0, 11:-1 } # offset
+    res = np.array([
+        1 if (k, p + os[k]) in v else 0
+        for k in [0, 3, 4, 5, 7, 10, 11]
+        for p in [129, 130, 131, 132, 137, 140, 141, 142, 143]]).reshape(7, 9)
+
+    # variants present in ref, and their back mutations
+    vb = { (k, t.pos, t.base) for k in [0, 5, 11] for t in rd.mons[h+k].monomer.snvs }
+    res[0,3] = 0 if (0, 132, 'G') in vb else 1
+    res[3,3] = 0 if (5, 132, 'G') in vb else 1
+    res[6,7] = 0 if (11, 141, 'G') in vb else 1
+    res[6,8] = 0 if (11, 142, 'G') in vb else 1
+
+    if summary:
+        intact_motifs = np.all(res == 0, axis = 1).sum()
+        intact_sites = 63 - np.sum(res)
+        return (intact_sites, intact_motifs)
+    else:
+        return res
+
+# NOTE: this option is currently only for X
+def print_HOR_read(r, show_cenpbbxx = False):
     """ exposed for later use. """
     for _idx, _size, elem in r.hors:
 
@@ -261,16 +300,22 @@ def print_HOR_read(r):
             gap = 0 if idx == 0 else -(r.mons[idx].end - r.mons[idx-1].begin)
 
         nvars = sum([ len(m.monomer.snvs) for m in r.mons[idx:idx+size] ])
-        print( f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t{gap}\t{nvars}")
+
+        if show_cenpbbxx:
+            cbb_sites, cbb_motifs = cenpb_vars(r, idx, summary = True) if elem == "~" else (-1, -1)
+            print(f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t" +\
+                  f"{gap}\t{nvars}\t{cbb_sites}\t{cbb_motifs}")
+        else:
+            print( f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t{gap}\t{nvars}")
     print("")
 
-def print_HOR(pkl):
+def print_HOR(pkl, show_cenpbbxx = False):
     """ taking a pickled HOR encoded reads, outputs HOR structure of the reads. """
 
     hors = pickle.load(open(pkl, "rb"))
     print("readname\tbegin\tend\tidx\tsize\telem\tgap\tvars")
     for r in sorted(hors, key=lambda x: -len(x.mons)):
-        print_HOR_read(r)
+        print_HOR_read(r, show_cenpbbxx)
 
 
 def HOR_encoding(pkl, path_merged, path_patterns):
@@ -365,6 +410,9 @@ if __name__ == '__main__':
     parser.add_argument('--merged', dest='merged', help='path to tab-delimited table of monomers to be merged for pattern matching')
     parser.add_argument('--patterns', dest='patterns', help='path to tab-delimited patterns file')
     parser.add_argument('--out', dest='outfile', help='path into which hor encoded reads will be written')
+
+    parser.add_argument('--cenpbbxx', dest='cenpbbxx', action='store_const', const=True, help='add variants data on CENP-box motif (X only)')
+
     #parser.add_argument('', dest='', help='')
     args = parser.parse_args()
 
@@ -404,7 +452,8 @@ if __name__ == '__main__':
 
     elif args.action == "print-hor":
         assert args.hors, "specify path to HOR encoded read"
-        print_HOR(args.hors)
+        print_HOR(args.hors, show_cenpbbxx = args.cenpbbxx)
+        # print_HOR(args.hors)
 
     elif args.action == "show":
         # both stdout and svg; NOTE; or only to svg? cf action print
