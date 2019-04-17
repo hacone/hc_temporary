@@ -275,6 +275,7 @@ if __name__ == '__main__':
 
     # For layout, layout-2
     parser.add_argument('--reverse', dest='backwards', action='store_const', const=True, help='backwards search')
+    parser.add_argument('--skipfig', dest='skipfig', action='store_const', const=True, help='skip generating figures')
     parser.add_argument('--range', dest='sizeranges', help='size ranges to be used')
     parser.add_argument('--params', dest='alignparams',
             help='parameters for alignment; default to score_t, prom_t, eov_t = .6, .3, 4')
@@ -660,7 +661,7 @@ if __name__ == '__main__':
 
         # layout is like [(j0, k0), (j1, k1), (j2, k2)...]
         # extension into the right, or left if backwards is true
-        def extension(i, backwards = False):
+        def extension(i, backwards = False, skip_figure = False):
 
             # initialize for round 0
             nround = 0
@@ -759,9 +760,12 @@ if __name__ == '__main__':
                 embed = pickbest(sorted(embed, key = lambda x: (-x.gap, -x.aln.eov)))
 
                 line = f"\n(+{len(plus)}, -{len(minus)}, ^{len(embed)}) uniques for {i} upto round {nround}."
-                line += f"\n   i\t   j\t  k\t  e\tfex\trex\tscr\t%gap\tnvars\tround"
+
+                line += f"\n   i\t   j\t  li\t  lj\t  k\t  e\tfex\trex\tscr\t%gap\tnvars\tround"
+
                 for balns in plus[:10] + minus[:10] + embed[:10]:
-                    line += f"\n{balns.i:4d}\t{balns.j:4d}\t{balns.aln.koff:3d}\t{balns.aln.eov:3d}\t" + \
+                    line += f"\n{balns.i:4d}\t{balns.j:4d}\t{len(arrs[balns.i]):4d}\t{len(arrs[balns.j]):4d}\t" +\
+                            f"{balns.aln.koff:3d}\t{balns.aln.eov:3d}\t" + \
                             f"{balns.aln.fext:3d}+\t{balns.aln.rext:3d}-\t{100*balns.aln.score:.3f}\t" + \
                             f"{100*balns.gap:.3f} %\t{len(vf_history[balns.nround])}\t{balns.nround}"
 
@@ -796,13 +800,15 @@ if __name__ == '__main__':
                     print(f"Next for {i}: {len(vs_local)} local SNVs found for ~{est_units} units " +\
                           f"from {len(best_long_js)} long / {len(best_short_js)} short reads.")
 
-            print("\n".join([ f"{i}\t{aln.j}\t{aln.aln.koff}\t{aln.aln.eov}\t{aln.aln.fext}\t{aln.aln.rext}\t" +\
+            print("\n".join([ f"{i}\t{aln.j}\t{len(arrs[i]):4d}\t{len(arrs[aln.j]):4d}\t" +\
+                              f"{aln.aln.koff}\t{aln.aln.eov}\t{aln.aln.fext}\t{aln.aln.rext}\t" +\
                               f"{100*aln.aln.score:.3f}\t{100*aln.gap:.3f}\t{len(vf_history[aln.nround])}\t{aln.nround}"
                               for aln in plus + minus + embed ]),
                   file=open(f"read-{i}.{'rev' if backwards else 'fwd'}.ext", "w"), flush=True)
 
+            if skip_figure:
+                return Extension(i = i, plus = plus, minus = minus, embed = embed, vf_history = vf_history)
 
-            # NOTE: generate figures !!
             import matplotlib
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
@@ -856,7 +862,8 @@ if __name__ == '__main__':
             return exts
 
         ## NOTE: always parallelised by 24 
-        exts = [ extension(i, backwards = args.backwards) for i in keys_long if i % 24 == int(args.park) ]
+        exts = [ extension(i, backwards = args.backwards, skip_figure = args.skipfig)
+                 for i in keys_long if i % 24 == int(args.park) ]
         outfile = f"exts-rev-mod{int(args.park)}.pickle" if args.backwards else f"exts-fwd-mod{int(args.park)}.pickle"
         pickle.dump(exts, open(outfile, "wb"))
 
