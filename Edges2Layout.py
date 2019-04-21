@@ -24,57 +24,89 @@ from EncodedRead import *
 from HOR_segregation import *
 from UnitAnalysis import *
 
-def loadEdges(edges, score_t = 100, prom_t = 30, round_t = -1, redundant = False, no_lateral = False):
+def loadEdges(edges, score_t = 100, prom_t = 30, round_t = -1,
+        redundant = False, no_lateral = False,
+        only_dovetail = False):
 
     # colnames for edge list
-    df = pd.read_csv(edges, sep="\t", names = ["From", "To", "K", "Eov", "Fext", "Rext", "Score", "Prom", "nVars", "Round"])
+    df = pd.read_csv(edges, sep="\t",
+            names = ["I", "J", "Li", "Lj", "K", "Eov", "Fext", "Rext", "Score", "Prom", "nVars", "Round"])
+
     G = nx.MultiDiGraph()
-
-    #G = nx.DiGraph()
-    #G = nx.MultiGraph()
-
     # TODO: parametrize initial filter
     for _k, row in [ (_k, r) for _k, r in df.iterrows()
-            if r.Score > score_t and r.Prom > prom_t and r.Round > round_t]:
+            if float(r.Score) > score_t and float(r.Prom) > prom_t and int(r.Round) > round_t]:
 
         if no_lateral and int(row.K) == 0:
             continue
 
+        if only_dovetail:
+            if 0 <= int(row.K) and int(row.K) + int(row.Lj) <= int(row.Li):
+                continue
+            if int(row.K) <= 0 and int(row.K) + int(row.Lj) >= int(row.Li):
+                continue
+
         if int(row.K) >= 0:
-            e = ( int(row.From), int(row.To), int(row.K) )
+            e = ( int(row.I), int(row.J), int(row.K) )
         else:
-            e = ( int(row.To), int(row.From), -int(row.K) )
+            e = ( int(row.J), int(row.I), -int(row.K) )
 
         # Takes only the edge with best score
         if e in G.edges and G.edges[e]["Score"] >= row.Score:
             continue
 
         if int(row.K) >= 0:
-            G.add_edge(int(row.From), int(row.To), key = int(row.K))
+            G.add_edge(int(row.I), int(row.J), key = int(row.K))
             for k, v in row.items():
-                G.edges[int(row.From), int(row.To), int(row.K)][k] = v
+                G.edges[int(row.I), int(row.J), int(row.K)][k] = v
         else:
-            G.add_edge(int(row.To), int(row.From), key = -int(row.K))
+            G.add_edge(int(row.J), int(row.I), key = -int(row.K))
             for k, v in row.items():
-                G.edges[int(row.To), int(row.From), -int(row.K)][k] = v
+                G.edges[int(row.J), int(row.I), -int(row.K)][k] = v
 
         # if you need redundat graph, add edges with negative direction
         if redundant:
             if int(row.K) >= 0:
-                G.add_edge(int(row.To), int(row.From), key = -int(row.K))
+                G.add_edge(int(row.J), int(row.I), key = -int(row.K))
                 for k, v in row.items():
-                    G.edges[int(row.To), int(row.From), -int(row.K)][k] = v
+                    G.edges[int(row.J), int(row.I), -int(row.K)][k] = v
             else:
-                G.add_edge(int(row.From), int(row.To), key = int(row.K))
+                G.add_edge(int(row.I), int(row.J), key = int(row.K))
                 for k, v in row.items():
-                    G.edges[int(row.From), int(row.To), int(row.K)][k] = v
+                    G.edges[int(row.I), int(row.J), int(row.K)][k] = v
 
-    print(f"Loaded {len(G.nodes)} nodes.")
-    print(f"describe the graph here.")
+    print(f"Loaded {len(G.nodes)} nodes and {len(G.edges)} edges.")
+    # print(f"describe the graph here.")
 
     return G
 
-# TODO rename this
+def transitive_cycles(G):
+    """ returns transitively reducible triples """
+
+    # see farther edges earlier
+    edges = sorted(list(G.edges), key=lambda x: (-x[2], x[0], x[1]))
+    transitive_cycles = []
+    n_bads = 0
+
+    for e in edges:
+        for _e, f, fk in list(G.out_edges(e[0], keys = True)):
+            if (f, e[1], e[2] - fk) in G.edges:
+                #print(f"{e[0]} ({fk}) {f} ({e[2]-fk}) {e[1]}", flush = True)
+                print(f"GOOD\t{e} = ({_e}, {f}, {fk}) + ({f}, {e[1]}, {e[2]-fk})",
+                        flush = True)
+                transitive_cycles += [(e[0], f, e[1])]
+
+            for _f, g, gk in list(G.out_edges(f, keys = True)):
+                if g == e[1] and fk + gk != e[2]:
+                    print(f"BAD\t{e} != ({_e}, {f}, {fk}) + ({_f}, {g}, {gk})")
+                    n_bads += 1
+
+    print(f"{n_bads} intransitive; {len(transitive_cycles)} transitive cycles; " +\
+          f"{len(set([ (a,c) for a,b,c in transitive_cycles ]))} reducible edges." )
+    return transitive_cycles
+
+
+# TODO rename this??
 # TODO this is not working as expected
 def flow(G, reverse = False, strict = False):
     r = -1 if reverse else 1
@@ -97,6 +129,8 @@ if __name__ == '__main__':
     parser.add_argument('--edges', dest='edges', help='edge list file')
     parser.add_argument('--layouts', dest='layouts', help='precomputed layouts to be analysed')
 
+    parser.add_argument('--params', dest='params', help='params for filtering edges')
+
     parser.add_argument('-o', dest='outfile', help='the file to be output (consensus reads pickle)')
 
     args = parser.parse_args()
@@ -112,7 +146,24 @@ if __name__ == '__main__':
     import datetime
     datetimestr = datetime.datetime.now().strftime("%Y.%m%d.%H%M")
 
-    if args.action == "layout": # perform layout
+    if args.action == "transitivity": # check transitivity
+
+        if args.params:
+            ap = args.params.split(",")
+            score_t, prom_t, round_t = int(ap[0]), int(ap[1]), int(ap[2])
+        else:
+            score_t, prom_t, round_t = 100, 30, -1
+
+        print(f"{score_t}, {prom_t}, {round_t}")
+        G = loadEdges(args.edges, score_t, prom_t, round_t)
+
+        #def loadEdges(edges, score_t = 100, prom_t = 30, round_t = -1,
+        #redundant = False, no_lateral = False,
+        #only_dovetail = False):
+
+        transitive_cycles(G)
+
+    elif args.action == "layout": # perform layout
 
         # NOTE: do i need to change err_rate (if it affect anything)?
         v_major = var(hers, hor_type = "~", err_rate = args.err_rate if args.err_rate else 0.05,
