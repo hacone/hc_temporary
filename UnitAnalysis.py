@@ -763,13 +763,22 @@ if __name__ == '__main__':
 
                 line += f"\n   i\t   j\t  li\t  lj\t  k\t  e\tfex\trex\tscr\t%gap\tnvars\tround"
 
+                # For general log file
                 for balns in plus[:10] + minus[:10] + embed[:10]:
                     line += f"\n{balns.i:4d}\t{balns.j:4d}\t{len(arrs[balns.i]):4d}\t{len(arrs[balns.j]):4d}\t" +\
                             f"{balns.aln.koff:3d}\t{balns.aln.eov:3d}\t" + \
                             f"{balns.aln.fext:3d}+\t{balns.aln.rext:3d}-\t{100*balns.aln.score:.3f}\t" + \
                             f"{100*balns.gap:.3f} %\t{len(vf_history[balns.nround])}\t{balns.nround}"
-
                 print(line, flush=True)
+
+                # For comfirmation of improvement of graph over iteration
+                print("\n".join([ f"{i}\t{aln.j}\t{len(arrs[i]):4d}\t{len(arrs[aln.j]):4d}\t" +\
+                                  f"{aln.aln.koff}\t{aln.aln.eov}\t{aln.aln.fext}\t{aln.aln.rext}\t" +\
+                                  f"{100*aln.aln.score:.3f}\t{100*aln.gap:.3f}\t" +\
+                                  f"{len(vf_history[aln.nround])}\t{aln.nround}\t{nround}"
+                                  for aln in plus + minus + embed ]),
+                      file=open(f"read-{i}.round-{nround}.{'rev' if backwards else 'fwd'}.ext", "w"), flush=True)
+
 
                 # NOTE: update target, vf, bits
                 n_long_target = int(n_long_target*0.6)
@@ -800,6 +809,7 @@ if __name__ == '__main__':
                     print(f"Next for {i}: {len(vs_local)} local SNVs found for ~{est_units} units " +\
                           f"from {len(best_long_js)} long / {len(best_short_js)} short reads.")
 
+            # Final edge list for read i
             print("\n".join([ f"{i}\t{aln.j}\t{len(arrs[i]):4d}\t{len(arrs[aln.j]):4d}\t" +\
                               f"{aln.aln.koff}\t{aln.aln.eov}\t{aln.aln.fext}\t{aln.aln.rext}\t" +\
                               f"{100*aln.aln.score:.3f}\t{100*aln.gap:.3f}\t{len(vf_history[aln.nround])}\t{aln.nround}"
