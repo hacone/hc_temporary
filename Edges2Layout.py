@@ -207,6 +207,10 @@ def remove_intransitives(G, cycles):
             else:
                 G.remove_edge(i, k) # remove ik 
 
+def limit_outedges(G):
+    """ is this a final resort?? """
+    pass
+
 
 # pop_nodes(G, simple_nodes(G))
 # remove_transitives(G):
@@ -238,12 +242,146 @@ if __name__ == '__main__':
     arrs = [ fillx(her) for her in hers ]
     units = [ (her, h) for her in hers for h, s, t in fillx(her) if t == "~" ]
 
+    # NOTE: do i need to change err_rate (if it affect anything)?
+    v_major = var(hers, hor_type = "~", err_rate = args.err_rate if args.err_rate else 0.05,
+        fq_upper_bound = 1.1, comprehensive = False)
+    v_all = var(hers, hor_type = "~", err_rate = 0.05, fq_upper_bound = 1.1, comprehensive = True)
+    # positions of non-canonical units in read i (index and types)
+    nonstd = { i:  [ (ii, t) for ii, (h, s, t) in enumerate(a) if t != "~" ] for i, a in enumerate(arrs) }
+
     # Time when invoked.
     import datetime
     datetimestr = datetime.datetime.now().strftime("%Y.%m%d.%H%M")
 
-    if args.action == "transitivity": # check transitivity
+    # NOTE: this is too specific to X
+    def consensus(layout, verbose = False):
+        """ take a consensus of the layout """
+        m, M = 10000, -10000
+        types = { i : Counter() for i in range(-10000, 10000) }
 
+        for li, lk in layout:
+            #print(f"arr {li}@{lk} = {arrs[li]}")
+            for ii, (h, s, t) in enumerate(arrs[li]):
+                M, m = max(M, lk + ii), min(m, lk + ii)
+                types[lk+ii].update([t])
+
+        units = { i: { k : Counter() for k in range(12) } for i in range(m, M+1) } # NOTE X
+        depth = { i: 0 for i in range(m, M+1) }
+
+        for li, lk in layout:
+            if all([ True or (t == types[lk+ii].most_common()[0][0]) or t == "*"
+                     for ii, (h, s, t) in enumerate(arrs[li]) ]):
+                for ii, (h, s, t) in enumerate(arrs[li]):
+                    if t == "~":
+                        depth[lk+ii] += 1
+                        for mk in range(0, 12):# NOTE X
+                            units[lk+ii][mk].update(hers[li].mons[h + mk].monomer.snvs)
+
+        cons_hors = [ (i * 12, 12, types[i+m].most_common()[0][0]) for i in range(0, M-m+1) ] # NOTE X
+        cons_mons = [ AssignedMonomer(begin=lk*2057 + k*171, end=lk*2057 + (k+1)*171, ori="+",
+            monomer = Monomer(
+                name = f"Consensus-{lk}-{k}",
+                snvs = [ s for s, sc in units[lk][k].most_common() if sc / depth[lk] > 0.4 ]))
+            for lk in range(m, M+1) for k in range(12) ]
+
+        hor_read = HOR_Read(name = "Consensus",
+                        mons = cons_mons, hors = cons_hors,
+                        length = (M-m)*2057, ori="+")
+
+        if verbose:
+
+            ## total (default) units 
+            coverage = sum([ depth[lk] for lk in range(m, M+1) ])
+
+            print("recall, specificity?, fpr, fnr")
+            print("\ni\ttps(%)\ttns(%)\tfps(%)\tfns(%)\tnvars\tdepth\ttypes observed.")
+
+            vfs = { lk: 
+                [ sc for k in range(12) for s, sc in units[lk][k].most_common() ] # NOTE X
+                if depth[lk] > 0 and cons_hors[lk-m][2] == "~" else []
+                for lk in range(m, M+1) }
+
+            #print(vfs)
+            name = layout[0][0]
+            for lk in range(m, M+1):
+                if depth[lk] > 0 and vfs[lk]:
+                    print(f"VARS\t{name}\t{lk}\t{depth[lk]} => {Counter(vfs[lk])}")
+                else:
+                    print(f"VARS\t{name}\t{lk}\t* => *")
+
+            print(f"name\tlk\tsc\td\tfq")
+            for lk in range(m, M+1):
+                if depth[lk] > 0 and vfs[lk]:
+                    tps = [ sc for sc in vfs[lk] if sc / depth[lk] > 0.5  ]
+                    fps = [ sc for sc in vfs[lk] if sc / depth[lk] <= 0.5 ]
+                    sensitivity = sum(tps) / (depth[lk]*len(tps)) if tps else 0
+                    specificity = 1 - (sum(fps) / (depth[lk]*(2057-len(tps)))) if fps else 0
+                    #print("\n".join([
+                    #    f"VARS\t{name}\t{lk}\t{sc}\t{depth[lk]}\t{100*sc/depth[lk]:.2f}"
+                    #    for sc in sorted(vfs[lk], key = lambda x: -x/depth[lk])]))
+                    print(f"{lk}" +\
+                          f"\t{sum(tps)}/{len(tps)*depth[lk]} ({100*sensitivity:.2f})" +\
+                          f"\t{sum(fps)}/{(2057-len(tps))*depth[lk]} ({100*specificity:.2f})" +\
+                          f"\t{len(tps)}\t{depth[lk]}\t" +\
+                          "\t".join([ f"{t}:{c}" for t, c in types[lk].most_common()]))
+                else:
+                    print(f"{lk}" +\
+                          f"\t*\t*\t*\t*\t" +\
+                          "\t".join([ f"{t}:{c}" for t, c in types[lk].most_common()]))
+
+            print("readname\tbegin\tend\tidx\tsize\telem\tgap\tvars")
+            print_HOR_read(hor_read)
+
+        return hor_read
+
+    def show_layout(layout):
+        """ visualize consensus read """
+
+        cons_read = consensus(layout)
+        cons_arr = fillx(cons_read)
+        # NOTE: do I need this?
+        snvs = var([ hers[li] for li, lk in layout ])
+        print_snvs(snvs)
+
+        snvs_read = var([cons_read], err_rate = 0.01, comprehensive = True) # NOTE: this must be true!
+        print(f"Total {len(snvs_read)} SNVs on this layout.")
+        print_snvs(snvs_read)
+
+        # t2c = {"*": "*", "~": "", "D1":"Y", "D12":"X", "22U":"U", "D39":"V", "D28":"W"}
+
+        labels = [ t2c[t] for h, s, t in cons_read.hors ]
+
+        # using reads SNVs
+        for vs, name in [(v_all, "global"), (v_major, "gl-freq"), (snvs, "local"), (snvs_read, "consensus")]:
+            dots = acomp(cons_read, cons_arr, cons_read, cons_arr, snvs = vs)
+            fig = plt.figure(figsize=(20, 16))
+            sns.set(font_scale=2)
+            # plt.axis("off")
+            ax1 = fig.add_subplot(1, 1, 1)
+            g1 = sns.heatmap(dots,
+                    vmin=np.nanmin(dots), vmax=np.nanmax(dots),
+                    cmap="coolwarm", ax = ax1,
+                    xticklabels = labels, yticklabels = labels)
+            ax1.set_title(f"Layout-{layout[0][0]}; {len(layout)} rds; {len(cons_arr)} units; with {len(vs)} of {name} vars")
+            plt.savefig(f"Layout-{layout[0][0]}-{name}.png")
+            plt.close()
+
+        dwg = svgwrite.Drawing(filename=f"Layout-{layout[0][0]}-str.svg")
+        lkmin = min([ lk for li, lk in layout ])
+
+        for i, (li, lk) in enumerate(layout):
+            read = dwg.add(dwg.g(id=f"rd{li}", stroke='green'))
+            for n, (h, s, t) in enumerate(arrs[li]):
+                read.add(
+                    dwg.rect(insert=((n + lk - lkmin)*5,i*5), size=(4,4),
+                    fill=t2col[t], stroke='black', stroke_width=0.5))
+                # ax1.text((lk + n) * 1, i * 1, t2c[t], fontsize=9) # not svgwrite
+                # NOTE: add label...
+
+        dwg.save()
+        return cons_read
+
+    if args.action == "transitivity": # check transitivity
 
         if args.params:
             ap = args.params.split(",")
@@ -268,22 +406,11 @@ if __name__ == '__main__':
             clusters = [ [(n, 0)] + G.nodes[n]["dang"] for n in G.nodes if "dang" in G.nodes[n] ]
             print(",".join([ f"{len(c)}" for c in sorted(clusters, key = lambda x: -len(x)) ][:20]))
 
-        # NOTE: remove icycles nodes from simples  # TODO
         describe(G, "initial")
         clusters(G)
 
-        # remove isolated nodes # NOTE: unnecessarry
-        #for n in list(G.nodes):
-        #    if G.out_degree(n) == 0 and G.in_degree(n) == 0:
-        #        G.remove_node(n)
+        for iteration in range(10):
 
-        describe(G, "initial")
-        clusters(G)
-
-        iteration = 0
-        while iteration < 9:
-
-            iteration += 1
             tcycles, icycles = transitive_cycles(G, verbose = False)
             remove_transitives(G, tcycles)
             describe(G, f"no-tr-edge.{iteration}")
@@ -306,15 +433,26 @@ if __name__ == '__main__':
             remove_intransitives(G, icycles)
             describe(G, f"!no-int-edge.{iteration}")
 
+            # TODO: I need other reduction operation !?
+
+        # TODO: finally, say something about the layouts
+        clusters = sorted(
+            [ [(n, 0)] + G.nodes[n]["dang"] for n in G.nodes if "dang" in G.nodes[n] ],
+            key = lambda x: -len(x))
+
+        for c in clusters:
+            if len(c) < 10:
+                continue
+            c = sorted(c, key = lambda x: x[1])
+            print(f"{len(c)}: " + "=".join([
+                f"{i}@{k}" for i, k in sorted(c, key = lambda x: x[1]) ]))
+
+            consensus(c, verbose = True)
+            show_layout(c)
+
+
     elif args.action == "layout": # perform layout
 
-        # NOTE: do i need to change err_rate (if it affect anything)?
-        v_major = var(hers, hor_type = "~", err_rate = args.err_rate if args.err_rate else 0.05,
-            fq_upper_bound = 1.1, comprehensive = False)
-        v_all = var(hers, hor_type = "~", err_rate = 0.05, fq_upper_bound = 1.1, comprehensive = True)
-
-        # positions of non-canonical units in read i (index and types)
-        nonstd = { i:  [ (ii, t) for ii, (h, s, t) in enumerate(a) if t != "~" ] for i, a in enumerate(arrs) }
         G = loadEdges(args.edges, 90, 30, 0)
 
         sys.exit()
@@ -385,134 +523,6 @@ if __name__ == '__main__':
                 print(ret)
             return [l] + ret
 
-        # NOTE: this is too specific to X
-        def consensus(layout, verbose = False):
-            """ take a consensus of the layout """
-            m, M = 10000, -10000
-            types = { i : Counter() for i in range(-10000, 10000) }
-
-            for li, lk in layout:
-                #print(f"arr {li}@{lk} = {arrs[li]}")
-                for ii, (h, s, t) in enumerate(arrs[li]):
-                    M, m = max(M, lk + ii), min(m, lk + ii)
-                    types[lk+ii].update([t])
-
-            units = { i: { k : Counter() for k in range(12) } for i in range(m, M+1) } # NOTE X
-            depth = { i: 0 for i in range(m, M+1) }
-
-            for li, lk in layout:
-                if all([ True or (t == types[lk+ii].most_common()[0][0]) or t == "*"
-                         for ii, (h, s, t) in enumerate(arrs[li]) ]):
-                    for ii, (h, s, t) in enumerate(arrs[li]):
-                        if t == "~":
-                            depth[lk+ii] += 1
-                            for mk in range(0, 12):# NOTE X
-                                units[lk+ii][mk].update(hers[li].mons[h + mk].monomer.snvs)
-
-            cons_hors = [ (i * 12, 12, types[i+m].most_common()[0][0]) for i in range(0, M-m+1) ] # NOTE X
-            cons_mons = [ AssignedMonomer(begin=lk*2057 + k*171, end=lk*2057 + (k+1)*171, ori="+",
-                monomer = Monomer(
-                    name = f"Consensus-{lk}-{k}",
-                    snvs = [ s for s, sc in units[lk][k].most_common() if sc / depth[lk] > 0.4 ]))
-                for lk in range(m, M+1) for k in range(12) ]
-
-            hor_read = HOR_Read(name = "Consensus",
-                            mons = cons_mons, hors = cons_hors,
-                            length = (M-m)*2057, ori="+")
-
-            if verbose:
-
-                ## total (default) units 
-                coverage = sum([ depth[lk] for lk in range(m, M+1) ])
-
-                print("recall, specificity?, fpr, fnr")
-                print("\ni\ttps(%)\ttns(%)\tfps(%)\tfns(%)\tnvars\tdepth\ttypes observed.")
-
-                vfs = { lk: 
-                    [ sc for k in range(12) for s, sc in units[lk][k].most_common() ] # NOTE X
-                    if depth[lk] > 0 and cons_hors[lk-m][2] == "~" else []
-                    for lk in range(m, M+1) }
-
-                #print(vfs)
-                name = layout[0][0]
-                for lk in range(m, M+1):
-                    if depth[lk] > 0 and vfs[lk]:
-                        print(f"VARS\t{name}\t{lk}\t{depth[lk]} => {Counter(vfs[lk])}")
-                    else:
-                        print(f"VARS\t{name}\t{lk}\t* => *")
-
-                print(f"name\tlk\tsc\td\tfq")
-                for lk in range(m, M+1):
-                    if depth[lk] > 0 and vfs[lk]:
-                        tps = [ sc for sc in vfs[lk] if sc / depth[lk] > 0.5  ]
-                        fps = [ sc for sc in vfs[lk] if sc / depth[lk] <= 0.5 ]
-                        sensitivity = sum(tps) / (depth[lk]*len(tps)) if tps else 0
-                        specificity = 1 - (sum(fps) / (depth[lk]*(2057-len(tps)))) if fps else 0
-                        #print("\n".join([
-                        #    f"VARS\t{name}\t{lk}\t{sc}\t{depth[lk]}\t{100*sc/depth[lk]:.2f}"
-                        #    for sc in sorted(vfs[lk], key = lambda x: -x/depth[lk])]))
-                        print(f"{lk}" +\
-                              f"\t{sum(tps)}/{len(tps)*depth[lk]} ({100*sensitivity:.2f})" +\
-                              f"\t{sum(fps)}/{(2057-len(tps))*depth[lk]} ({100*specificity:.2f})" +\
-                              f"\t{len(tps)}\t{depth[lk]}\t" +\
-                              "\t".join([ f"{t}:{c}" for t, c in types[lk].most_common()]))
-                    else:
-                        print(f"{lk}" +\
-                              f"\t*\t*\t*\t*\t" +\
-                              "\t".join([ f"{t}:{c}" for t, c in types[lk].most_common()]))
-
-                print("readname\tbegin\tend\tidx\tsize\telem\tgap\tvars")
-                print_HOR_read(hor_read)
-
-            return hor_read
-
-        def show_layout(layout):
-            """ visualize consensus read """
-
-            cons_read = consensus(layout)
-            cons_arr = fillx(cons_read)
-            # NOTE: do I need this?
-            snvs = var([ hers[li] for li, lk in layout ])
-            print_snvs(snvs)
-
-            snvs_read = var([cons_read], err_rate = 0.01, comprehensive = True) # NOTE: this must be true!
-            print(f"Total {len(snvs_read)} SNVs on this layout.")
-            print_snvs(snvs_read)
-
-            # t2c = {"*": "*", "~": "", "D1":"Y", "D12":"X", "22U":"U", "D39":"V", "D28":"W"}
-
-            labels = [ t2c[t] for h, s, t in cons_read.hors ]
-
-            # using reads SNVs
-            for vs, name in [(v_all, "global"), (v_major, "gl-freq"), (snvs, "local"), (snvs_read, "consensus")]:
-                dots = acomp(cons_read, cons_arr, cons_read, cons_arr, snvs = vs)
-                fig = plt.figure(figsize=(20, 16))
-                sns.set(font_scale=2)
-                # plt.axis("off")
-                ax1 = fig.add_subplot(1, 1, 1)
-                g1 = sns.heatmap(dots,
-                        vmin=np.nanmin(dots), vmax=np.nanmax(dots),
-                        cmap="coolwarm", ax = ax1,
-                        xticklabels = labels, yticklabels = labels)
-                ax1.set_title(f"Layout-{layout[0][0]}; {len(layout)} rds; {len(cons_arr)} units; with {len(vs)} of {name} vars")
-                plt.savefig(f"Layout-{layout[0][0]}-{name}.png")
-                plt.close()
-
-            dwg = svgwrite.Drawing(filename=f"Layout-{layout[0][0]}-str.svg")
-            lkmin = min([ lk for li, lk in layout ])
-
-            for i, (li, lk) in enumerate(layout):
-                read = dwg.add(dwg.g(id=f"rd{li}", stroke='green'))
-                for n, (h, s, t) in enumerate(arrs[li]):
-                    read.add(
-                        dwg.rect(insert=((n + lk - lkmin)*5,i*5), size=(4,4),
-                        fill=t2col[t], stroke='black', stroke_width=0.5))
-                    # ax1.text((lk + n) * 1, i * 1, t2c[t], fontsize=9) # not svgwrite
-                    # NOTE: add label...
-
-            dwg.save()
-
-            return cons_read
 
         # if layouts is given
         if args.layouts:
