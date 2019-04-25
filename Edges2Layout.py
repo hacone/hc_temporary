@@ -25,8 +25,7 @@ from HOR_segregation import *
 from UnitAnalysis import *
 
 def loadEdges(edges, score_t = 100, prom_t = 30, round_t = -1,
-        redundant = False, no_lateral = False,
-        only_dovetail = False):
+        no_lateral = False, only_dovetail = False):
 
     # colnames for edge list
     df = pd.read_csv(edges, sep="\t",
@@ -46,7 +45,12 @@ def loadEdges(edges, score_t = 100, prom_t = 30, round_t = -1,
             if int(row.K) <= 0 and int(row.K) + int(row.Lj) >= int(row.Li):
                 continue
 
-        if int(row.K) >= 0:
+        if int(row.K) == 0:
+            if int(row.I) < int(row.J):
+                e = ( int(row.I), int(row.J), 0 )
+            else:
+                e = ( int(row.J), int(row.I), 0 )
+        elif int(row.K) > 0:
             e = ( int(row.I), int(row.J), int(row.K) )
         else:
             e = ( int(row.J), int(row.I), -int(row.K) )
@@ -55,7 +59,17 @@ def loadEdges(edges, score_t = 100, prom_t = 30, round_t = -1,
         if e in G.edges and G.edges[e]["Score"] >= row.Score:
             continue
 
-        if int(row.K) >= 0:
+        if int(row.K) == 0:
+            if int(row.I) < int(row.J):
+                G.add_edge(int(row.I), int(row.J), key = 0)
+                for k, v in row.items():
+                    G.edges[int(row.I), int(row.J), 0][k] = v
+            else:
+                G.add_edge(int(row.J), int(row.I), key = 0)
+                for k, v in row.items():
+                    G.edges[int(row.J), int(row.I), 0][k] = v
+
+        elif int(row.K) > 0:
             G.add_edge(int(row.I), int(row.J), key = int(row.K))
             for k, v in row.items():
                 G.edges[int(row.I), int(row.J), int(row.K)][k] = v
@@ -64,56 +78,138 @@ def loadEdges(edges, score_t = 100, prom_t = 30, round_t = -1,
             for k, v in row.items():
                 G.edges[int(row.J), int(row.I), -int(row.K)][k] = v
 
-        # if you need redundat graph, add edges with negative direction
-        if redundant:
-            if int(row.K) >= 0:
-                G.add_edge(int(row.J), int(row.I), key = -int(row.K))
-                for k, v in row.items():
-                    G.edges[int(row.J), int(row.I), -int(row.K)][k] = v
-            else:
-                G.add_edge(int(row.I), int(row.J), key = int(row.K))
-                for k, v in row.items():
-                    G.edges[int(row.I), int(row.J), int(row.K)][k] = v
-
     print(f"Loaded {len(G.nodes)} nodes and {len(G.edges)} edges.")
     # print(f"describe the graph here.")
 
     return G
 
-def transitive_cycles(G):
-    """ returns transitively reducible triples """
+def transitive_cycles(G, verbose = True):
+    """ returns transitively reducible triples & contradictory cycles """
 
     # see farther edges earlier
     edges = sorted(list(G.edges), key=lambda x: (-x[2], x[0], x[1]))
     transitive_cycles = []
+    contradictory_cycles = []
     n_bads = 0
 
     for e in edges:
         for _e, f, fk in list(G.out_edges(e[0], keys = True)):
             if (f, e[1], e[2] - fk) in G.edges:
-                #print(f"{e[0]} ({fk}) {f} ({e[2]-fk}) {e[1]}", flush = True)
-                print(f"GOOD\t{e} = ({_e}, {f}, {fk}) + ({f}, {e[1]}, {e[2]-fk})",
+                if verbose:
+                    print(f"GOOD\t{e} = ({_e}, {f}, {fk}) + ({f}, {e[1]}, {e[2]-fk})",
                         flush = True)
                 transitive_cycles += [(e[0], f, e[1])]
 
             for _f, g, gk in list(G.out_edges(f, keys = True)):
                 if g == e[1] and fk + gk != e[2]:
-                    print(f"BAD\t{e} != ({_e}, {f}, {fk}) + ({_f}, {g}, {gk})")
+                    if verbose:
+                        print(f"BAD\t{e} != ({_e}, {f}, {fk}) + ({_f}, {g}, {gk})")
+                    contradictory_cycles += [(e[0], f, e[1])]
                     n_bads += 1
 
-    print(f"{n_bads} intransitive; {len(transitive_cycles)} transitive cycles; " +\
-          f"{len(set([ (a,c) for a,b,c in transitive_cycles ]))} reducible edges." )
-    return transitive_cycles
+    if verbose:
+        print(f"{n_bads} intransitive; {len(transitive_cycles)} transitive cycles; " +\
+              f"{len(set([ (a,c) for a,b,c in transitive_cycles ]))} reducible edges." )
+    return (transitive_cycles, contradictory_cycles)
+
+def dang_nodes(G, plus = True):
+    """ pick nodes with degree 1, which are then reduced """
+    if plus:
+        return [ n for n in list(G.nodes) if G.in_degree(n) == 1 and G.out_degree(n) == 0 ]
+    else:
+        return [ n for n in list(G.nodes) if G.in_degree(n) == 0 and G.out_degree(n) == 1 ]
+
+def chop_nodes(G, ns, plus = True):
+    """ trim nodes found by dang_nodes """
+    for n in ns:
+        if plus:
+            b = list(G.in_edges(n, keys = True, data = True))[0]
+            if "dang" in G.nodes[b[0]]:
+                G.nodes[b[0]]["dang"] += [(n, b[2])]
+            else:
+                G.nodes[b[0]]["dang"] = [(n, b[2])]
+            if "dang" in G.nodes[n]:
+                G.nodes[b[0]]["dang"] += [ (m, b[2] + k) for m, k in G.nodes[n]["dang"] ]
+            G.remove_edge(b[0], n)
+
+        else:
+            b = list(G.out_edges(n, keys = True, data = True))[0]
+            if "dang" in G.nodes[b[1]]:
+                G.nodes[b[1]]["dang"] += [(n, -b[2])]
+            else:
+                G.nodes[b[1]]["dang"] = [(n, -b[2])]
+            if "dang" in G.nodes[n]:
+                G.nodes[b[1]]["dang"] += [ (m, -b[2] + k) for m, k in G.nodes[n]["dang"] ]
+            G.remove_edge(n, b[1])
+        G.remove_node(n)
+
+def simple_nodes(G):
+    return [ n for n in list(G.nodes) if G.in_degree(n) == 1 and G.out_degree(n) == 1 ]
+
+def pop_nodes(G, ns):
+    """ pop out simple nodes, unless simple nodes form 3-clique.
+        3-clique may be formed when other simple nodes are popped out, thus it must be checked
+        just before trying to pop them out. """
+
+    for n in sorted(ns):
+        b = list(G.in_edges(n, keys = True, data = True))[0]
+        e = list(G.out_edges(n, keys = True, data = True))[0]
+
+        if (b[0], e[1]) in G.edges:
+            continue
+        G.add_edge(b[0], e[1], key = b[2] + e[2])
+        # NOTE: too high ???
+        G.edges[b[0], e[1], b[2]+e[2]]["Score"] = b[3]["Score"] + e[3]["Score"]
+        G.remove_edge(b[0], n)
+        G.remove_edge(n, e[1])
+        if "dang" in G.nodes[b[0]]:
+            G.nodes[b[0]]["dang"] += [(n, b[2])]
+        else:
+            G.nodes[b[0]]["dang"] = [(n, b[2])]
+        if "dang" in G.nodes[n]:
+            G.nodes[b[0]]["dang"] += [ (m, b[2] + k) for m, k in G.nodes[n]["dang"] ]
+        G.remove_node(n)
+
+def remove_transitives(G, cycles):
+
+    # remove goods (longer edges will be gone)
+    for i, j, k in cycles:
+        if (i, k) in G.edges(keys = False):
+            G.remove_edge(i, k)
+
+def remove_intransitives(G, cycles):
+    # remove bad edges based on its score
+
+    def pick_edge(i, j):
+        f = list(filter(lambda x: x[1] == j,
+                        list(G.edges(i, keys = True, data = True))))
+        return f[0] if f else None
+
+    for i, j, k in cycles:
+        # print(f"bads; {i} {j} {k}")
+        if ((i, j) not in G.edges(keys = False)) \
+                or ((j, k) not in G.edges(keys = False)) \
+                or ((i, k) not in G.edges(keys = False)):
+            continue
+
+        ij = pick_edge(i, j)[3]["Score"]
+        jk = pick_edge(j, k)[3]["Score"]
+        ik = pick_edge(i, k)[3]["Score"]
+
+        if ij < jk:
+            if ij < ik:
+                G.remove_edge(i, j) # remove ij
+            else:
+                G.remove_edge(i, k) # remove ik 
+        else: # jk <= ij
+            if jk < ik:
+                G.remove_edge(j, k) # remove jk
+            else:
+                G.remove_edge(i, k) # remove ik 
 
 
-# TODO rename this??
-# TODO this is not working as expected
-def flow(G, reverse = False, strict = False):
-    r = -1 if reverse else 1
-    t = 0 if strict else -1 * r
-    #return nx.edge_subgraph(G, [ e for e in G.edges if r * G.edges[e]["K"] > t ])
-    return nx.edge_subgraph(G, [ e for e in G.edges if r * e[2] > t ])
-
+# pop_nodes(G, simple_nodes(G))
+# remove_transitives(G):
 
 if __name__ == '__main__':
 
@@ -148,20 +244,67 @@ if __name__ == '__main__':
 
     if args.action == "transitivity": # check transitivity
 
+
         if args.params:
             ap = args.params.split(",")
             score_t, prom_t, round_t = int(ap[0]), int(ap[1]), int(ap[2])
         else:
             score_t, prom_t, round_t = 100, 30, -1
 
-        print(f"{score_t}, {prom_t}, {round_t}")
+        print(f"loading edges with params = s>{score_t}, p>{prom_t}, r>{round_t}")
         G = loadEdges(args.edges, score_t, prom_t, round_t)
 
-        #def loadEdges(edges, score_t = 100, prom_t = 30, round_t = -1,
-        #redundant = False, no_lateral = False,
-        #only_dovetail = False):
+        print(f"name           \t#node\t#edge\t#simp\t#+dang\t#-dang\t#t_cyc\t#i_cyc")
 
-        transitive_cycles(G)
+        def describe(G, name = "Graph"):
+            tcycles, icycles = transitive_cycles(G, verbose = False)
+            simples = simple_nodes(G)
+            plus_dang, minus_dang = dang_nodes(G, True), dang_nodes(G, False)
+            print(f"{name:15}\t{len(G.nodes)}\t{len(G.edges)}\t{len(simples)}\t" +\
+                  f"{len(plus_dang)}\t{len(minus_dang)}\t{len(tcycles)}\t{len(icycles)}")
+
+        def clusters(G):
+            """ collapsed nodes stored as "dang" attribute represents one consistent layout. """
+            clusters = [ [(n, 0)] + G.nodes[n]["dang"] for n in G.nodes if "dang" in G.nodes[n] ]
+            print(",".join([ f"{len(c)}" for c in sorted(clusters, key = lambda x: -len(x)) ][:20]))
+
+        # NOTE: remove icycles nodes from simples  # TODO
+        describe(G, "initial")
+        clusters(G)
+
+        # remove isolated nodes # NOTE: unnecessarry
+        #for n in list(G.nodes):
+        #    if G.out_degree(n) == 0 and G.in_degree(n) == 0:
+        #        G.remove_node(n)
+
+        describe(G, "initial")
+        clusters(G)
+
+        iteration = 0
+        while iteration < 9:
+
+            iteration += 1
+            tcycles, icycles = transitive_cycles(G, verbose = False)
+            remove_transitives(G, tcycles)
+            describe(G, f"no-tr-edge.{iteration}")
+            clusters(G)
+            
+            last_nedges = 100000000
+            while last_nedges > len(G.edges):
+                last_nedges = len(G.edges)
+                chop_nodes(G, dang_nodes(G, True), True)
+                chop_nodes(G, dang_nodes(G, False), False)
+
+            describe(G, f"no-dang.{iteration}")
+            clusters(G)
+
+            pop_nodes(G, simple_nodes(G))
+            describe(G, f"pop-simple.{iteration}")
+            clusters(G)
+
+            tcycles, icycles = transitive_cycles(G, verbose = False)
+            remove_intransitives(G, icycles)
+            describe(G, f"!no-int-edge.{iteration}")
 
     elif args.action == "layout": # perform layout
 
