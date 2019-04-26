@@ -255,6 +255,7 @@ if __name__ == '__main__':
     parser.add_argument('action', metavar='action', type=str,
             help='action to perform: print-var, print-gap, print-snv-evolution...')
     parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads')
+    parser.add_argument('--consensi', dest='consensi', help='comma-separated list of pickled hor-encoded long reads (consensi)')
     parser.add_argument('--vars', dest='vars', help='pickled variant sites (disable auto detection)')
 
     # For draw-units-pca
@@ -289,8 +290,16 @@ if __name__ == '__main__':
     #parser.add_argument('-o', dest='outfile', help='the file to be output (consensus reads pickle)')
 
     args = parser.parse_args()
-    assert args.hors, "specify HOR-encoded reads"
-    hers = pickle.load(open(args.hors, "rb"))
+
+    if args.consensi:
+        hers = []
+        for cp in args.consensi.split(","):
+            hers += pickle.load(open(cp, "rb"))
+            print(f"len(hers) = {len(hers)}")
+    else:
+        assert args.hors, "specify HOR-encoded reads"
+        hers = pickle.load(open(args.hors, "rb"))
+
     arrs = [ fillx(her) for her in hers ]
     hor_type = args.hor_type if args.hor_type else "~"
     units = [ (her, h) for her in hers for h, s, t in fillx(her) if t == hor_type ]
@@ -862,6 +871,7 @@ if __name__ == '__main__':
                                 xticklabels = xlabels, yticklabels = ylabels)
 
                         ax1.set_title(
+                                f"{hers[i].name};\n{hers[aln.j].name}\n;" +\
                                 f"{i}-{aln.j}; @{aln.aln.koff}~{aln.aln.eov}+{aln.aln.fext}-{aln.aln.rext};" +\
                                 f"R{nrname}/{aln.nround};\n" +\
                                 f"PI={100*aln.aln.score:.2f}% Prom={100*aln.gap:.2f}% #v={nv}.")

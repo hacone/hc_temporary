@@ -230,6 +230,7 @@ if __name__ == '__main__':
     parser.add_argument('--layouts', dest='layouts', help='precomputed layouts to be analysed')
 
     parser.add_argument('--params', dest='params', help='params for filtering edges')
+    parser.add_argument('--prefix', dest='prefix', help='prefix of consensus read name')
 
     parser.add_argument('-o', dest='outfile', help='the file to be output (consensus reads pickle)')
 
@@ -254,7 +255,7 @@ if __name__ == '__main__':
     datetimestr = datetime.datetime.now().strftime("%Y.%m%d.%H%M")
 
     # NOTE: this is too specific to X
-    def consensus(layout, verbose = False):
+    def consensus(layout, verbose = False, name = "Consensus"):
         """ take a consensus of the layout """
         m, M = 10000, -10000
         types = { i : Counter() for i in range(-10000, 10000) }
@@ -284,7 +285,7 @@ if __name__ == '__main__':
                 snvs = [ s for s, sc in units[lk][k].most_common() if sc / depth[lk] > 0.4 ]))
             for lk in range(m, M+1) for k in range(12) ]
 
-        hor_read = HOR_Read(name = "Consensus",
+        hor_read = HOR_Read(name = f"{name}",
                         mons = cons_mons, hors = cons_hors,
                         length = (M-m)*2057, ori="+")
 
@@ -375,6 +376,7 @@ if __name__ == '__main__':
                 read.add(
                     dwg.rect(insert=((n + lk - lkmin)*5,i*5), size=(4,4),
                     fill=t2col[t], stroke='black', stroke_width=0.5))
+
                 # ax1.text((lk + n) * 1, i * 1, t2c[t], fontsize=9) # not svgwrite
                 # NOTE: add label...
 
@@ -440,6 +442,7 @@ if __name__ == '__main__':
             [ [(n, 0)] + G.nodes[n]["dang"] for n in G.nodes if "dang" in G.nodes[n] ],
             key = lambda x: -len(x))
 
+        cons_reads = []
         for c in clusters:
             if len(c) < 10:
                 continue
@@ -447,8 +450,13 @@ if __name__ == '__main__':
             print(f"{len(c)}: " + "=".join([
                 f"{i}@{k}" for i, k in sorted(c, key = lambda x: x[1]) ]))
 
-            consensus(c, verbose = True)
+            cons_read = consensus(c, verbose = True,
+                    name = f"{args.prefix}.{c[0][0]}-{len(c)}")
             show_layout(c)
+            cons_reads += [ cons_read ]
+
+        if args.outfile:
+            pickle.dump(cons_reads, open(args.outfile, "wb"))
 
 
     elif args.action == "layout": # perform layout
