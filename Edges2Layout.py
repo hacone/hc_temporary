@@ -29,12 +29,17 @@ def loadEdges(edges, score_t = 100, prom_t = 30, round_t = -1,
 
     # colnames for edge list
     df = pd.read_csv(edges, sep="\t",
-            names = ["I", "J", "Li", "Lj", "K", "Eov", "Fext", "Rext", "Score", "Prom", "nVars", "Round"])
+            names = ["I", "J", "Li", "Lj", "K", "Eov",
+                     "Fext", "Rext", "Score", "Prom", "nVars", "Round"])
+
+    valid_edges = [ (_k, r) for _k, r in df.iterrows()
+        if float(r.Score) > score_t and \
+           float(r.Prom) > prom_t and \
+           int(r.Round) > round_t ]
 
     G = nx.MultiDiGraph()
-    # TODO: parametrize initial filter
-    for _k, row in [ (_k, r) for _k, r in df.iterrows()
-            if float(r.Score) > score_t and float(r.Prom) > prom_t and int(r.Round) > round_t]:
+
+    for _k, row in valid_edges:
 
         if no_lateral and int(row.K) == 0:
             continue
@@ -79,7 +84,6 @@ def loadEdges(edges, score_t = 100, prom_t = 30, round_t = -1,
                 G.edges[int(row.J), int(row.I), -int(row.K)][k] = v
 
     print(f"Loaded {len(G.nodes)} nodes and {len(G.edges)} edges.")
-    # print(f"describe the graph here.")
 
     return G
 
@@ -171,7 +175,6 @@ def pop_nodes(G, ns):
         G.remove_node(n)
 
 def remove_transitives(G, cycles):
-
     # remove goods (longer edges will be gone)
     for i, j, k in cycles:
         if (i, k) in G.edges(keys = False):
@@ -211,6 +214,48 @@ def limit_outedges(G):
     """ is this a final resort?? """
     pass
 
+# TODO: debug this
+def flatten(G, n):
+
+    def extend(G, q, k, reverse = False):
+        assert max([ abs(e[1]) for e in q ]) < k, "invalid extension"
+        # enumerate nodes within k
+        queue, i = q.copy(), 0
+        while i < len(queue):
+            m, mk, hop = queue[i]
+            n_in_q = [ (x[0], x[1]) for x in queue ]
+            if not reverse:
+                out_m = [ (l, mk + lk, hop + 1)
+                        for xm, l, lk in G.out_edges(m, keys = True)
+                        if abs(mk + lk) < k and (l, mk + lk) not in n_in_q ]
+                queue += sorted(out_m, key = lambda x: abs(x[1]))
+            else:
+                in_m = [ (l, mk - lk, hop + 1)
+                        for l, xm, lk in G.in_edges(m, keys = True)
+                        if abs(mk - lk) < k and (l, mk - lk) not in n_in_q ]
+                queue += sorted(in_m, key = lambda x: abs(x[1]))
+            print(f"len(queue) = {len(queue)}, i = {i}")
+            i += 1
+        if Counter([ e[0] for e in queue ]).most_common()[0][1] > 1:
+            return [] # got conflict
+        #elif len(queue) == len(q):
+        #    return [] # no extension
+        else:
+            return sorted(queue, key = lambda x: abs(x[1]))
+
+    queue, k = [(n, 0, 0)], 1
+    while queue and k < 1000:
+        p_queue = queue.copy()
+        queue = extend(G, queue, k, False)
+        k += 1
+
+    queue, k = [(n, 0, 0)], 1
+    while queue and k < 1000:
+        n_queue = queue.copy()
+        queue = extend(G, queue, k, True)
+        k += 1
+
+    return (p_queue, n_queue)
 
 # pop_nodes(G, simple_nodes(G))
 # remove_transitives(G):
@@ -435,7 +480,17 @@ if __name__ == '__main__':
             remove_intransitives(G, icycles)
             describe(G, f"!no-int-edge.{iteration}")
 
-            # TODO: I need other reduction operation !?
+            # TODO: I need other reduction operation !? that will be caled flatten
+
+        # TODO: change this
+        flats = sorted([ flatten(G, i, 0) for i in G.nodes ], key = lambda x: -len(x))
+        clusters = []
+        for fs in flats:
+            _c = []
+            for n, nk in fs:
+                _c += [(n, nk)] + G.nodes[n]["dang"]
+
+            clusters += [ _c ]
 
         # TODO: finally, say something about the layouts
         clusters = sorted(
@@ -449,7 +504,6 @@ if __name__ == '__main__':
             c = sorted(c, key = lambda x: x[1])
             print(f"{len(c)}: " + "=".join([
                 f"{i}@{k}" for i, k in sorted(c, key = lambda x: x[1]) ]))
-
             cons_read = consensus(c, verbose = True,
                     name = f"{args.prefix}.{c[0][0]}-{len(c)}")
             show_layout(c)
