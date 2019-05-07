@@ -214,7 +214,7 @@ def limit_outedges(G):
     """ is this a final resort?? """
     pass
 
-# TODO: debug this
+# TODO: this is too slow
 def flatten(G, n):
 
     def extend(G, q, k, reverse = False):
@@ -273,10 +273,8 @@ if __name__ == '__main__':
     # NOTE it also accepts --err-rate in action layout?
     parser.add_argument('--edges', dest='edges', help='edge list file')
     parser.add_argument('--layouts', dest='layouts', help='precomputed layouts to be analysed')
-
     parser.add_argument('--params', dest='params', help='params for filtering edges')
     parser.add_argument('--prefix', dest='prefix', help='prefix of consensus read name')
-
     parser.add_argument('-o', dest='outfile', help='the file to be output (consensus reads pickle)')
 
     args = parser.parse_args()
@@ -479,11 +477,12 @@ if __name__ == '__main__':
             tcycles, icycles = transitive_cycles(G, verbose = False)
             remove_intransitives(G, icycles)
             describe(G, f"!no-int-edge.{iteration}")
-
             # TODO: I need other reduction operation !? that will be caled flatten
 
+        # NOTE: one more call!
         # TODO: change this
-        flats = sorted([ flatten(G, i, 0) for i in G.nodes ], key = lambda x: -len(x))
+        """
+        flats = sorted([ flatten(G, i) for i in G.nodes ], key = lambda x: -len(x))
         clusters = []
         for fs in flats:
             _c = []
@@ -491,6 +490,7 @@ if __name__ == '__main__':
                 _c += [(n, nk)] + G.nodes[n]["dang"]
 
             clusters += [ _c ]
+        """
 
         # TODO: finally, say something about the layouts
         clusters = sorted(
