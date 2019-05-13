@@ -24,6 +24,39 @@ from EncodedRead import *
 from HOR_segregation import *
 from UnitAnalysis import *
 
+def describe(G, name = "Graph"):
+    tcycles, icycles = transitive_cycles(G, verbose = False)
+    simples = simple_nodes(G)
+    plus_dang, minus_dang = dang_nodes(G, True), dang_nodes(G, False)
+    clens = sorted([ len(comp) for comp in nx.weakly_connected_components(G) ], reverse = True)
+    print(f"{name:15}\t{len(G.nodes)}\t{clens[0]} ({100* clens[0] / sum(clens):.1f})\t" +\
+          f"{len(G.edges)}\t{len(simples)}\t" +\
+          f"{len(plus_dang)}\t{len(minus_dang)}\t{len(tcycles)}\t{len(icycles)}")
+
+def largest_component(G):
+    ln = sorted([ (len(comp), comp) for comp in nx.weakly_connected_components(G) ],
+            reverse = True)[0][1]
+    return G.subgraph(ln).copy()
+
+def danglings(G, verbose = True):
+
+    n_dangs = [ (n, G.nodes[n]["dang"]) for n in G.nodes if "dang" in G.nodes[n] ] #node_with_dangs
+    n_dangs = sorted(n_dangs, key = lambda x: -len(x[1]))
+
+    def gl_dang(d):
+        """ genomic distance in units """
+        return max([ dd[1] for dd in d ])
+
+    sizes = [ len(n[1]) + 1 for n in n_dangs ]
+    gls = [ gl_dang(n[1]) + 1 for n in n_dangs ]
+
+    if verbose:
+        print(f"{len(n_dangs)} nodes with {sum(sizes)} dangs, spanning {sum(gls)} units in total.")
+        print("[(#nodes, gen.len)][:10] = ")
+        print(f"{[ z for z in zip(sizes[:10], gls[:10]) ]}...")
+
+    return n_dangs # list of tuple as in (parent node, list of dangling nodes = (nodeid, rel.pos))
+
 def loadEdges(edges, score_t = 100, prom_t = 30, round_t = -1,
         no_lateral = False, only_dovetail = False):
 
@@ -116,6 +149,7 @@ def transitive_cycles(G, verbose = True):
               f"{len(set([ (a,c) for a,b,c in transitive_cycles ]))} reducible edges." )
     return (transitive_cycles, contradictory_cycles)
 
+# NOTE: deprecate
 def dang_nodes(G, plus = True):
     """ pick nodes with degree 1, which are then reduced """
     if plus:
@@ -123,6 +157,7 @@ def dang_nodes(G, plus = True):
     else:
         return [ n for n in list(G.nodes) if G.in_degree(n) == 0 and G.out_degree(n) == 1 ]
 
+# NOTE: deprecate
 def chop_nodes(G, ns, plus = True):
     """ trim nodes found by dang_nodes """
     for n in ns:
@@ -147,9 +182,11 @@ def chop_nodes(G, ns, plus = True):
             G.remove_edge(n, b[1])
         G.remove_node(n)
 
+# NOTE: deprecate
 def simple_nodes(G):
     return [ n for n in list(G.nodes) if G.in_degree(n) == 1 and G.out_degree(n) == 1 ]
 
+# NOTE: deprecate
 def pop_nodes(G, ns):
     """ pop out simple nodes, unless simple nodes form 3-clique.
         3-clique may be formed when other simple nodes are popped out, thus it must be checked
@@ -160,12 +197,14 @@ def pop_nodes(G, ns):
         e = list(G.out_edges(n, keys = True, data = True))[0]
 
         if (b[0], e[1]) in G.edges:
-            continue
+            continue # triple
+
         G.add_edge(b[0], e[1], key = b[2] + e[2])
         # NOTE: too high ???
         G.edges[b[0], e[1], b[2]+e[2]]["Score"] = b[3]["Score"] + e[3]["Score"]
         G.remove_edge(b[0], n)
         G.remove_edge(n, e[1])
+
         if "dang" in G.nodes[b[0]]:
             G.nodes[b[0]]["dang"] += [(n, b[2])]
         else:
@@ -174,14 +213,108 @@ def pop_nodes(G, ns):
             G.nodes[b[0]]["dang"] += [ (m, b[2] + k) for m, k in G.nodes[n]["dang"] ]
         G.remove_node(n)
 
-def remove_transitives(G, cycles):
+        # NOTE: equivalent to merge_nodes(G, b[0], n, b[2]) ?
+
+def merge_nodes(G, n, m, k):
+    """ m is merged into n """
+    if "dang" in G.nodes[n]:
+        G.nodes[n]["dang"] += [(m, k)]
+    else:
+        G.nodes[n]["dang"] = [(m, k)]
+    # TODO: check why I can't reach here ?!
+    if "dang" in G.nodes[m]:
+        s = len(G.nodes[m]['dang']) + len(G.nodes[n]['dang']) + 1
+        print(f"{s}", end = "")
+        G.nodes[n]["dang"] += [ (l, k + lk) for l, lk in G.nodes[m]["dang"] ]
+    G.remove_node(m)
+
+def prioritise_pair(G):
+    """ require: G has no 3-clique. or should I check that here? (or blacklist might be passed?) """
+
+    def enumerate_triples(G): # e is a form of (s, t, k) or (s, t)
+        triples = []
+        for e in G.edges():
+            for _e, f, fk in list(G.out_edges(e[0], keys = True)):
+                for _f, g, gk in list(G.out_edges(f, keys = True)):
+                    if g == e[1]:
+                        triples += [(e[0], e[1]), (_e, f), (_f, g)]
+
+        # print(f"len(triples) = {len(triples)}")
+        return triples
+
+    triples = enumerate_triples(G)
+
+    el = []
+    for n, m, k in G.edges(keys = True):
+        if (n, m) in triples or (m, n) in triples:
+            continue
+        el += [ (G.edges[n, m, k]["Score"], n, m, k) ]
+
+    return max(el) if el else None
+
+def remove_nontriple(G, n, m, k):
+    """ if no triple (transitively consistent or not) is found,
+    then any pair of neighboring nodes can be reduced into single nodes,
+    without affecting regularity of the graph. such reduction would mean we trust
+    that edge (as we cannot inspect it anymore), so I look for best edges as candidates
+    for reduction pair (n, m); see above. 
+    """
+
+    assert (n, m, k) in G.edges(keys = True), f"no edge {(n, m, k)} found."
+
+    G.remove_edge(n, m, k)
+    for mm, mj, mk in G.out_edges(m, keys = True):
+        G.add_edge(n, mj, key = k + mk) # TODO add data
+        G.edges[n, mj, k + mk]["Score"] = G.edges[mm, mj, mk]["Score"]
+    for mi, mm, mk in G.in_edges(m, keys = True):
+        if mk - k >= 0:
+            G.add_edge(mi, n, key = mk - k) # TODO add data
+            G.edges[mi, n, mk - k]["Score"] = G.edges[mi, mm, mk]["Score"]
+        else:
+            G.add_edge(n, mi, key = k - mk) # TODO add data
+            G.edges[n, mi, k - mk]["Score"] = G.edges[mi, mm, mk]["Score"]
+
+    # TODO: record as dang of n
+    merge_nodes(G, n, m, k)
+
+def remove_nontriple_all(G):
+    # TODO make clear
+    n, e = 0, prioritise_pair(G)
+    while e:
+        remove_nontriple(G, e[1], e[2], e[3])
+        n, e = n + 1, prioritise_pair(G)
+        print(".", end = "", flush = True)
+
+    print(f"\nremoved {n} nodes")
+    describe(G)
+    return n
+
+
+def remove_transitives(G, cycles = None):
+
+    if not cycles:
+        cycles, i = transitive_cycles(G, verbose = False)
     # remove goods (longer edges will be gone)
+    n = 0
     for i, j, k in cycles:
         if (i, k) in G.edges(keys = False):
             G.remove_edge(i, k)
+            n += 1
+            # NOTE: to record data to existing edge, I need to consider the order of elimination
+    describe(G)
+    return n
 
-def remove_intransitives(G, cycles):
+def iter_tr(G):
+    n = remove_transitives(G)
+    while n > 0:
+        n = remove_nontriple_all(G)
+        n += remove_transitives(G)
+
+def remove_intransitives(G, cycles = None):
     # remove bad edges based on its score
+
+    if not cycles:
+        i, cycles = transitive_cycles(G, verbose = False)
 
     def pick_edge(i, j):
         f = list(filter(lambda x: x[1] == j,
@@ -189,7 +322,6 @@ def remove_intransitives(G, cycles):
         return f[0] if f else None
 
     for i, j, k in cycles:
-        # print(f"bads; {i} {j} {k}")
         if ((i, j) not in G.edges(keys = False)) \
                 or ((j, k) not in G.edges(keys = False)) \
                 or ((i, k) not in G.edges(keys = False)):
@@ -209,53 +341,36 @@ def remove_intransitives(G, cycles):
                 G.remove_edge(j, k) # remove jk
             else:
                 G.remove_edge(i, k) # remove ik 
+    describe(G)
 
 def limit_outedges(G):
     """ is this a final resort?? """
     pass
 
-# TODO: this is too slow
-def flatten(G, n):
+def layout190512(G, prefix = "layouts"):
+    """ returns layout :: [(nodeid, pos)],
+    which is then pickled and passed to visualization and stuff """
 
-    def extend(G, q, k, reverse = False):
-        assert max([ abs(e[1]) for e in q ]) < k, "invalid extension"
-        # enumerate nodes within k
-        queue, i = q.copy(), 0
-        while i < len(queue):
-            m, mk, hop = queue[i]
-            n_in_q = [ (x[0], x[1]) for x in queue ]
-            if not reverse:
-                out_m = [ (l, mk + lk, hop + 1)
-                        for xm, l, lk in G.out_edges(m, keys = True)
-                        if abs(mk + lk) < k and (l, mk + lk) not in n_in_q ]
-                queue += sorted(out_m, key = lambda x: abs(x[1]))
-            else:
-                in_m = [ (l, mk - lk, hop + 1)
-                        for l, xm, lk in G.in_edges(m, keys = True)
-                        if abs(mk - lk) < k and (l, mk - lk) not in n_in_q ]
-                queue += sorted(in_m, key = lambda x: abs(x[1]))
-            print(f"len(queue) = {len(queue)}, i = {i}")
-            i += 1
-        if Counter([ e[0] for e in queue ]).most_common()[0][1] > 1:
-            return [] # got conflict
-        #elif len(queue) == len(q):
-        #    return [] # no extension
-        else:
-            return sorted(queue, key = lambda x: abs(x[1]))
+    describe(G) # description of initial graph loaded
 
-    queue, k = [(n, 0, 0)], 1
-    while queue and k < 1000:
-        p_queue = queue.copy()
-        queue = extend(G, queue, k, False)
-        k += 1
+    # let's focus on the largest components
+    G = largest_component(G)
+    describe(G)
 
-    queue, k = [(n, 0, 0)], 1
-    while queue and k < 1000:
-        n_queue = queue.copy()
-        queue = extend(G, queue, k, True)
-        k += 1
+    ## then I believe it's not so harmful to remove in-transitive node firstly;
+    ## but let's make sure firstly this won't be harmful really.
+    # remove_transitives(G)
+    # remove_intransitives(G)
 
-    return (p_queue, n_queue)
+    # then, iteratively reduce, edges & nodes ...
+    iter_tr(G)
+
+    nd = sorted(danglings(G, verbose = True),
+            key = lambda x: -x[1][-1][1]) # sort by the supposed genomic length
+    layouts = [ [(d[0], 0)] + d[1] for d in nd ]
+    pickle.dump(layouts, open(prefix + ".pkl", "wb"))
+
+    # then, check the resultant is OK as a set of layout.
 
 # pop_nodes(G, simple_nodes(G))
 # remove_transitives(G):
@@ -286,147 +401,12 @@ if __name__ == '__main__':
     arrs = [ fillx(her) for her in hers ]
     units = [ (her, h) for her in hers for h, s, t in fillx(her) if t == "~" ]
 
-    # NOTE: do i need to change err_rate (if it affect anything)?
-    v_major = var(hers, hor_type = "~", err_rate = args.err_rate if args.err_rate else 0.05,
-        fq_upper_bound = 1.1, comprehensive = False)
-    v_all = var(hers, hor_type = "~", err_rate = 0.05, fq_upper_bound = 1.1, comprehensive = True)
-    # positions of non-canonical units in read i (index and types)
-    nonstd = { i:  [ (ii, t) for ii, (h, s, t) in enumerate(a) if t != "~" ] for i, a in enumerate(arrs) }
 
     # Time when invoked.
     import datetime
     datetimestr = datetime.datetime.now().strftime("%Y.%m%d.%H%M")
 
-    # NOTE: this is too specific to X
-    def consensus(layout, verbose = False, name = "Consensus"):
-        """ take a consensus of the layout """
-        m, M = 10000, -10000
-        types = { i : Counter() for i in range(-10000, 10000) }
-
-        for li, lk in layout:
-            #print(f"arr {li}@{lk} = {arrs[li]}")
-            for ii, (h, s, t) in enumerate(arrs[li]):
-                M, m = max(M, lk + ii), min(m, lk + ii)
-                types[lk+ii].update([t])
-
-        units = { i: { k : Counter() for k in range(12) } for i in range(m, M+1) } # NOTE X
-        depth = { i: 0 for i in range(m, M+1) }
-
-        for li, lk in layout:
-            if all([ True or (t == types[lk+ii].most_common()[0][0]) or t == "*"
-                     for ii, (h, s, t) in enumerate(arrs[li]) ]):
-                for ii, (h, s, t) in enumerate(arrs[li]):
-                    if t == "~":
-                        depth[lk+ii] += 1
-                        for mk in range(0, 12):# NOTE X
-                            units[lk+ii][mk].update(hers[li].mons[h + mk].monomer.snvs)
-
-        cons_hors = [ (i * 12, 12, types[i+m].most_common()[0][0]) for i in range(0, M-m+1) ] # NOTE X
-        cons_mons = [ AssignedMonomer(begin=lk*2057 + k*171, end=lk*2057 + (k+1)*171, ori="+",
-            monomer = Monomer(
-                name = f"Consensus-{lk}-{k}",
-                snvs = [ s for s, sc in units[lk][k].most_common() if sc / depth[lk] > 0.4 ]))
-            for lk in range(m, M+1) for k in range(12) ]
-
-        hor_read = HOR_Read(name = f"{name}",
-                        mons = cons_mons, hors = cons_hors,
-                        length = (M-m)*2057, ori="+")
-
-        if verbose:
-
-            ## total (default) units 
-            coverage = sum([ depth[lk] for lk in range(m, M+1) ])
-
-            print("recall, specificity?, fpr, fnr")
-            print("\ni\ttps(%)\ttns(%)\tfps(%)\tfns(%)\tnvars\tdepth\ttypes observed.")
-
-            vfs = { lk: 
-                [ sc for k in range(12) for s, sc in units[lk][k].most_common() ] # NOTE X
-                if depth[lk] > 0 and cons_hors[lk-m][2] == "~" else []
-                for lk in range(m, M+1) }
-
-            #print(vfs)
-            name = layout[0][0]
-            for lk in range(m, M+1):
-                if depth[lk] > 0 and vfs[lk]:
-                    print(f"VARS\t{name}\t{lk}\t{depth[lk]} => {Counter(vfs[lk])}")
-                else:
-                    print(f"VARS\t{name}\t{lk}\t* => *")
-
-            print(f"name\tlk\tsc\td\tfq")
-            for lk in range(m, M+1):
-                if depth[lk] > 0 and vfs[lk]:
-                    tps = [ sc for sc in vfs[lk] if sc / depth[lk] > 0.5  ]
-                    fps = [ sc for sc in vfs[lk] if sc / depth[lk] <= 0.5 ]
-                    sensitivity = sum(tps) / (depth[lk]*len(tps)) if tps else 0
-                    specificity = 1 - (sum(fps) / (depth[lk]*(2057-len(tps)))) if fps else 0
-                    #print("\n".join([
-                    #    f"VARS\t{name}\t{lk}\t{sc}\t{depth[lk]}\t{100*sc/depth[lk]:.2f}"
-                    #    for sc in sorted(vfs[lk], key = lambda x: -x/depth[lk])]))
-                    print(f"{lk}" +\
-                          f"\t{sum(tps)}/{len(tps)*depth[lk]} ({100*sensitivity:.2f})" +\
-                          f"\t{sum(fps)}/{(2057-len(tps))*depth[lk]} ({100*specificity:.2f})" +\
-                          f"\t{len(tps)}\t{depth[lk]}\t" +\
-                          "\t".join([ f"{t}:{c}" for t, c in types[lk].most_common()]))
-                else:
-                    print(f"{lk}" +\
-                          f"\t*\t*\t*\t*\t" +\
-                          "\t".join([ f"{t}:{c}" for t, c in types[lk].most_common()]))
-
-            print("readname\tbegin\tend\tidx\tsize\telem\tgap\tvars")
-            print_HOR_read(hor_read)
-
-        return hor_read
-
-    def show_layout(layout):
-        """ visualize consensus read """
-
-        cons_read = consensus(layout)
-        cons_arr = fillx(cons_read)
-        # NOTE: do I need this?
-        snvs = var([ hers[li] for li, lk in layout ])
-        print_snvs(snvs)
-
-        snvs_read = var([cons_read], err_rate = 0.01, comprehensive = True) # NOTE: this must be true!
-        print(f"Total {len(snvs_read)} SNVs on this layout.")
-        print_snvs(snvs_read)
-
-        # t2c = {"*": "*", "~": "", "D1":"Y", "D12":"X", "22U":"U", "D39":"V", "D28":"W"}
-
-        labels = [ t2c[t] for h, s, t in cons_read.hors ]
-
-        # using reads SNVs
-        for vs, name in [(v_all, "global"), (v_major, "gl-freq"), (snvs, "local"), (snvs_read, "consensus")]:
-            dots = acomp(cons_read, cons_arr, cons_read, cons_arr, snvs = vs)
-            fig = plt.figure(figsize=(20, 16))
-            sns.set(font_scale=2)
-            # plt.axis("off")
-            ax1 = fig.add_subplot(1, 1, 1)
-            g1 = sns.heatmap(dots,
-                    vmin=np.nanmin(dots), vmax=np.nanmax(dots),
-                    cmap="coolwarm", ax = ax1,
-                    xticklabels = labels, yticklabels = labels)
-            ax1.set_title(f"Layout-{layout[0][0]}; {len(layout)} rds; {len(cons_arr)} units; with {len(vs)} of {name} vars")
-            plt.savefig(f"Layout-{layout[0][0]}-{name}.png")
-            plt.close()
-
-        dwg = svgwrite.Drawing(filename=f"Layout-{layout[0][0]}-str.svg")
-        lkmin = min([ lk for li, lk in layout ])
-
-        for i, (li, lk) in enumerate(layout):
-            read = dwg.add(dwg.g(id=f"rd{li}", stroke='green'))
-            for n, (h, s, t) in enumerate(arrs[li]):
-                read.add(
-                    dwg.rect(insert=((n + lk - lkmin)*5,i*5), size=(4,4),
-                    fill=t2col[t], stroke='black', stroke_width=0.5))
-
-                # ax1.text((lk + n) * 1, i * 1, t2c[t], fontsize=9) # not svgwrite
-                # NOTE: add label...
-
-        dwg.save()
-        return cons_read
-
-    if args.action == "transitivity": # check transitivity
+    if args.action == "layout190512": # make layout !
 
         if args.params:
             ap = args.params.split(",")
@@ -437,19 +417,20 @@ if __name__ == '__main__':
         print(f"loading edges with params = s>{score_t}, p>{prom_t}, r>{round_t}")
         G = loadEdges(args.edges, score_t, prom_t, round_t)
 
-        print(f"name           \t#node\t#edge\t#simp\t#+dang\t#-dang\t#t_cyc\t#i_cyc")
+        # TODO: change?
+        print(f"name\t#node\t#in-largest\t#edge\t#simp\t#+dang\t#-dang\t#t_cyc\t#i_cyc")
 
-        def describe(G, name = "Graph"):
-            tcycles, icycles = transitive_cycles(G, verbose = False)
-            simples = simple_nodes(G)
-            plus_dang, minus_dang = dang_nodes(G, True), dang_nodes(G, False)
-            print(f"{name:15}\t{len(G.nodes)}\t{len(G.edges)}\t{len(simples)}\t" +\
-                  f"{len(plus_dang)}\t{len(minus_dang)}\t{len(tcycles)}\t{len(icycles)}")
+        # NOTE: maybe I want to change its logic a bit
+        layout190512(G, prefix = datetimestr + f".{score_t}.{prom_t}.{round_t}")
 
+        print("All done")
+
+        """
         def clusters(G):
-            """ collapsed nodes stored as "dang" attribute represents one consistent layout. """
             clusters = [ [(n, 0)] + G.nodes[n]["dang"] for n in G.nodes if "dang" in G.nodes[n] ]
-            print(",".join([ f"{len(c)}" for c in sorted(clusters, key = lambda x: -len(x)) ][:20]))
+            clusters = sorted(clusters, key = lambda x: -len(x))
+            return clusters
+            # print(",".join([ f"{len(c)}" for c in clusters ][:20]))
 
         describe(G, "initial")
         clusters(G)
@@ -478,9 +459,11 @@ if __name__ == '__main__':
             remove_intransitives(G, icycles)
             describe(G, f"!no-int-edge.{iteration}")
             # TODO: I need other reduction operation !? that will be caled flatten
+        """
 
         # NOTE: one more call!
         # TODO: change this
+
         """
         flats = sorted([ flatten(G, i) for i in G.nodes ], key = lambda x: -len(x))
         clusters = []
@@ -490,13 +473,13 @@ if __name__ == '__main__':
                 _c += [(n, nk)] + G.nodes[n]["dang"]
 
             clusters += [ _c ]
-        """
 
         # TODO: finally, say something about the layouts
         clusters = sorted(
             [ [(n, 0)] + G.nodes[n]["dang"] for n in G.nodes if "dang" in G.nodes[n] ],
             key = lambda x: -len(x))
 
+        # TODO: move to l2f
         cons_reads = []
         for c in clusters:
             if len(c) < 10:
@@ -512,7 +495,9 @@ if __name__ == '__main__':
         if args.outfile:
             pickle.dump(cons_reads, open(args.outfile, "wb"))
 
+        """
 
+    # NOTE: Followings are to be all deprecated !!
     elif args.action == "layout": # perform layout
 
         G = loadEdges(args.edges, 90, 30, 0)
@@ -540,71 +525,6 @@ if __name__ == '__main__':
             print(f"{bridges.most_common()[:3]} of {sum(bridges.values())}")
 
             return bridges
-
-        def sanitize(l, ins = None, dryrun = False):
-            """ sanity of the layout, returning list of layouts """
-
-            if len(l) < 2:
-                return [l]
-
-            print(f"sanitizing a layout with {l[0]} of length {len(l)}")
-            ret = []
-
-            ins = ins if ins else G.edges(keys = True)
-            # # global blacklist
-            ls = { li: lk for li, lk in l } # set representation
-            self_edges = [ (gi, gj, k) for gi, gj, k in ins if gi in ls and gj in ls ]
-            # for each node in layout, list and number of (in)consystencies
-            ics = { li[0]: [ (ls[gj] - ls[gi] - k, gj if gi == li[0] else gi)
-                          for gi, gj, k in self_edges if li[0] in [gi, gj]]
-                    for li in l }
-
-            nics = { li[0]: len([ cp for cp in ics[li[0]] if cp[0] != 0 ]) for li in l }
-            bads = sorted([ li[0] for li in l if ics[li[0]]], key = lambda x: -(nics[x] / len(ics[x])))
-
-            # print(ics)
-            print(nics)
-            print(bads)
-
-            while bads and nics[bads[0]]:
-                l = [ li for li in l if li[0] != bads[0] ] # remove the worst
-                ret += [[ (bads[0], 0) ]]
-
-                ls = { li: lk for li, lk in l } # set representation
-                self_edges = [ (gi, gj, k) for gi, gj, k in (ins if ins else G.edges(keys = True)) if gi in ls and gj in ls ]
-                # for each node in layout, list and number of (in)consystencies
-                ics = { li[0]: [ (ls[gj] - ls[gi] - k, gj if gi == li[0] else gi)
-                              for gi, gj, k in self_edges if li[0] in [gi, gj]]
-                        for li in l }
-                nics = { li[0]: len([ cp for cp in ics[li[0]] if cp[0] != 0]) for li in l }
-                bads = sorted([ li[0] for li in l if ics[li[0]]], key = lambda x: -(nics[x] / len(ics[x])))
-                print(",".join([ f"{bi}:{nics[bi]}/{len(ics[bi])}" for bi in bads]))
-
-            if ret:
-                print("fluctured:" + f"{len(ret)} + {len(l)}")
-                print(ret)
-            return [l] + ret
-
-
-        # if layouts is given
-        if args.layouts:
-
-            # say something about global mismatch distribution.
-            layouts = pickle.load(open(args.layouts, "rb"))
-            layouts = sorted(layouts, key = lambda x: -len(x))
-
-            cons_reads = []
-            for i in range(len(layouts)): 
-                if len(layouts[i]) > 4:
-                    print(f"consensus for {i}")
-                    # cons_reads += [ show_layout(layouts[i]) ]
-                    cons_reads += [ consensus(layouts[i]) ]
-
-            # TODO
-            if args.outfile:
-                pickle.dump(cons_reads, open(args.outfile, "wb"))
-
-            sys.exit()
 
         # Initialize
         layouts = [ [(n, 0)] for n in list(G.nodes) ]
