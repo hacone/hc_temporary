@@ -217,6 +217,7 @@ def pop_nodes(G, ns):
 
 def merge_nodes(G, n, m, k):
     """ m is merged into n """
+
     if "dang" in G.nodes[n]:
         G.nodes[n]["dang"] += [(m, k)]
     else:
@@ -252,7 +253,7 @@ def prioritise_pair(G):
 
     return max(el) if el else None
 
-def remove_nontriple(G, n, m, k):
+def remove_nontriple(G, n, m, k, arrs = None):
     """ if no triple (transitively consistent or not) is found,
     then any pair of neighboring nodes can be reduced into single nodes,
     without affecting regularity of the graph. such reduction would mean we trust
@@ -261,6 +262,33 @@ def remove_nontriple(G, n, m, k):
     """
 
     assert (n, m, k) in G.edges(keys = True), f"no edge {(n, m, k)} found."
+
+    """ if necessarry, it checks proper alignment of special units using arrs data given. """
+    # TODO: check mergeability here, before any update on graph
+
+    if arrs:
+        drydang = [(n, 0), (m, k)]
+        if "dang" in G.nodes[n]:
+            drydang += G.nodes[n]["dang"]
+        if "dang" in G.nodes[m]:
+            drydang += [ (di, dk + k) for di, dk in G.nodes[m]["dang"] ]
+
+        types = { i : Counter() for i in range(-10000, 10000) }
+
+        for li, lk in drydang:
+            for ii, (h, s, t) in enumerate(arrs[li]):
+                if t == "*":
+                    continue # I allow wildcard units
+                if t == "D28":
+                    types[lk+ii].update(["D39"]) # D28 is assumed to be the same as D39
+                else:
+                    types[lk+ii].update([t])
+
+        if any([ len(types[i]) > 1 for i in types.keys() ]):
+            print("got conflict l.289")
+            G.remove_edge(n, m, k) # I dont wanna see you again.
+            return -1 # without doing anything
+        # print(drydang)
 
     G.remove_edge(n, m, k)
     for mm, mj, mk in G.out_edges(m, keys = True):
@@ -277,11 +305,11 @@ def remove_nontriple(G, n, m, k):
     # TODO: record as dang of n
     merge_nodes(G, n, m, k)
 
-def remove_nontriple_all(G):
+def remove_nontriple_all(G, arrs = None):
     # TODO make clear
     n, e = 0, prioritise_pair(G)
     while e:
-        remove_nontriple(G, e[1], e[2], e[3])
+        remove_nontriple(G, e[1], e[2], e[3], arrs = arrs)
         n, e = n + 1, prioritise_pair(G)
         print(".", end = "", flush = True)
 
@@ -304,10 +332,10 @@ def remove_transitives(G, cycles = None):
     describe(G)
     return n
 
-def iter_tr(G):
+def iter_tr(G, arrs = None):
     n = remove_transitives(G)
     while n > 0:
-        n = remove_nontriple_all(G)
+        n = remove_nontriple_all(G, arrs = arrs)
         n += remove_transitives(G)
 
 def remove_intransitives(G, cycles = None):
@@ -347,7 +375,7 @@ def limit_outedges(G):
     """ is this a final resort?? """
     pass
 
-def layout190512(G, prefix = "layouts"):
+def layout190512(G, prefix = "layouts", arrs = None):
     """ returns layout :: [(nodeid, pos)],
     which is then pickled and passed to visualization and stuff """
 
@@ -363,7 +391,7 @@ def layout190512(G, prefix = "layouts"):
     # remove_intransitives(G)
 
     # then, iteratively reduce, edges & nodes ...
-    iter_tr(G)
+    iter_tr(G, arrs = arrs)
 
     nd = sorted(danglings(G, verbose = True),
             key = lambda x: -x[1][-1][1]) # sort by the supposed genomic length
@@ -390,6 +418,8 @@ if __name__ == '__main__':
     parser.add_argument('--layouts', dest='layouts', help='precomputed layouts to be analysed')
     parser.add_argument('--params', dest='params', help='params for filtering edges')
     parser.add_argument('--prefix', dest='prefix', help='prefix of consensus read name')
+    parser.add_argument('--noc', dest='noc', action='store_const', const=True,
+            help='not allow conflict of special HOR vars in layouting')
     parser.add_argument('-o', dest='outfile', help='the file to be output (consensus reads pickle)')
 
     args = parser.parse_args()
@@ -400,7 +430,6 @@ if __name__ == '__main__':
     hers = pickle.load(open(args.hors, "rb"))
     arrs = [ fillx(her) for her in hers ]
     units = [ (her, h) for her in hers for h, s, t in fillx(her) if t == "~" ]
-
 
     # Time when invoked.
     import datetime
@@ -421,9 +450,13 @@ if __name__ == '__main__':
         print(f"name\t#node\t#in-largest\t#edge\t#simp\t#+dang\t#-dang\t#t_cyc\t#i_cyc")
 
         # NOTE: maybe I want to change its logic a bit
-        layout190512(G, prefix = datetimestr + f".{score_t}.{prom_t}.{round_t}")
+        #layout190512(G, prefix = datetimestr + f".{score_t}.{prom_t}.{round_t}")
+        if args.noc:
+            layout190512(G, prefix = datetimestr + f".{score_t}.{prom_t}.{round_t}-noc", arrs = arrs)
+        else:
+            layout190512(G, prefix = datetimestr + f".{score_t}.{prom_t}.{round_t}", arrs = None)
 
-        print("All done")
+        print("All done.")
 
         """
         def clusters(G):

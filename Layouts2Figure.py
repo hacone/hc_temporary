@@ -175,21 +175,49 @@ if __name__ == '__main__':
             plt.savefig(f"Layout-{layout[0][0]}-{name}.svg")
             plt.close()
 
+        ## print out its structure / CENP-B presense
         dwg = svgwrite.Drawing(filename=f"Layout-{layout[0][0]}-str.svg")
         lkmin = min([ lk for li, lk in layout ])
 
-        rightmost = 0
         for i, (li, lk) in enumerate(sorted(layout, key = lambda x: x[1])):
             read = dwg.add(dwg.g(id=f"rd{li}", stroke='green'))
             for n, (h, s, t) in enumerate(arrs[li]):
                 read.add(
                     dwg.rect(insert=(30 + (n + lk - lkmin)*25, 30 + i*25), size=(20,20),
                     fill=t2col[t], stroke='black', stroke_width=2))
-                rightmost = max(rightmost, (30 + (n + lk - lkmin)*25))
                 # ax1.text((lk + n) * 1, i * 1, t2c[t], fontsize=9) # not svgwrite
                 # NOTE: add label...
 
-        dwg.rect(insert=(rightmost + 30, 25*len(layout) + 50), size=(1,1))
+        for n, (h, s, t) in enumerate(cons_arr):
+            if t != "~":
+                continue
+            intact_sites, intact_motifs = cenpb_vars(cons_read, h, summary = True)
+
+            height = 3 * (int(intact_sites) - 40) # NOTE: baseline is 40
+            dwg.add(dwg.rect(
+                insert=((n - lkmin)*25 + 30, 25*len(layout) + 110 - height),
+                size=(20, height))) # NOTE: baseline is 40
+
+            height = int(intact_motifs * 6)
+            dwg.add(dwg.rect(
+                insert=((n - lkmin)*25 + 30, 25*len(layout) + 155 - height),
+                size=(20, height)))
+
+        dwg.add(dwg.line(
+            start=((0 - lkmin)*25 + 30, 25*len(layout) + 110 - 69),
+            end=((len(cons_arr) - lkmin)*25 + 30, 25*len(layout) + 110 - 69),
+            stroke="black", stroke_width=2)),
+
+        dwg.add(dwg.line(
+            start=((0 - lkmin)*25 + 30, 25*len(layout) + 155 - 42),
+            end=((len(cons_arr) - lkmin)*25 + 30, 25*len(layout) + 155 - 42),
+            stroke="black", stroke_width=2)),
+
+        # dummy
+        dwg.add(dwg.rect(
+            insert=(25*(len(cons_arr)-lkmin) + 30, 25*len(layout) + 160), size=(30,30),
+            stroke = 'black', stroke_width = 5))
+
         dwg.save()
 
         return cons_read
