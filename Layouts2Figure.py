@@ -257,17 +257,17 @@ if __name__ == '__main__':
         barrs = [ fillx(her) for her in bhers ]
 
         # units = [ (her, h) for her in hers for h, s, t in fillx(her) if t == "~" ]
-
         assert args.alayouts, "no A layouts specified, abort."
         assert args.blayouts, "no B layouts specified, abort."
         alayouts = pickle.load(open(args.alayouts, "rb"))
         alayouts = sorted(alayouts, key = lambda x: -len(x))
+        
         blayouts = pickle.load(open(args.blayouts, "rb"))
         blayouts = sorted(blayouts, key = lambda x: -len(x))
 
-        # TODO: restrict by genomic length
-        alayouts = [ l for l in alayouts if len(l) > 4 ][:2]
-        blayouts = [ l for l in blayouts if len(l) > 4 ][:2]
+        # TODO: restrict by genomic length, see L284
+        #alayouts = [ l for l in alayouts if len(l) > 4 ][:2]
+        #blayouts = [ l for l in blayouts if len(l) > 4 ][:2]
 
         print(f"aligns {len(alayouts)} A layouts against {len(blayouts)} B layouts.")
 
@@ -282,9 +282,14 @@ if __name__ == '__main__':
         # for ca in cons_a:
         for i in range(len(alayouts)):
             cons_a = consensus(alayouts[i], ahers, aarrs, name = f"A-CS-{i}")
+            if cons_a.hors[-1][0] < 200:
+                continue
+
             #for cb in cons_b:
             for j in range(len(blayouts)):
                 cons_b = consensus(blayouts[j], bhers, barrs, name = f"B-CS-{j}")
+                if cons_a.hors[-1][0] < 200:
+                    continue
 
                 # NOTE: assuming ahers and bhers are disjoint
                 snvs = var([ ahers[li] for li, lk in alayouts[i] ] +\
