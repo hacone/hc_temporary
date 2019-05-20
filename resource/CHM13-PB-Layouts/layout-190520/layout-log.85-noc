@@ -1,0 +1,30 @@
+loading edges with params = s>85, p>30, r>0
+Loaded 520 nodes and 707 edges.
+name	#node	#in-largest	#edge	#simp	#+dang	#-dang	#t_cyc	#i_cyc
+Graph          	520	130 (25.0)	707	196	0
+Graph          	130	130 (100.0)	211	62	0
+Graph          	130	130 (100.0)	160	0	0
+..........3.....3.......3.4........3..........4...5..4..6.....5......9.5.got conflict l.289
+..5..8....6.3.........16.14...7.got conflict l.289
+...got conflict l.289
+..3...13..8.34...39.6.
+removed 100 nodes
+Graph          	33	31 (93.9)	60	29	7
+Graph          	33	31 (93.9)	37	0	1
+.4.42.6...45.51.....13...13..5.53.55.68.
+removed 21 nodes
+Graph          	12	10 (83.3)	16	4	4
+Graph          	12	10 (83.3)	12	0	2
+18.6.74.80.83.
+removed 5 nodes
+Graph          	7	5 (71.4)	7	0	3
+Graph          	7	5 (71.4)	7	0	3
+
+removed 0 nodes
+Graph          	7	5 (71.4)	7	0	3
+Graph          	7	5 (71.4)	7	0	3
+5 nodes with 128 dangs, spanning 144 units in total.
+[(#nodes, gen.len)][:10] = 
+[(83, 88), (18, 12), (13, 18), (9, 14), (5, 12)]...
+NG25, 50, 75 = 1, 1, 1
+All done.

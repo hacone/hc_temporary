@@ -1,0 +1,116 @@
+loading edges with params = s>60, p>30, r>0
+Loaded 1416 nodes and 5702 edges.
+name	#node	#in-largest	#edge	#simp	#+dang	#-dang	#t_cyc	#i_cyc
+Graph          	1416	1384 (97.7)	5702	7386	182
+Graph          	1384	1384 (100.0)	5664	7375	182
+Graph          	1384	1384 (100.0)	2473	0	18
+..............3.........................3....................................3..........................3..........4....3........4..5..5.3...3....3...5..3...5..................6.4............got conflict l.289
+..5........5.........3..3.8.3...4......5...4..6......4.....3....4.....3............5..4..4.........4.3...5....4..6.....4.6..4.....3.....3.4..8...3......4.....3...3.4.3.3.3.4..6....3.3.4.6........5.....8.5...3..6....7..........9....3...4........3....4........5....6..........7.4..4...3.......3.4.8.........4.5..10....3..7.......7..3.3.3....3...6..7...10.5.......3..6.....3.3......8....12.4..6.4.13....3.5.3.6..3.11.5.6...........4........3.3......7..5.......4..8.3..3.4...5...8.got conflict l.289
+..7.......9....9...got conflict l.289
+.6..10...8.3....8.4...15....9......3.8....8.12.6..6..16...10....got conflict l.289
+......got conflict l.289
+......6........got conflict l.289
+........8....11.....10.11....got conflict l.289
+..3...3...4......8.......4.7.3.4..5.4.13......5..13..7.......3.got conflict l.289
+.got conflict l.289
+.4..4.6.9.got conflict l.289
+...11.....4...got conflict l.289
+.got conflict l.289
+...3.got conflict l.289
+..got conflict l.289
+...4.3.14..6..........10..3.5...got conflict l.289
+.10.got conflict l.289
+..12..8..11..12..got conflict l.289
+...got conflict l.289
+.4.13.4..8.4.....4..12..got conflict l.289
+.6....17...7...4.3.got conflict l.289
+..18..got conflict l.289
+.23.3.3.....4.18.got conflict l.289
+.got conflict l.289
+.......6..5.4....13.4.4....8..7.10.7.5.got conflict l.289
+...6...3.4.18.got conflict l.289
+...4.3...got conflict l.289
+...24..10.4....got conflict l.289
+..9.21.14.5....5..4....got conflict l.289
+.got conflict l.289
+.17.....13..25......13.6..7....got conflict l.289
+...5..7.10..got conflict l.289
+.17.19....got conflict l.289
+......27.got conflict l.289
+.3...got conflict l.289
+..15...got conflict l.289
+.......got conflict l.289
+.18.5.19..18..4.13.got conflict l.289
+.got conflict l.289
+.8.5.19.got conflict l.289
+....6.got conflict l.289
+.got conflict l.289
+.got conflict l.289
+.got conflict l.289
+.got conflict l.289
+......6.4.4.got conflict l.289
+...got conflict l.289
+.5.got conflict l.289
+.got conflict l.289
+...got conflict l.289
+..24.5.4.24...11.got conflict l.289
+..10.5.3.5.got conflict l.289
+.got conflict l.289
+....4....15..
+removed 985 nodes
+Graph          	451	448 (99.3)	1488	684	736
+Graph          	451	448 (99.3)	947	0	291
+42.4.23.7...3..10.4..49.9.3.....4..5....13..9..8..14..52.8.6.9....6..11.17..11..got conflict l.289
+..7.5.20..9....got conflict l.289
+.24.26.4.10.17.12...8.9.11...3..7...34..5.got conflict l.289
+..12....6..11.got conflict l.289
+..got conflict l.289
+.12.22..5..7.28.15..got conflict l.289
+..got conflict l.289
+..got conflict l.289
+.got conflict l.289
+.18...11.30.19...8.got conflict l.289
+.57.4.12.6.3..6.8.32.9.7..3.32..4..27.....got conflict l.289
+.9.24.23.3.8.5.5....25..6.11.6.70...29..7.got conflict l.289
+.12.40...3.24..38.6.20.got conflict l.289
+..8..5..5..12.got conflict l.289
+.5..12.got conflict l.289
+.6...got conflict l.289
+.22...5.7...26.33.11.....37..15..5.10.13.....35..36.9.14.got conflict l.289
+..8.45.11.13.4..61.3.24.6.16.13.got conflict l.289
+.22..31.6..got conflict l.289
+.20.got conflict l.289
+..72..39..5.75.23.38.got conflict l.289
+.13.26..81.got conflict l.289
+.44...51..30..90.78.5....got conflict l.289
+.got conflict l.289
+...56..119..14.got conflict l.289
+.
+removed 279 nodes
+Graph          	197	185 (93.9)	668	99	650
+Graph          	197	184 (93.4)	582	0	484
+7..got conflict l.289
+.12...40.43..9.got conflict l.289
+..got conflict l.289
+.26..got conflict l.289
+..25.32..got conflict l.289
+.9..7..122.got conflict l.289
+..10.5.21.40.got conflict l.289
+......got conflict l.289
+.26.149.163...170.19.
+removed 46 nodes
+Graph          	159	145 (91.2)	536	7	617
+Graph          	159	145 (91.2)	529	0	593
+.7.
+removed 2 nodes
+Graph          	157	143 (91.1)	527	0	601
+Graph          	157	143 (91.1)	527	0	601
+
+removed 0 nodes
+Graph          	157	143 (91.1)	527	0	601
+Graph          	157	143 (91.1)	527	0	601
+116 nodes with 1343 dangs, spanning 1517 units in total.
+[(#nodes, gen.len)][:10] = 
+[(170, 84), (90, 50), (56, 42), (46, 34), (43, 46), (40, 47), (33, 59), (32, 23), (27, 44), (26, 25)]...
+NG25, 50, 75 = 46, 27, 19
+All done.

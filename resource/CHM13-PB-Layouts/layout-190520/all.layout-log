@@ -1,0 +1,83 @@
+==> layout-log.60-noc <==
+116 nodes with 1343 dangs, spanning 1517 units in total.
+[(#nodes, gen.len)][:10] = 
+[(170, 84), (90, 50), (56, 42), (46, 34), (43, 46), (40, 47), (33, 59), (32, 23), (27, 44), (26, 25)]...
+NG25, 50, 75 = 46, 27, 19
+All done.
+
+==> layout-log.60-noc-tri <==
+134 nodes with 1208 dangs, spanning 1380 units in total.
+[(#nodes, gen.len)][:10] = 
+[(38, 29), (37, 39), (36, 41), (35, 35), (30, 28), (30, 40), (28, 38), (27, 26), (26, 34), (24, 25)]...
+NG25, 50, 75 = 29, 18, 13
+All done.
+
+==> layout-log.65-noc <==
+83 nodes with 945 dangs, spanning 1143 units in total.
+[(#nodes, gen.len)][:10] = 
+[(119, 89), (79, 56), (56, 24), (40, 23), (28, 25), (25, 34), (24, 30), (21, 26), (21, 28), (20, 26)]...
+NG25, 50, 75 = 35, 25, 16
+All done.
+
+==> layout-log.65-noc-tri <==
+83 nodes with 816 dangs, spanning 933 units in total.
+[(#nodes, gen.len)][:10] = 
+[(46, 39), (45, 36), (44, 49), (37, 21), (33, 22), (29, 40), (28, 19), (24, 23), (19, 15), (18, 29)]...
+NG25, 50, 75 = 29, 14, 8
+All done.
+
+==> layout-log.70-noc <==
+42 nodes with 715 dangs, spanning 856 units in total.
+[(#nodes, gen.len)][:10] = 
+[(98, 102), (57, 35), (56, 53), (51, 65), (45, 54), (37, 54), (32, 46), (32, 51), (26, 25), (22, 17)]...
+NG25, 50, 75 = 54, 25, 10
+All done.
+
+==> layout-log.70-noc-tri <==
+46 nodes with 623 dangs, spanning 729 units in total.
+[(#nodes, gen.len)][:10] = 
+[(61, 75), (51, 32), (51, 59), (45, 47), (41, 30), (22, 19), (20, 22), (19, 16), (18, 24), (17, 29)]...
+NG25, 50, 75 = 30, 15, 1
+All done.
+
+==> layout-log.75-noc <==
+15 nodes with 318 dangs, spanning 330 units in total.
+[(#nodes, gen.len)][:10] = 
+[(80, 47), (60, 62), (42, 48), (27, 24), (22, 24), (19, 19), (17, 23), (13, 18), (12, 20), (6, 13)]...
+NG25, 50, 75 = 19, 1, 1
+All done.
+
+==> layout-log.75-noc-tri <==
+22 nodes with 269 dangs, spanning 325 units in total.
+[(#nodes, gen.len)][:10] = 
+[(27, 31), (27, 32), (25, 17), (22, 27), (18, 18), (17, 19), (15, 24), (15, 18), (13, 17), (13, 11)]...
+NG25, 50, 75 = 14, 1, 1
+All done.
+
+==> layout-log.80-noc <==
+7 nodes with 157 dangs, spanning 164 units in total.
+[(#nodes, gen.len)][:10] = 
+[(61, 72), (40, 35), (21, 20), (18, 16), (8, 7), (5, 6), (4, 8)]...
+NG25, 50, 75 = 1, 1, 1
+All done.
+
+==> layout-log.80-noc-tri <==
+8 nodes with 132 dangs, spanning 172 units in total.
+[(#nodes, gen.len)][:10] = 
+[(57, 69), (29, 38), (21, 29), (8, 9), (7, 10), (5, 6), (3, 4), (2, 7)]...
+NG25, 50, 75 = 1, 1, 1
+All done.
+
+==> layout-log.85-noc <==
+5 nodes with 128 dangs, spanning 144 units in total.
+[(#nodes, gen.len)][:10] = 
+[(83, 88), (18, 12), (13, 18), (9, 14), (5, 12)]...
+NG25, 50, 75 = 1, 1, 1
+All done.
+
+==> layout-log.85-noc-tri <==
+8 nodes with 88 dangs, spanning 130 units in total.
+[(#nodes, gen.len)][:10] = 
+[(28, 31), (18, 31), (14, 21), (11, 11), (9, 20), (3, 9), (3, 4), (2, 3)]...
+NG25, 50, 75 = 1, 1, 1
+All done.
