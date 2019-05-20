@@ -1,0 +1,59 @@
+==> .log-60 <==
+18 nodes with 261 dangs, spanning 2347 units in total.
+[(#nodes, gen.len)][:10] = 
+[(57, 544), (39, 186), (28, 279), (20, 247), (17, 152), (14, 145), (13, 128), (11, 76), (11, 82), (10, 113)]...
+All done.
+
+==> .log-noc-60 <==
+17 nodes with 251 dangs, spanning 2321 units in total.
+[(#nodes, gen.len)][:10] = 
+[(65, 464), (60, 544), (27, 162), (22, 279), (14, 157), (13, 229), (9, 90), (9, 142), (7, 50), (6, 14)]...
+All done.
+
+==> .log-65 <==
+12 nodes with 212 dangs, spanning 1945 units in total.
+[(#nodes, gen.len)][:10] = 
+[(61, 448), (57, 446), (21, 212), (15, 173), (15, 173), (14, 157), (11, 80), (7, 109), (4, 73), (3, 9)]...
+All done.
+
+==> .log-noc-65 <==
+12 nodes with 202 dangs, spanning 1995 units in total.
+[(#nodes, gen.len)][:10] = 
+[(79, 626), (30, 332), (19, 212), (15, 196), (15, 173), (14, 159), (13, 157), (6, 39), (5, 15), (2, 23)]...
+All done.
+
+==> .log-70 <==
+11 nodes with 143 dangs, spanning 1920 units in total.
+[(#nodes, gen.len)][:10] = 
+[(61, 435), (22, 345), (13, 153), (12, 154), (12, 250), (7, 186), (4, 114), (4, 103), (3, 66), (3, 76)]...
+All done.
+
+==> .log-noc-70 <==
+12 nodes with 135 dangs, spanning 1842 units in total.
+[(#nodes, gen.len)][:10] = 
+[(65, 481), (23, 374), (11, 250), (8, 153), (7, 186), (4, 48), (4, 114), (4, 103), (3, 76), (2, 15)]...
+All done.
+
+==> .log-75 <==
+2 nodes with 66 dangs, spanning 920 units in total.
+[(#nodes, gen.len)][:10] = 
+[(52, 546), (14, 374)]...
+All done.
+
+==> .log-noc-75 <==
+3 nodes with 65 dangs, spanning 1089 units in total.
+[(#nodes, gen.len)][:10] = 
+[(35, 453), (21, 465), (9, 171)]...
+All done.
+
+==> .log-80 <==
+1 nodes with 15 dangs, spanning 96 units in total.
+[(#nodes, gen.len)][:10] = 
+[(15, 96)]...
+All done.
+
+==> .log-noc-80 <==
+1 nodes with 10 dangs, spanning 89 units in total.
+[(#nodes, gen.len)][:10] = 
+[(10, 89)]...
+All done.
