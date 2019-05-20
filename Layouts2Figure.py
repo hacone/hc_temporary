@@ -124,6 +124,7 @@ if __name__ == '__main__':
     parser.add_argument('--b-layouts', dest='blayouts', help='B layouts to be aligned')
     parser.add_argument('--a-hor-reads', dest='ahors', help='reads for A layouts')
     parser.add_argument('--b-hor-reads', dest='bhors', help='reads for B layouts')
+    parser.add_argument('--filetype', dest='filetype', help='png (default) or svg')
 
     # parser.add_argument('--consensi', dest='consensi', help='comma-separated list of pickled hor-encoded long reads (consensi)')
     #parser.add_argument('--vars', dest='vars', help='pickled variant sites (disable auto detection)')
@@ -223,7 +224,8 @@ if __name__ == '__main__':
         return cons_read
 
     #def dotplot_lvl(aread, bread, ahers, bhers, aarrs, barrs):
-    def dotplot_lvl(aread, bread, snvs_list):
+    def dotplot_lvl(aread, bread, snvs_list, filetype = None):
+        # output png when filetype is None
 
         aarr = fillx(aread)
         barr = fillx(bread)
@@ -233,18 +235,18 @@ if __name__ == '__main__':
 
         # using reads SNVs
         for vs, name in snvs_list:
-            dots = acomp(aread, aarr, bread, barr, snvs = vs)
+            dots = squarify(acomp(aread, aarr, bread, barr, snvs = vs))
             fig = plt.figure(figsize=(20, 16))
             sns.set(font_scale=2)
-            # plt.axis("off")
             ax1 = fig.add_subplot(1, 1, 1)
             g1 = sns.heatmap(dots,
                     vmin=np.nanmin(dots), vmax=np.nanmax(dots),
                     cmap="coolwarm", ax = ax1,
                     xticklabels = b_labels, yticklabels = a_labels)
             ax1.set_title(f"{aread.name} - {bread.name}; {len(aarr)} vs. {len(barr)} units; with {len(vs)} of {name} vars")
-            #plt.savefig(f"{aread.name}-{bread.name}-{name}.png") # NOTE: OK???
-            plt.savefig(f"{aread.name}-{bread.name}-{name}.svg") # NOTE: OK???
+
+            plt.savefig(f"{aread.name}-{bread.name}-{name}." +\
+                    ("svg" if filetype == "svg" else "png"))
             plt.close()
 
     if args.action == "align":
@@ -261,16 +263,11 @@ if __name__ == '__main__':
         assert args.blayouts, "no B layouts specified, abort."
         alayouts = pickle.load(open(args.alayouts, "rb"))
         alayouts = sorted(alayouts, key = lambda x: -len(x))
-        
         blayouts = pickle.load(open(args.blayouts, "rb"))
         blayouts = sorted(blayouts, key = lambda x: -len(x))
 
-        # TODO: restrict by genomic length, see L284
-        #alayouts = [ l for l in alayouts if len(l) > 4 ][:2]
-        #blayouts = [ l for l in blayouts if len(l) > 4 ][:2]
-
-        print(f"aligns {len(alayouts)} A layouts against {len(blayouts)} B layouts.")
-
+        print(f"aligns {len([l for l in alayouts if glen(l) > 9])} of {len(alayouts)} A layouts" +\
+              f"against {len([l for l in blayouts if glen(l) > 9])} of {len(blayouts)} B layouts.")
 
         # NOTE: can these be precalculated?
         v_major = var(ahers + bhers, hor_type = "~",
@@ -279,16 +276,23 @@ if __name__ == '__main__':
         v_all = var(ahers + bhers, hor_type = "~",
             err_rate = 0.05, fq_upper_bound = 1.1, comprehensive = True)
 
+        def glen(l):
+            # genomic length (in units) of layouts
+            ul = [ p for i, p in l ]
+            return max(ul) - min(ul) + 1
+
         # for ca in cons_a:
         for i in range(len(alayouts)):
-            cons_a = consensus(alayouts[i], ahers, aarrs, name = f"A-CS-{i}")
-            if cons_a.hors[-1][0] < 200:
+            cons_a = consensus(alayouts[i], ahers, aarrs,
+                    name = f"A-CS{i}:{alayouts[i][0][0]}")
+            if glen(alayouts[i]) < 10:
                 continue
 
             #for cb in cons_b:
             for j in range(len(blayouts)):
-                cons_b = consensus(blayouts[j], bhers, barrs, name = f"B-CS-{j}")
-                if cons_a.hors[-1][0] < 200:
+                cons_b = consensus(blayouts[j], bhers, barrs,
+                        name = f"B-CS{j}:{blayouts[j][0][0]}")
+                if glen(blayouts[i]) < 10:
                     continue
 
                 # NOTE: assuming ahers and bhers are disjoint
@@ -297,7 +301,7 @@ if __name__ == '__main__':
                 snvs_read = var([cons_a, cons_b], err_rate = 0.01, comprehensive = True)
                 snvs_list = [ (v_all, "global"), (v_major, "gl-freq"),
                     (snvs, "local"), (snvs_read, "consensus")]
-                dotplot_lvl(cons_a, cons_b, snvs_list)
+                dotplot_lvl(cons_a, cons_b, snvs_list, filetype = args.filetype)
 
     if args.action == "show":
 
