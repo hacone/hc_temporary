@@ -236,7 +236,8 @@ if __name__ == '__main__':
         # using reads SNVs
         for vs, name in snvs_list:
             dots = squarify(acomp(aread, aarr, bread, barr, snvs = vs))
-            fig = plt.figure(figsize=(20, 16))
+            fs = max(int( 20 * len(dots) / 100 ), 20)
+            fig = plt.figure(figsize=(fs, int(fs*0.8)))
             sns.set(font_scale=2)
             ax1 = fig.add_subplot(1, 1, 1)
             g1 = sns.heatmap(dots,
@@ -266,6 +267,11 @@ if __name__ == '__main__':
         blayouts = pickle.load(open(args.blayouts, "rb"))
         blayouts = sorted(blayouts, key = lambda x: -len(x))
 
+        def glen(l):
+            # genomic length (in units) of layouts
+            ul = [ p for i, p in l ]
+            return max(ul) - min(ul) + 1
+
         print(f"aligns {len([l for l in alayouts if glen(l) > 9])} of {len(alayouts)} A layouts" +\
               f"against {len([l for l in blayouts if glen(l) > 9])} of {len(blayouts)} B layouts.")
 
@@ -276,10 +282,6 @@ if __name__ == '__main__':
         v_all = var(ahers + bhers, hor_type = "~",
             err_rate = 0.05, fq_upper_bound = 1.1, comprehensive = True)
 
-        def glen(l):
-            # genomic length (in units) of layouts
-            ul = [ p for i, p in l ]
-            return max(ul) - min(ul) + 1
 
         # for ca in cons_a:
         for i in range(len(alayouts)):
@@ -292,7 +294,7 @@ if __name__ == '__main__':
             for j in range(len(blayouts)):
                 cons_b = consensus(blayouts[j], bhers, barrs,
                         name = f"B-CS{j}:{blayouts[j][0][0]}")
-                if glen(blayouts[i]) < 10:
+                if glen(blayouts[j]) < 10:
                     continue
 
                 # NOTE: assuming ahers and bhers are disjoint
