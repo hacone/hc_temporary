@@ -31,7 +31,7 @@ t2col = {"*": "black", "~": "white",
          "D1":"yellow", "D12":"green",
          "22U":"brown", "D39":"orange", "D28":"red"}
 
-def squarify(M,val):
+def squarify(M, val = np.nan):
     a , b = M.shape
     if a > b:
         padding = ((0,0),(0,a-b))
