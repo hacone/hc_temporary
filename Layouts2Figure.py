@@ -116,7 +116,9 @@ if __name__ == '__main__':
 
     # for action: show
     parser.add_argument('--hor-reads', dest='hors', help='pickled hor-encoded long reads')
-    parser.add_argument('--layouts', dest='layouts', help='layouts to be visualized')
+    parser.add_argument('--layouts', dest='layouts', help='pickle of layouts to be visualized')
+    parser.add_argument('--onlys', dest='onlys', help='ids of layouts to be visualized')
+    parser.add_argument('--v-scale', dest='v_scale', help='scale of dot plot as in: 99.5,100')
     parser.add_argument('--err-rate', dest='err_rate', help='err. rate assumed in calc of gl. var. freq.')
 
     # for action: align
@@ -130,9 +132,9 @@ if __name__ == '__main__':
     #parser.add_argument('--vars', dest='vars', help='pickled variant sites (disable auto detection)')
     args = parser.parse_args()
 
-    # TODO: may this take layout and cons_read precalculated?
     # NOTE: this assumes arrs in context
-    def show_layout(layout, hers, arrs, cons_read = None, snvs_list = None):
+    def show_layout(layout, hers, arrs, cons_read = None,
+            snvs_list = None, v_scale = None, force_denom = False):
         """ visualize consensus read """
 
         if not cons_read:
@@ -155,25 +157,33 @@ if __name__ == '__main__':
             print(f"Total {len(snvs_read)} SNVs on this layout.")
 
             snvs_list = [
-                (v_all, "global"),
-                (v_major, "gl-freq"),
+                (v_all, "all"),
+                (v_major, "major"),
                 (snvs, "local"),
-                (snvs_read, "consensus")]
+                (snvs_read, "consensus"),
+                (None, "all-naive")]
 
         # using reads SNVs
         for vs, name in snvs_list:
-            dots = acomp(cons_read, cons_arr, cons_read, cons_arr, snvs = vs)
+
+            if not force_denom:
+                dots = acomp(cons_read, cons_arr, cons_read, cons_arr, snvs = vs)
+            else:
+                dots = acomp(cons_read, cons_arr, cons_read, cons_arr, snvs = vs, force_denom = 2057)
+
             fs = max(int( 20 * len(dots) / 100 ), 20)
             fig = plt.figure(figsize=(fs, int(fs*0.8)))
             sns.set(font_scale=2)
             # plt.axis("off")
             ax1 = fig.add_subplot(1, 1, 1)
+            if not v_scale:
+                v_scale = (np.nanmin(dots), np.nanmax(dots))
             g1 = sns.heatmap(dots,
-                    vmin=np.nanmin(dots), vmax=np.nanmax(dots),
+                    vmin=v_scale[0], vmax=v_scale[1],
                     cmap="coolwarm", ax = ax1,
                     xticklabels = labels, yticklabels = labels)
             ax1.set_title(f"Layout-{layout[0][0]}; {len(layout)} rds;" +\
-                    f"{len(cons_arr)} units; with {len(vs)} of {name} vars")
+                    f"{len(cons_arr)} units; with {len(vs) if vs else 'all'} of {name} vars")
             plt.savefig(f"Layout-{layout[0][0]}-{name}." +\
                     ("svg" if args.filetype == "svg" else "png"))
             plt.close()
@@ -253,6 +263,7 @@ if __name__ == '__main__':
             plt.close()
 
     if args.action == "align":
+        # TODO: need output restriction here too.
 
         assert args.ahors, "specify HOR-encoded reads"
         assert args.bhors, "specify HOR-encoded reads"
@@ -303,7 +314,7 @@ if __name__ == '__main__':
                 snvs = var([ ahers[li] for li, lk in alayouts[i] ] +\
                            [ bhers[li] for li, lk in blayouts[j] ])
                 snvs_read = var([cons_a, cons_b], err_rate = 0.01, comprehensive = True)
-                snvs_list = [ (v_all, "global"), (v_major, "gl-freq"),
+                snvs_list = [ (v_all, "all"), (v_major, "major"),
                     (snvs, "local"), (snvs_read, "consensus")]
                 dotplot_lvl(cons_a, cons_b, snvs_list, filetype = args.filetype)
 
@@ -328,7 +339,17 @@ if __name__ == '__main__':
             err_rate = args.err_rate if args.err_rate else 0.05,
             fq_upper_bound = 1.1, comprehensive = False)
 
+        if args.v_scale:
+            v_scale = [ float(s) for s in args.v_scale.split(",") ]
+        else:
+            v_scale = None
+
         for i in range(len(layouts)): 
+
+            if args.onlys and i not in [ int(s) for s in args.onlys.split(",") ]:
+                # if it's not designated as one to be visualized,
+                continue
+
             if len(layouts[i]) > 4:
                 print(f"consensus for {i}")
                 cons = consensus(layouts[i], hers, arrs, name = f"CS-{i}")
@@ -338,5 +359,6 @@ if __name__ == '__main__':
                     (v_all, "global"), (v_major, "gl-freq"),
                     (snvs, "local"), (snvs_read, "consensus")]
                 print(f"Total {len(snvs_read)} SNVs on this layout.")
-                show_layout(layouts[i], hers, arrs, cons_read = cons, snvs_list = snvs_list)
+                show_layout(layouts[i], hers, arrs,
+                        cons_read = cons, snvs_list = snvs_list, v_scale = v_scale)
 

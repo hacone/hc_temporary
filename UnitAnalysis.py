@@ -142,7 +142,7 @@ def ba(read, arr, snvs):
             v += zeros
     return np.array(v).reshape(len(arr), len(snvs))
 
-def ucomp(rd1, h1, rd2, h2, snvs = None):
+def ucomp(rd1, h1, rd2, h2, snvs = None, force_denom = None):
     """ compare two units on `snvs`. use all columns if `snvs = None`.
         `rd1`, `rd2`: HOR encoded read
         `h1`, `h2`: start midx of HOR unit to be compared.
@@ -155,12 +155,15 @@ def ucomp(rd1, h1, rd2, h2, snvs = None):
 
     if snvs:
         _snv = { (int(s["k"]), int(s["p"]), s["b"]) for s in snvs }
-        return len(d & _snv) / len(snvs)
+        if force_denom: # TODO: do I need this?
+            return len(d & _snv) / force_denom
+        else:
+            return len(d & _snv) / len(snvs)
     else:
         # no SNV filter
         return len(d) / 2057.0
 
-def acomp(rd1, a1, rd2, a2, snvs = None):
+def acomp(rd1, a1, rd2, a2, snvs = None, force_denom = None):
     """ compare two (arrays in) reads to generate matrix ready for dotplot.
         `rd1`, `rd2`: HOR encoded read
         `a1`, `a2`: arrays to be compared. returns from `fillx()`.
@@ -171,7 +174,7 @@ def acomp(rd1, a1, rd2, a2, snvs = None):
     for i, (h1, _, t1) in enumerate(a1):
         for j, (h2, _, t2) in enumerate(a2):
             if t1 == "~" and t2 == "~":
-                m += [1.0 - ucomp(rd1, h1, rd2, h2, snvs)]
+                m += [1.0 - ucomp(rd1, h1, rd2, h2, snvs, force_denom)]
             elif t1 == t2: # variant unit match
                 #m += [-1]
                 m += [np.nan]
