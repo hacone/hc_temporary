@@ -161,7 +161,7 @@ if __name__ == '__main__':
                 (v_major, "major"),
                 (snvs, "local"),
                 (snvs_read, "consensus"),
-                (None, "all-naive")]
+                (None, "naive")]
 
         # using reads SNVs
         for vs, name in snvs_list:
@@ -356,8 +356,10 @@ if __name__ == '__main__':
                 snvs = var([ hers[li] for li, lk in layouts[i] ])
                 snvs_read = var([cons], err_rate = 0.01, comprehensive = True)
                 snvs_list = [
-                    (v_all, "global"), (v_major, "gl-freq"),
-                    (snvs, "local"), (snvs_read, "consensus")]
+                    (v_all, "all"), (v_major, "major"),
+                    (snvs, "local"), (snvs_read, "consensus"),
+                    (None, "naive")]
+
                 print(f"Total {len(snvs_read)} SNVs on this layout.")
                 show_layout(layouts[i], hers, arrs,
                         cons_read = cons, snvs_list = snvs_list, v_scale = v_scale)
