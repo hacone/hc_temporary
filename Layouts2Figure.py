@@ -217,6 +217,11 @@ if __name__ == '__main__':
                 insert=((n - lkmin)*25 + 30, 25*len(layout) + 155 - height),
                 size=(20, height)))
 
+            nvars = sum([ len(cons_read.mons[h+k].monomer.snvs)  for k in range(12) ])
+            dwg.add(dwg.text(
+                f"{nvars}", insert=((n - lkmin)*25 + 30, 25*len(layout) + 165) ))
+                # size=(20, height)))
+
         dwg.add(dwg.line(
             start=((0 - lkmin)*25 + 30, 25*len(layout) + 110 - 69),
             end=((len(cons_arr) - lkmin)*25 + 30, 25*len(layout) + 110 - 69),
@@ -227,9 +232,10 @@ if __name__ == '__main__':
             end=((len(cons_arr) - lkmin)*25 + 30, 25*len(layout) + 155 - 42),
             stroke="black", stroke_width=2)),
 
+
         # dummy
         dwg.add(dwg.rect(
-            insert=(25*(len(cons_arr)-lkmin) + 30, 25*len(layout) + 160), size=(30,30),
+            insert=(25*(len(cons_arr)-lkmin) + 30, 25*len(layout) + 190), size=(30,30),
             stroke = 'black', stroke_width = 5))
 
         dwg.save()
