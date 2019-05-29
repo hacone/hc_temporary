@@ -174,7 +174,7 @@ if __name__ == '__main__':
             fs = max(int( 20 * len(dots) / 100 ), 20)
             fig = plt.figure(figsize=(fs, int(fs*0.8)))
             sns.set(font_scale=2)
-            # plt.axis("off")
+
             ax1 = fig.add_subplot(1, 1, 1)
             if not v_scale:
                 v_scale = (np.nanmin(dots), np.nanmax(dots))
@@ -193,16 +193,18 @@ if __name__ == '__main__':
         dwg = svgwrite.Drawing(filename=f"Layout-{layout[0][0]}-str.svg")
         lkmin = min([ lk for li, lk in layout ])
 
+        depth = Counter()
+
         for i, (li, lk) in enumerate(sorted(layout, key = lambda x: x[1])):
             read = dwg.add(dwg.g(id=f"rd{li}", stroke='green'))
             for n, (h, s, t) in enumerate(arrs[li]):
                 read.add(
                     dwg.rect(insert=(30 + (n + lk - lkmin)*25, 30 + i*25), size=(20,20),
                     fill=t2col[t], stroke='black', stroke_width=2))
-                # ax1.text((lk + n) * 1, i * 1, t2c[t], fontsize=9) # not svgwrite
-                # NOTE: add label...
+                depth[n+lk] += 1 if t == "~" else 0
 
         for n, (h, s, t) in enumerate(cons_arr):
+
             if t != "~":
                 continue
             intact_sites, intact_motifs = cenpb_vars(cons_read, h, summary = True)
@@ -220,22 +222,30 @@ if __name__ == '__main__':
             nvars = sum([ len(cons_read.mons[h+k].monomer.snvs)  for k in range(12) ])
             dwg.add(dwg.text(
                 f"{nvars}", insert=((n - lkmin)*25 + 30, 25*len(layout) + 165) ))
-                # size=(20, height)))
+            dwg.add(dwg.text(
+                f"{depth[n]}", insert=((n - lkmin)*25 + 30, 25*len(layout) + 175) ))
+            dwg.add(dwg.text(
+                f"{int(intact_sites)}", insert=((n - lkmin)*25 + 30, 25*len(layout) + 185) ))
+            dwg.add(dwg.text(
+                f"{int(intact_motifs)}", insert=((n - lkmin)*25 + 30, 25*len(layout) + 195) ))
 
+            print(f"VVD\t{depth[n]}\t{nvars}")
+
+        # line at max of #intact cenp b motifs
         dwg.add(dwg.line(
             start=((0 - lkmin)*25 + 30, 25*len(layout) + 110 - 69),
             end=((len(cons_arr) - lkmin)*25 + 30, 25*len(layout) + 110 - 69),
             stroke="black", stroke_width=2)),
 
+        # line at max of #intact cenp b sites
         dwg.add(dwg.line(
             start=((0 - lkmin)*25 + 30, 25*len(layout) + 155 - 42),
             end=((len(cons_arr) - lkmin)*25 + 30, 25*len(layout) + 155 - 42),
             stroke="black", stroke_width=2)),
 
-
         # dummy
         dwg.add(dwg.rect(
-            insert=(25*(len(cons_arr)-lkmin) + 30, 25*len(layout) + 190), size=(30,30),
+            insert=(25*(len(cons_arr)-lkmin) + 30, 25*len(layout) + 200), size=(30,30),
             stroke = 'black', stroke_width = 5))
 
         dwg.save()
