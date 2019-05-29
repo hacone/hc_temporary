@@ -38,3 +38,8 @@ pacbio/bbmap/
 pacbio/fasta_to_fastq.pl
 pacbio/seqkit
 pacbio/st
+CHM13_ONT/
+HG002_ONT/
+2019Feb/
+20190219/
+alignments-04*
