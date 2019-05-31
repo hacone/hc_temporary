@@ -163,6 +163,13 @@ if __name__ == '__main__':
                 (snvs_read, "consensus"),
                 (None, "naive")]
 
+        # NOTE: calculate depth etc.
+        lkmin = min([ lk for li, lk in layout ])
+        depth = Counter()
+        for i, (li, lk) in enumerate(sorted(layout, key = lambda x: x[1])):
+            for n, (h, s, t) in enumerate(arrs[li]):
+                depth[n+lk] += 1 if t == "~" else 0
+
         # using reads SNVs
         for vs, name in snvs_list:
 
@@ -188,12 +195,14 @@ if __name__ == '__main__':
                     ("svg" if args.filetype == "svg" else "png"))
             plt.close()
 
+            nanmean = np.nanmean([ dots[i,i+1] for i in range(len(dots)-1)
+                if depth[i] > 2 and depth[i+1] > 2])
+
+            print(f"AVGSIM\t{name}\t{len(dots)-1}\t{nanmean*100:.3f}")
+
 
         ## print out its structure / CENP-B presense
         dwg = svgwrite.Drawing(filename=f"Layout-{layout[0][0]}-str.svg")
-        lkmin = min([ lk for li, lk in layout ])
-
-        depth = Counter()
 
         for i, (li, lk) in enumerate(sorted(layout, key = lambda x: x[1])):
             read = dwg.add(dwg.g(id=f"rd{li}", stroke='green'))
@@ -201,7 +210,6 @@ if __name__ == '__main__':
                 read.add(
                     dwg.rect(insert=(30 + (n + lk - lkmin)*25, 30 + i*25), size=(20,20),
                     fill=t2col[t], stroke='black', stroke_width=2))
-                depth[n+lk] += 1 if t == "~" else 0
 
         for n, (h, s, t) in enumerate(cons_arr):
 
@@ -331,7 +339,7 @@ if __name__ == '__main__':
                            [ bhers[li] for li, lk in blayouts[j] ])
                 snvs_read = var([cons_a, cons_b], err_rate = 0.01, comprehensive = True)
                 snvs_list = [ (v_all, "all"), (v_major, "major"),
-                    (snvs, "local"), (snvs_read, "consensus")]
+                    (snvs, "local"), (snvs_read, "consensus"), (None, "naive") ]
                 dotplot_lvl(cons_a, cons_b, snvs_list, filetype = args.filetype)
 
     if args.action == "show":
