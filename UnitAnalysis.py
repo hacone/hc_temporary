@@ -254,7 +254,7 @@ def print_align(aln, bits, arrs):
 gid = 0
 
 # TODO write up this # TODO test
-def draw_align(aln, bits, arrs, name = "align", pink = True):
+def draw_align(aln, bits, arrs, name = "align", pink = False):
 
     dwg = svgwrite.Drawing(filename = name + ".svg")
 
