@@ -195,10 +195,9 @@ if __name__ == '__main__':
                     ("svg" if args.filetype == "svg" else "png"))
             plt.close()
 
-            nanmean = np.nanmean([ dots[i,i+1] for i in range(len(dots)-1)
-                if depth[i] > 2 and depth[i+1] > 2])
-
-            print(f"AVGSIM\t{name}\t{len(dots)-1}\t{nanmean*100:.3f}")
+            cps = [ dots[i,i+1] for i in range(len(dots)-1) if depth[i] > 2 and depth[i+1] > 2 ]
+            nanmean = np.nanmean(cps)
+            print(f"AVGSIM\t{name}\t{len(cps)}\t{nanmean*100:.3f}")
 
 
         ## print out its structure / CENP-B presense
@@ -206,10 +205,16 @@ if __name__ == '__main__':
 
         for i, (li, lk) in enumerate(sorted(layout, key = lambda x: x[1])):
             read = dwg.add(dwg.g(id=f"rd{li}", stroke='green'))
+            dwg.add(dwg.text(f"{li}", insert=(5 + (lk - lkmin)*25, 40 + i*25) ))
             for n, (h, s, t) in enumerate(arrs[li]):
                 read.add(
-                    dwg.rect(insert=(30 + (n + lk - lkmin)*25, 30 + i*25), size=(20,20),
+                    dwg.rect(insert=(40 + (n + lk - lkmin)*25, 30 + i*25), size=(20, 20),
                     fill=t2col[t], stroke='black', stroke_width=2))
+
+        dwg.add(dwg.text(f"#V", insert=(5, len(layout)*25 + 165) ))
+        dwg.add(dwg.text(f"Dep.", insert=(5, len(layout)*25 + 175) ))
+        dwg.add(dwg.text(f"#CBS", insert=(5, len(layout)*25 + 185) ))
+        dwg.add(dwg.text(f"#CBM", insert=(5, len(layout)*25 + 195) ))
 
         for n, (h, s, t) in enumerate(cons_arr):
 
@@ -219,23 +224,26 @@ if __name__ == '__main__':
 
             height = 3 * (int(intact_sites) - 40) # NOTE: baseline is 40
             dwg.add(dwg.rect(
-                insert=((n - lkmin)*25 + 30, 25*len(layout) + 110 - height),
+                insert=((n - lkmin)*25 + 40, 25*len(layout) + 110 - height),
                 size=(20, height))) # NOTE: baseline is 40
 
             height = int(intact_motifs * 6)
             dwg.add(dwg.rect(
-                insert=((n - lkmin)*25 + 30, 25*len(layout) + 155 - height),
+                insert=((n - lkmin)*25 + 40, 25*len(layout) + 155 - height),
                 size=(20, height)))
 
             nvars = sum([ len(cons_read.mons[h+k].monomer.snvs)  for k in range(12) ])
             dwg.add(dwg.text(
-                f"{nvars}", insert=((n - lkmin)*25 + 30, 25*len(layout) + 165) ))
+                f"{nvars}", insert=((n - lkmin)*25 + 40, 25*len(layout) + 165) ))
+
             dwg.add(dwg.text(
-                f"{depth[n]}", insert=((n - lkmin)*25 + 30, 25*len(layout) + 175) ))
+                f"{depth[n]}", insert=((n - lkmin)*25 + 40, 25*len(layout) + 175) ))
+
             dwg.add(dwg.text(
-                f"{int(intact_sites)}", insert=((n - lkmin)*25 + 30, 25*len(layout) + 185) ))
+                f"{int(intact_sites)}", insert=((n - lkmin)*25 + 40, 25*len(layout) + 185) ))
+
             dwg.add(dwg.text(
-                f"{int(intact_motifs)}", insert=((n - lkmin)*25 + 30, 25*len(layout) + 195) ))
+                f"{int(intact_motifs)}", insert=((n - lkmin)*25 + 40, 25*len(layout) + 195) ))
 
             print(f"VVD\t{depth[n]}\t{nvars}")
 

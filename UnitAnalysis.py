@@ -222,7 +222,6 @@ def print_align(aln, bits, arrs):
     r, q = bits[aln.i], bits[aln.j]
     rs, qs = max(0, aln.k), max(-aln.k, 0)
     re, qe = rs + aln.lov, qs + aln.lov
-
     ra, qa = arrs[aln.i], arrs[aln.j]
 
     #if is_top:
@@ -251,6 +250,137 @@ def print_align(aln, bits, arrs):
 
     print(lines)
 
+
+gid = 0
+
+# TODO write up this # TODO test
+def draw_align(aln, bits, arrs, name = "align", pink = True):
+
+    dwg = svgwrite.Drawing(filename = name + ".svg")
+
+    # r, q = bits[aln.i], bits[aln.j] # matrix representation of each read
+    r, q = bits[aln.i][:,0:200], bits[aln.j][:,0:200] # matrix representation of each read
+    li, lj = r.shape[0], q.shape[0]
+    ra, qa = arrs[aln.i], arrs[aln.j] # arr data for HOR variants
+
+    nvars = r.shape[1]
+    print(f"nvars = {nvars}")
+
+    def draw_unit(r, i, x, y, flip = False): # showing the unit # add 20 to y if necessarry
+
+        global gid
+
+        bit2col = { -1: "white", 0: "grey", 1: "black" }
+
+        if i > -1: 
+
+            unit_a = dwg.add(dwg.g(id=f"a-{i}-{gid}")) # stroke='green'))
+            gid += 1
+
+            if not flip:
+                unit_a.add(dwg.line(
+                    start=(x + 2 + nvars, y), end=(x - 3 + nvars, y - 4),
+                    stroke_width=1, stroke="grey"))
+            else:
+                unit_a.add(dwg.line(
+                    start=(x + 2 + nvars, y + 10), end=(x - 3 + nvars, y + 14),
+                    stroke_width=1, stroke="grey"))
+
+            unit_a.add(dwg.rect(insert = (x, y), size = (5 + nvars, 10),
+                stroke_width = 1, fill = "grey"))
+
+            for n, e in enumerate(r[i,:]):
+                unit_a.add(dwg.line(
+                    start = (x + 2 + n, y + 1),
+                    end   = (x + 2 + n, y + 9),
+                    stroke = bit2col[e]))
+
+    def draw_comp(i, j, x, y): # showing the alignment of two units # TODO add 10 to y when called
+        global gid
+
+        pair2col = {
+            (-1, -1): "pink" if pink else "red",
+            (1, 1): "red",
+            (-1, 1): "blue", (1, -1): "blue" }
+
+        if i > -1 and j > -1:
+            aln_ab = dwg.add(dwg.g(id=f"ab-{i}-{j}-{gid}"))
+            gid += 1
+            for n, (e, f) in enumerate(zip(r[i,:], q[j,:])):
+                aln_ab.add(dwg.line(
+                    start = (x + 2 + n, y + 1), end = (x + 2 + n, y + 9),
+                    stroke = pair2col[(e, f)] if e * f != 0 else "grey", stroke_width=1)) # TODO OK?
+
+
+    k = aln.aln.koff
+    rs, qs = max(0, k), max(-k, 0) # aligned parts of reads
+    lov = min(lj, -k + li) if k > 0 else min(li, k + lj) # length of overlap
+    re, qe = rs + lov, qs + lov
+
+    # dangling part if any
+    xcoord, ycoord, xskip = 0, 20, r.shape[1] + 2
+    for i in range(rs):
+        draw_unit(r, i, xcoord * xskip, ycoord)
+        xcoord += 1
+    for i in range(qs):
+        draw_unit(q, i, xcoord * xskip, ycoord + 20, flip = True)
+        xcoord += 1
+
+    # aligned part
+    for i in range(rs, re):
+        draw_unit(r, i, xcoord * xskip, ycoord)
+        draw_comp(i, qs - rs + i, xcoord * xskip, ycoord + 10)
+        draw_unit(q, qs - rs + i, xcoord * xskip, ycoord + 20, flip = True)
+        xcoord += 1
+
+    # dangling part if any
+    for i in range(re, li):
+        draw_unit(r, i, xcoord * xskip, ycoord)
+        xcoord += 1
+
+    for i in range(qe, lj):
+        draw_unit(q, i, xcoord * xskip, ycoord + 20, flip = True)
+        xcoord += 1
+
+    # NOTE: repeat with displacement!
+    k = aln.aln.koff + 1
+    rs, qs = max(0, k), max(-k, 0) # aligned parts of reads
+    lov = min(lj, -k + li) if k > 0 else min(li, k + lj) # length of overlap
+    re, qe = rs + lov, qs + lov
+
+    # dangling part if any
+    xcoord, xskip = 0, r.shape[1] + 2
+
+    for i in range(rs):
+        draw_unit(r, i, xcoord * xskip, ycoord + 40)
+        xcoord += 1
+    for i in range(qs):
+        draw_unit(q, i, xcoord * xskip, ycoord + 60, flip = True)
+        xcoord += 1
+
+    # aligned part
+    for i in range(rs, re):
+        draw_unit(r, i, xcoord * xskip, ycoord + 40)
+        draw_comp(i, qs - rs + i, xcoord * xskip, ycoord + 50)
+        draw_unit(q, qs - rs + i, xcoord * xskip, ycoord + 60, flip = True)
+        xcoord += 1
+
+    # dangling part if any
+    for i in range(re, li):
+        draw_unit(r, i, xcoord * xskip, ycoord + 40)
+        xcoord += 1
+
+    for i in range(qe, lj):
+        draw_unit(q, i, xcoord * xskip, ycoord + 60, flip = True)
+        xcoord += 1
+
+    dwg.add(dwg.text(
+        f"S={100*aln.aln.score:.2f} Prom={100*aln.gap:.2f}",
+        insert = (5, ycoord + 85)))
+
+    dwg.save()
+
+
 if __name__ == '__main__':
 
     import argparse
@@ -277,15 +407,16 @@ if __name__ == '__main__':
     parser.add_argument('--innum', dest='innum', action='store_const', const=True, help='bases are encoded into int (for plotting)')
     parser.add_argument('--save-to', dest='save', help='pickle variants for later use')
 
-    # For layout, layout-2
+    # For layout (a.k.a overlap detection for layout)
     parser.add_argument('--reverse', dest='backwards', action='store_const', const=True, help='backwards search')
     parser.add_argument('--skipfig', dest='skipfig', action='store_const', const=True, help='skip generating figures')
     parser.add_argument('--range', dest='sizeranges', help='size ranges to be used')
     parser.add_argument('--params', dest='alignparams',
             help='parameters for alignment; default to score_t, prom_t, eov_t = .6, .3, 4')
+
     # NOTE it also accepts --err-rate in action layout
     parser.add_argument('--park', dest='park', help='for parallelly processing read id = k mod 24')
-
+    parser.add_argument('--onlyi', dest='onlyi', help='generate figures for one centered read')
     
     # NOTE: these are now in Edges2Layout.py
     #parser.add_argument('--edges', dest='edgefile', help='edge list file')
@@ -830,7 +961,6 @@ if __name__ == '__main__':
 
             if skip_figure:
                 return Extension(i = i, plus = plus, minus = minus, embed = embed, vf_history = vf_history)
-
             import matplotlib
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
@@ -846,6 +976,24 @@ if __name__ == '__main__':
             ylabels = [ t2c[t] for h, s, t in arrs[i] ]
             for alns, name in alns_to_plot:
                 for aln in alns[:3]:
+
+                    if args.onlyi:
+                        # TODO: call draw_align
+                        draw_align(aln, bits_history[aln.nround], arrs,
+                                name = f"{i}-{aln.j}-{name}-R{aln.nround}")
+                        draw_align(aln, bits_history[0], arrs,
+                                name = f"{i}-{aln.j}-{name}-R0")
+                        draw_align(aln, bits_all, arrs,
+                                name = f"{i}-{aln.j}-{name}-200v")
+
+                        draw_align(aln, bits_history[aln.nround], arrs,
+                                name = f"{i}-{aln.j}-{name}-R{aln.nround}-p", pink = True)
+                        draw_align(aln, bits_history[0], arrs,
+                                name = f"{i}-{aln.j}-{name}-R0-p", pink = True)
+                        draw_align(aln, bits_all, arrs,
+                                name = f"{i}-{aln.j}-{name}-200v-p", pink = True)
+                        continue # NOTE: jump to where?
+
                     # j, eov+fex, %gap
                     for nr in range(-2, aln.nround + 1):
                         fig = plt.figure(figsize=(15, 12))
@@ -885,10 +1033,15 @@ if __name__ == '__main__':
             return exts
 
         ## NOTE: always parallelised by 24 
-        exts = [ extension(i, backwards = args.backwards, skip_figure = args.skipfig)
-                 for i in keys_long if i % 24 == int(args.park) ]
-        outfile = f"exts-rev-mod{int(args.park)}.pickle" if args.backwards else f"exts-fwd-mod{int(args.park)}.pickle"
-        pickle.dump(exts, open(outfile, "wb"))
+        if args.park:
+            exts = [ extension(i, backwards = args.backwards, skip_figure = args.skipfig)
+                     for i in keys_long if i % 24 == int(args.park) ]
+            outfile = f"exts-rev-mod{int(args.park)}.pickle" if args.backwards else f"exts-fwd-mod{int(args.park)}.pickle"
+            pickle.dump(exts, open(outfile, "wb"))
+
+        if args.onlyi:
+            for ti in sorted(list(np.loadtxt(args.onlyi, dtype="I", usecols=(0)))):
+                extension(ti, backwards = args.backwards)
 
     else:
         assert False, "invalid action."

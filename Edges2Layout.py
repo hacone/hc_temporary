@@ -333,8 +333,8 @@ def layout190512(G, prefix = "layouts", arrs = None, only_marked = False):
     describe(G) # description of initial graph loaded
 
     # let's focus on the largest components
-    G = largest_component(G)
-    describe(G)
+    # G = largest_component(G)
+    # describe(G)
 
     ## then I believe it's not so harmful to remove in-transitive node firstly;
     ## but let's make sure firstly this won't be harmful really.
