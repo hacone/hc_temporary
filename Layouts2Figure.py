@@ -25,6 +25,45 @@ from HOR_segregation import *
 from Edges2Layout import *
 from UnitAnalysis import *
 
+gid = 0
+
+        #draw_read(cons_read, cons_arr, v_major, name = "major")
+
+def draw_read(read, arr, snvs, name = "read"):
+
+    t2col2 = {"*": "black", "~": "grey", "D1":"yellow", "D12":"green",
+             "22U":"brown", "D39":"orange", "D28":"pink"}
+
+    bits = ba(read, arr, snvs)
+    r = bits[:, 0:100] # matrix representation of each read
+    li = r.shape[0]
+    ra = arr # arr data for HOR variants
+    nvars = r.shape[1]
+    dwg = svgwrite.Drawing(filename = f"read-{read.name}-{nvars}-{name}.svg")
+
+    def draw_unit(r, i, x, y, col = "grey"):
+        global gid
+        bit2col = { -1: "white", 0: "#cccccc", 1: "black" }
+        if i > -1: 
+            unit_a = dwg.add(dwg.g(id=f"a-{i}-{gid}"))
+            gid += 1
+            unit_a.add(dwg.rect(insert = (x, y), size = (5 + nvars, 10),
+                stroke_width = 1, fill = col))
+            for n, e in enumerate(r[i,:]):
+                unit_a.add(dwg.line(
+                    start = (x + 2 + n, y + 1),
+                    end   = (x + 2 + n, y + 9),
+                    stroke = bit2col[e]))
+
+    xcoord, ycoord, xskip = 0, 20, r.shape[1] + 10
+
+    for i in range(li):
+        draw_unit(r, i, xcoord * xskip, ycoord + 20, col=t2col2[ra[i][2]])
+        xcoord += 1
+
+    dwg.save()
+
+
 # NOTE: this is too specific to X; TODO: expose me!
 # TODO: correlate with given hors
 def consensus(layout, hers, arrs, verbose = False, name = "Consensus"):
@@ -162,6 +201,11 @@ if __name__ == '__main__':
                 (snvs, "local"),
                 (snvs_read, "consensus"),
                 (None, "naive")]
+
+        for snvs, name in snvs_list:
+            if not snvs:
+                continue
+            draw_read(cons_read, cons_arr, snvs, name = name)
 
         # NOTE: calculate depth etc.
         lkmin = min([ lk for li, lk in layout ])

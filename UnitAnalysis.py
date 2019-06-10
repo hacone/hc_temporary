@@ -258,7 +258,6 @@ def draw_align(aln, bits, arrs, name = "align", pink = False):
 
     t2col2 = {"*": "black", "~": "grey", "D1":"yellow", "D12":"green",
              "22U":"brown", "D39":"orange", "D28":"pink"}
-
     dwg = svgwrite.Drawing(filename = name + ".svg")
 
     r, q = bits[aln.i][:,0:100], bits[aln.j][:,0:100] # matrix representation of each read
@@ -325,7 +324,6 @@ def draw_align(aln, bits, arrs, name = "align", pink = False):
     lov = min(lj, -k + li) if k > 0 else min(li, k + lj) # length of overlap
     re, qe = rs + lov, qs + lov
 
-    # dangling part if any
     xcoord, ycoord, xskip = xoff, 20, r.shape[1] + 10
 
     # q at y = 0 at k
