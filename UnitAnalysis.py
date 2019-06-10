@@ -261,7 +261,6 @@ def draw_align(aln, bits, arrs, name = "align", pink = False):
 
     dwg = svgwrite.Drawing(filename = name + ".svg")
 
-    # r, q = bits[aln.i], bits[aln.j] # matrix representation of each read
     r, q = bits[aln.i][:,0:100], bits[aln.j][:,0:100] # matrix representation of each read
     li, lj = r.shape[0], q.shape[0]
     ra, qa = arrs[aln.i], arrs[aln.j] # arr data for HOR variants
@@ -280,14 +279,15 @@ def draw_align(aln, bits, arrs, name = "align", pink = False):
             unit_a = dwg.add(dwg.g(id=f"a-{i}-{gid}")) # stroke='green'))
             gid += 1
 
-            if not flip:
-                unit_a.add(dwg.line(
-                    start=(x + 2 + nvars, y), end=(x - 3 + nvars, y - 4),
-                    stroke_width=1, stroke="grey"))
-            else:
-                unit_a.add(dwg.line(
-                    start=(x + 2 + nvars, y + 10), end=(x - 3 + nvars, y + 14),
-                    stroke_width=1, stroke="grey"))
+            
+            #if not flip:
+            #    unit_a.add(dwg.line(
+            #        start=(x + 2 + nvars, y), end=(x + 2 + nvars, y - 4),
+            #        stroke_width=1, stroke="grey"))
+            #else:
+            #    unit_a.add(dwg.line(
+            #        start=(x + 2 + nvars, y + 10), end=(x + 2 + nvars, y + 14),
+            #        stroke_width=1, stroke="grey"))
 
             unit_a.add(dwg.rect(insert = (x, y), size = (5 + nvars, 10),
                 stroke_width = 1, fill = col))
@@ -302,7 +302,8 @@ def draw_align(aln, bits, arrs, name = "align", pink = False):
         global gid
 
         pair2col = {
-            (-1, -1): "#66ffff" if pink else "blue",
+            #(-1, -1): "#66ffff" if pink else "blue",
+            (-1, -1): "white",
             (1, 1): "blue",
             (-1, 1): "red", (1, -1): "red" }
 
@@ -310,77 +311,62 @@ def draw_align(aln, bits, arrs, name = "align", pink = False):
             aln_ab = dwg.add(dwg.g(id=f"ab-{i}-{j}-{gid}"))
             gid += 1
             for n, (e, f) in enumerate(zip(r[i,:], q[j,:])):
+                if e * f == 0:
+                    continue # no comparison at HOR variants!
                 aln_ab.add(dwg.line(
                     start = (x + 2 + n, y + 1), end = (x + 2 + n, y + 9),
-                    stroke = pair2col[(e, f)] if e * f != 0 else "#cccccc", stroke_width=1)) # TODO OK?
+                    stroke = pair2col[(e, f)], stroke_width=1))
 
     k = aln.aln.koff
+    sbk = aln.sbaln.koff
+    xoff = max(-k, -sbk, 0)
+
     rs, qs = max(0, k), max(-k, 0) # aligned parts of reads
     lov = min(lj, -k + li) if k > 0 else min(li, k + lj) # length of overlap
     re, qe = rs + lov, qs + lov
 
     # dangling part if any
-    xcoord, ycoord, xskip = 0, 20, r.shape[1] + 10
-    for i in range(rs):
-        draw_unit(r, i, xcoord * xskip, ycoord, col=t2col2[ra[i][2]])
-        xcoord += 1
-    for i in range(qs):
-        draw_unit(q, i, xcoord * xskip, ycoord + 20, flip = True, col=t2col2[qa[i][2]])
+    xcoord, ycoord, xskip = xoff, 20, r.shape[1] + 10
+
+    # q at y = 0 at k
+    xcoord = xoff + k
+    for i in range(lj):
+        draw_unit(q, i, xcoord * xskip, ycoord, col=t2col2[qa[i][2]])
         xcoord += 1
 
-    # aligned part
+    # comp at y = 10 
+    rs, qs = max(0, k), max(-k, 0) # aligned parts of reads
+    lov = min(lj, -k + li) if k > 0 else min(li, k + lj) # length of overlap
+    re, qe = rs + lov, qs + lov
+    xcoord = xoff + rs
     for i in range(rs, re):
-        draw_unit(r, i, xcoord * xskip, ycoord, col=t2col2[ra[i][2]])
         draw_comp(i, qs - rs + i, xcoord * xskip, ycoord + 10)
-        draw_unit(q, qs - rs + i, xcoord * xskip, ycoord + 20, flip = True,
-                col=t2col2[qa[qs - rs + i][2]])
         xcoord += 1
 
-    # dangling part if any
-    for i in range(re, li):
-        draw_unit(r, i, xcoord * xskip, ycoord, col=t2col2[ra[i][2]])
+    # r at y = 20
+    xcoord = xoff
+    for i in range(li):
+        draw_unit(r, i, xcoord * xskip, ycoord + 20, col=t2col2[ra[i][2]])
         xcoord += 1
 
-    for i in range(qe, lj):
-        draw_unit(q, i, xcoord * xskip, ycoord + 20, flip = True, col=t2col2[qa[i][2]])
-        xcoord += 1
-
-    # NOTE: repeat with displacement!
-    k = aln.sbaln.koff if aln.sbaln else (aln.aln.koff + 1)
-    rs, qs = max(0, k), max(-k, 0) # aligned parts of reads
-    lov = min(lj, -k + li) if k > 0 else min(li, k + lj) # length of overlap
+    # comp at y = 30 
+    rs, qs = max(0, sbk), max(-sbk, 0) # aligned parts of reads
+    lov = min(lj, -sbk + li) if sbk > 0 else min(li, sbk + lj) # length of overlap
     re, qe = rs + lov, qs + lov
-
-    # dangling part if any
-    xcoord, xskip = 0, r.shape[1] + 10
-
-    for i in range(rs):
-        draw_unit(r, i, xcoord * xskip, ycoord + 40, col=t2col2[ra[i][2]])
-        xcoord += 1
-    for i in range(qs):
-        draw_unit(q, i, xcoord * xskip, ycoord + 60, flip = True, col=t2col2[qa[i][2]])
-        xcoord += 1
-
-    # aligned part
+    xcoord = xoff + rs
     for i in range(rs, re):
-        draw_unit(r, i, xcoord * xskip, ycoord + 40, col=t2col2[ra[i][2]])
-        draw_comp(i, qs - rs + i, xcoord * xskip, ycoord + 50)
-        draw_unit(q, qs - rs + i, xcoord * xskip, ycoord + 60, flip = True,
-                col=t2col2[qa[qs - rs + i][2]])
+        draw_comp(i, qs - rs + i, xcoord * xskip, ycoord + 30)
         xcoord += 1
 
-    # dangling part if any
-    for i in range(re, li):
-        draw_unit(r, i, xcoord * xskip, ycoord + 40, col=t2col2[ra[i][2]])
-        xcoord += 1
-
-    for i in range(qe, lj):
-        draw_unit(q, i, xcoord * xskip, ycoord + 60, flip = True, col=t2col2[qa[i][2]])
+    # q at y = 40 at k
+    xcoord = xoff + sbk
+    for i in range(lj):
+        draw_unit(q, i, xcoord * xskip, ycoord + 40, col=t2col2[qa[i][2]])
         xcoord += 1
 
     dwg.add(dwg.text(
         f"S={100*aln.aln.score:.2f} Prom={100*aln.gap:.2f} SBS={100*aln.sbaln.score if aln.sbaln else 0:.2f}",
-        insert = (5, ycoord + 85)))
+        insert = (5, ycoord + 70)))
 
     dwg.save()
 
@@ -996,13 +982,7 @@ if __name__ == '__main__':
                         draw_align(aln, bits_all, arrs,
                                 name = f"{i}-{aln.j}-{name}-100v")
 
-                        draw_align(aln, bits_history[aln.nround], arrs,
-                                name = f"{i}-{aln.j}-{name}-R{aln.nround}-p", pink = True)
-                        draw_align(aln, bits_history[0], arrs,
-                                name = f"{i}-{aln.j}-{name}-R0-p", pink = True)
-                        draw_align(aln, bits_all, arrs,
-                                name = f"{i}-{aln.j}-{name}-100v-p", pink = True)
-                        continue # NOTE: jump to where?
+                        continue
 
                     # j, eov+fex, %gap
                     for nr in range(-2, aln.nround + 1):
