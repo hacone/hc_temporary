@@ -312,7 +312,7 @@ if __name__ == '__main__':
 
         return cons_read
 
-    def dotplot_lvl(aread, bread, snvs_list, filetype = None):
+    def dotplot_lvl(aread, bread, snvs_list, filetype = None, v_scale = None):
         # output png when filetype is None
 
         aarr = fillx(aread)
@@ -324,12 +324,16 @@ if __name__ == '__main__':
         # using reads SNVs
         for vs, name in snvs_list:
             dots = squarify(acomp(aread, aarr, bread, barr, snvs = vs))
+
+            if not v_scale:
+                v_scale = (np.nanmin(dots), np.nanmax(dots))
+
             fs = max(int( 20 * len(dots) / 100 ), 20)
             fig = plt.figure(figsize=(fs, int(fs*0.8)))
             sns.set(font_scale=2)
             ax1 = fig.add_subplot(1, 1, 1)
             g1 = sns.heatmap(dots,
-                    vmin=np.nanmin(dots), vmax=np.nanmax(dots),
+                    vmin=v_scale[0], vmax=v_scale[1],
                     cmap="coolwarm", ax = ax1,
                     xticklabels = b_labels, yticklabels = a_labels)
             ax1.set_title(f"{aread.name} - {bread.name}; {len(aarr)} vs. {len(barr)} units; with {len(vs)} of {name} vars")
@@ -371,6 +375,10 @@ if __name__ == '__main__':
         v_all = var(ahers + bhers, hor_type = "~",
             err_rate = 0.05, fq_upper_bound = 1.1, comprehensive = True)
 
+        if args.v_scale:
+            v_scale = [ float(s) for s in args.v_scale.split(",") ]
+        else:
+            v_scale = None
 
         # for ca in cons_a:
         for i in range(len(alayouts)):
@@ -392,7 +400,7 @@ if __name__ == '__main__':
                 snvs_read = var([cons_a, cons_b], err_rate = 0.01, comprehensive = True)
                 snvs_list = [ (v_all, "all"), (v_major, "major"),
                     (snvs, "local"), (snvs_read, "consensus"), (None, "naive") ]
-                dotplot_lvl(cons_a, cons_b, snvs_list, filetype = args.filetype)
+                dotplot_lvl(cons_a, cons_b, snvs_list, filetype = args.filetype, v_scale = v_scale)
 
     if args.action == "show":
 
