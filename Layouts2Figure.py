@@ -59,6 +59,7 @@ def draw_read(read, arr, snvs, name = "read"):
 
     for i in range(li):
         draw_unit(r, i, xcoord * xskip, ycoord + 20, col=t2col2[ra[i][2]])
+        dwg.add(dwg.text(f"{i+1}", insert=(xcoord * xskip, ycoord + 40)))
         xcoord += 1
 
     dwg.save()
@@ -205,7 +206,7 @@ if __name__ == '__main__':
         for snvs, name in snvs_list:
             if not snvs:
                 continue
-            draw_read(cons_read, cons_arr, snvs, name = name)
+            draw_read(cons_read, cons_arr, snvs, name = f"{layout[0][0]}-" + name)
 
         # NOTE: calculate depth etc.
         lkmin = min([ lk for li, lk in layout ])
