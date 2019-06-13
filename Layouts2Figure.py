@@ -27,8 +27,6 @@ from UnitAnalysis import *
 
 gid = 0
 
-        #draw_read(cons_read, cons_arr, v_major, name = "major")
-
 def draw_read(read, arr, snvs, name = "read"):
 
     t2col2 = {"*": "black", "~": "grey", "D1":"yellow", "D12":"green",
@@ -64,6 +62,21 @@ def draw_read(read, arr, snvs, name = "read"):
 
     dwg.save()
 
+    import scipy.cluster.hierarchy as shc
+    bits_def = np.array([ bits[i,:] for i in range(li) if ra[i][2] == "~" ])
+
+    #plt.figure(figsize=(10, 7))  
+    fs = max(int( 10 * li / 20 ), 10)
+    plt.figure(figsize=(int(fs*0.6), fs))
+    plt.title(f"{read.name}-{nvars}-{name}-dendro")
+    linkage = shc.linkage(bits_def, metric = "hamming",
+            method='single', optimal_ordering = True)
+    linkage = linkage + np.array([0, 0, 0.001, 0]*linkage.shape[0]).reshape(linkage.shape)
+    dend = shc.dendrogram(linkage, orientation = "left",
+            labels = [ f"{i+1}" for i in range(li) if ra[i][2] == "~"]) 
+    plt.savefig(f"read-{read.name}-{nvars}-{name}-dendro." +\
+            ("svg" if args.filetype == "svg" else "png"))
+    plt.close()
 
 # NOTE: this is too specific to X; TODO: expose me!
 # TODO: correlate with given hors
@@ -182,7 +195,8 @@ if __name__ == '__main__':
         cons_arr = fillx(cons_read)
 
         # t2c = {"*": "*", "~": "", "D1":"Y", "D12":"X", "22U":"U", "D39":"V", "D28":"W"}
-        labels = [ t2c[t] for h, s, t in cons_read.hors ]
+        labels = [ "." if (t == "~" and (i+1)%10 == 0) else t2c[t]
+                for i, (h, s, t) in enumerate(cons_read.hors) ]
 
         if not snvs_list:
 
@@ -223,10 +237,10 @@ if __name__ == '__main__':
             else:
                 dots = acomp(cons_read, cons_arr, cons_read, cons_arr, snvs = vs, force_denom = 2057)
 
+            # Dotplot of layout
             fs = max(int( 20 * len(dots) / 100 ), 20)
             fig = plt.figure(figsize=(fs, int(fs*0.8)))
             sns.set(font_scale=2)
-
             ax1 = fig.add_subplot(1, 1, 1)
             if not v_scale:
                 v_scale = (np.nanmin(dots), np.nanmax(dots))
@@ -240,6 +254,12 @@ if __name__ == '__main__':
                     ("svg" if args.filetype == "svg" else "png"))
             plt.close()
 
+            # TODO: dendrogram by similarity of units
+            #import AgglomerativeClustering from sklearn.cluster
+            #AgglomerativeClustering(affinity = "precomputed", linkage = "single")
+            print(f"dots.shape = {dots.shape}")
+
+            # level of local variations
             cps = [ dots[i,i+1] for i in range(len(dots)-1) if depth[i] > 2 and depth[i+1] > 2 ]
             nanmean = np.nanmean(cps)
             print(f"AVGSIM\t{name}\t{len(cps)}\t{nanmean*100:.3f}")
