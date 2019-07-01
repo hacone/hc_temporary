@@ -405,6 +405,10 @@ if __name__ == '__main__':
     # NOTE it also accepts --err-rate in action layout
     parser.add_argument('--park', dest='park', help='for parallelly processing read id = k mod 24')
     parser.add_argument('--onlyi', dest='onlyi', help='generate figures for one centered read')
+    parser.add_argument('--v-scale', dest='v_scale', help='scale of dot plot as in: 99.5,100')
+
+    parser.add_argument('--adaptive', dest='ada_scale', action='store_const', const=True,
+            help='use adaptive scaling in dotplot')
     
     # NOTE: these are now in Edges2Layout.py
     #parser.add_argument('--edges', dest='edgefile', help='edge list file')
@@ -792,7 +796,7 @@ if __name__ == '__main__':
 
         # layout is like [(j0, k0), (j1, k1), (j2, k2)...]
         # extension into the right, or left if backwards is true
-        def extension(i, backwards = False, skip_figure = False):
+        def extension(i, backwards = False, skip_figure = False, v_scale = None, ada_scale = False):
 
             # initialize for round 0
             nround = 0
@@ -961,10 +965,8 @@ if __name__ == '__main__':
             sns.set(font_scale=1.5)
 
             if backwards:
-                #alns_to_plot = [(embed, "embed-rev")]
                 alns_to_plot = [(minus, "minus")]
             else:
-                #alns_to_plot = [(embed, "embed")]
                 alns_to_plot = [(plus, "plus")]
 
             ylabels = [ t2c[t] for h, s, t in arrs[i] ]
@@ -980,7 +982,7 @@ if __name__ == '__main__':
                         draw_align(aln, bits_all, arrs,
                                 name = f"{i}-{aln.j}-{name}-100v")
 
-                        continue
+                        # continue
 
                     # j, eov+fex, %gap
                     for nr in range(-2, aln.nround + 1):
@@ -1004,8 +1006,17 @@ if __name__ == '__main__':
                             nrname = f"{nr}"
 
                         xlabels = [ t2c[t] for h, s, t in arrs[aln.j] ]
+
+                        if not v_scale:
+                            v_scale = (np.nanmin(dots), np.nanmax(dots))
+
+                        if ada_scale:
+                            srt_dot = sorted( [n for n in list(dots.reshape(1, dots.shape[0]*dots.shape[1]))[0] if not np.isnan(n)], reverse = True)
+                            v_scale = (srt_dot[0],
+                                    srt_dot[int(min(len(srt_dot)-1, 1.5 * (dots.shape[0]+dots.shape[1])))])
+
                         g1 = sns.heatmap(dots,
-                                vmin=np.nanmin(dots), vmax=np.nanmax(dots),
+                                vmin=v_scale[0], vmax=v_scale[1],
                                 cmap="YlGn" if nr >= 0 else "Reds", ax = ax1,
                                 xticklabels = xlabels, yticklabels = ylabels)
 
@@ -1020,6 +1031,16 @@ if __name__ == '__main__':
             exts = Extension(i = i, plus = plus, minus = minus, embed = embed, vf_history = vf_history)
             return exts
 
+        if args.v_scale:
+            v_scale = [ float(s) for s in args.v_scale.split(",") ]
+        else:
+            v_scale = None
+
+        if args.ada_scale:
+            ada_scale = True
+        else:
+            ada_scale = False
+
         ## NOTE: always parallelised by 24 
         if args.park:
             exts = [ extension(i, backwards = args.backwards, skip_figure = args.skipfig)
@@ -1029,7 +1050,7 @@ if __name__ == '__main__':
 
         if args.onlyi:
             for ti in sorted(list(np.loadtxt(args.onlyi, dtype="I", usecols=(0)))):
-                extension(ti, backwards = args.backwards)
+                extension(ti, backwards = args.backwards, v_scale = v_scale, ada_scale = ada_scale)
 
     else:
         assert False, "invalid action."
