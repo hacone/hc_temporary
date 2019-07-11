@@ -441,8 +441,8 @@ if __name__ == '__main__':
             err_rate = float(args.err_rate) if args.err_rate else 0.03,
             comprehensive = True if args.allvars else False)
 
-        print(f"# Variants on HOR units of type: {hor_type}")
-        print_snvs(v, sort = "freq", innum = True if args.innum else False)
+        print(f"# Variants on HOR units of type: {hor_type} / {len(units)}")
+        print_snvs(v, sort = "freq", n_tests = len(units), innum = True if args.innum else False)
 
         if args.save:
             if args.nvars:
