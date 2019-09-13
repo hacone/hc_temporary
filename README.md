@@ -13,7 +13,6 @@ variant_sites = { "MonomerName" : { "Monomer" : freq_as_mon, (pos, base) : freq 
 ```
 
 ### Workflow
-Actually, I don't even remember what I did..., let me have some time to recall it right...
 
 Assume, monomers were already defined, and alignment was done for centromeric long reads, thus you have SAM files.
 `EncodedRead.py` is then used to encode reads properly (i.e., assign monomers onto regions in reads, in a manner almost-non-overlapping). `EncodedRead.py` also defines related data, so it's referenced by other scripts later.
