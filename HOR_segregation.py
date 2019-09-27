@@ -85,6 +85,21 @@ def print_reads(pkl):
             print(f"{m.monomer.name}\t{m.begin}\t{m.end}\t{m.begin-last_end}\t{len(m.monomer.snvs)}\t{m.ori}")
             last_end = m.end
 
+def type_stats(pkl):
+    reads = pickle.load(open(pkl, "rb"))
+    print("\t".join([s for s in "JDWMRxAB123450"]))
+    for r in sorted(reads, key=lambda x: -len(x.mons)):
+        total = len(r.mons)
+        # monomer type J, D, W, M, R, or x
+        supfam = Counter([ m.monomer.name[2] for m in r.mons ])
+        # archetyp A or B
+        arch = Counter([ m.monomer.name[1] for m in r.mons ])
+        # num 1-5, or 0
+        monnum = Counter([ m.monomer.name[3] for m in r.mons ])
+        print("\t".join([ f"{supfam[f]}" for f in "JDWMRx" ]) + "\t" +\
+              "\t".join([ f"{arch[t]}" for t in "AB" ]) + "\t" +\
+              "\t".join([ f"{monnum[n]}" for n in "123450" ] + [f"{total}"]))
+
 # NOTE: currently not visible from the menu
 def draw_cluster(pickles, outfile, precomputed = False):
     """ t-SNE / PCA embedding of reads based on monomer sharing to visualize the clusters. """
@@ -179,7 +194,74 @@ def extract_kmonomers(pkl, k):
         print(f"{n}\t{i}")
 
 # TODO; write up
-def show_HOR(hors):
+def draw_HOR(hers, path, cmap, with_unit = None):
+
+    # load color map
+    cmap = { k:v for k,v in [ l.strip("\n").split('\t')
+            for l in open(cmap, "r").readlines() if (len(l) > 1) and (l[0] != "#") ] }
+
+    if with_unit:
+        hers = [ h for h in hers if with_unit in [ t for i, s, t in h.hors ] ]
+
+    if not hers:
+        return 
+
+    import hashlib
+    def m2c(n):
+        return cmap[n] if n in cmap \
+            else f"#{hashlib.md5(n.encode()).hexdigest()[:6]}"
+
+    xs, ys = 0.1, 50
+    chunk, elm_written = 0, 0
+    last_i = 0
+    dwg = svgwrite.drawing.Drawing(path + f"reads-{chunk}.svg")
+
+    #for chunk in range(1 + int((len(hers)-1) / 200)):
+        #dwg = svgwrite.drawing.Drawing(path + f"reads-{chunk}.svg")
+        #for i, her in enumerate(hers[200*chunk:200*(chunk+1)]):
+
+    for i, her in enumerate(hers):
+        read = dwg.g(id=her.name,
+            style="font-size:20;font-family:Arial;font-weight:bold;")
+
+        # NOTE: for drawing monomers?
+        # for mi, mon in enumerate(her.mons):
+
+        if her.ori == '+':
+            goff = -1 * min([m.begin for m in her.mons])
+        else:
+            goff = max([m.end for m in her.mons])
+
+        for hi, (_mix, _size, elm) in enumerate(her.hors):
+            mix, size = int(_mix), int(_size)
+            if her.ori == '+':
+                b, e = goff + her.mons[mix].begin, goff + her.mons[mix + size -1].end
+            else:
+                b, e = goff + -1 * her.mons[mix].end, goff + -1 * her.mons[mix + size -1].begin
+            read.add(dwg.rect(
+                insert=((b+5) * xs, (i-last_i+0.2) * ys), size=((e-b-10) * xs, ys * 0.7),
+                fill = m2c(elm), fill_opacity = 0.5))
+
+            if elm[0:2] == "M=":
+                # read.add(dwg.text(f"{elm[2:]}", insert = ((b+10) * xs, (i+0.4) * ys)))
+                read.add(dwg.text(".", insert = ((b+10) * xs, (i-last_i+0.4) * ys)))
+            else:
+                read.add(dwg.text(f"{elm}", insert = ((b+10) * xs, (i-last_i+0.4) * ys)))
+            elm_written += 1
+
+        dwg.add(read)
+        print("", end = ".")
+
+        if elm_written > 3000:
+            dwg.save()
+            print(f"done chunk {chunk}")
+            chunk += 1
+            last_i = i
+            elm_written = 0
+            dwg = svgwrite.drawing.Drawing(path + f"reads-{chunk}.svg")
+
+    dwg.save()
+    return 
 
     def show_svg_HOR(dwg, ers, hors):
         """
@@ -413,6 +495,10 @@ if __name__ == '__main__':
 
     parser.add_argument('--cenpbbxx', dest='cenpbbxx', action='store_const', const=True, help='add variants data on CENP-box motif (X only)')
 
+    # for draw-hor
+    parser.add_argument('--cmap', dest='cmap', help='color map used for HOR drawing')
+    parser.add_argument('--with-unit', dest='with_unit', help='reads containing the specified unit will be drawn')
+
     #parser.add_argument('', dest='', help='')
     args = parser.parse_args()
 
@@ -436,6 +522,10 @@ if __name__ == '__main__':
         assert args.reads, "encoded reads pickle is not specified"
         #assert args.reffile, "ref file is missing"
         print_reads(args.reads)
+        
+    elif args.action == "type-stats":
+        assert args.reads, "encoded reads pickle is not specified"
+        type_stats(args.reads)
 
     elif args.action == "kmer":
         assert args.reads, "encoded reads pickle is not specified"
@@ -455,17 +545,17 @@ if __name__ == '__main__':
         print_HOR(args.hors, show_cenpbbxx = args.cenpbbxx)
         # print_HOR(args.hors)
 
-    elif args.action == "show":
-        # both stdout and svg; NOTE; or only to svg? cf action print
-        if not args.hors:
-            assert args.reads, "please specify either HOR encoded reads or monomer encoded reads"
-            assert args.merged, "why not merging monomers?"
-            assert args.patterns, "patterns file is not specified"
-            hor_reads = HOR_encoding(args.reads, args.merged, args.patterns)
-        else:
-            hor_reads = pickle.load(open(args.hors, "rb"))
+    elif args.action == "draw-hor":
+        # write the structure of the reads to svg
+        assert args.hors, "specify path to HOR encoded read"
+        assert args.outdir, "output path is not specified"
+        assert args.cmap, "specify path to cmap (even if it's empty)"
 
-        show_HOR(hor_reads)
+        hor_reads = pickle.load(open(args.hors, "rb"))
+        if args.with_unit:
+            draw_HOR(sorted(hor_reads, key = lambda x: -len(x.mons)), args.outdir, args.cmap, with_unit = args.with_unit)
+        else:
+            draw_HOR(sorted(hor_reads, key = lambda x: -len(x.mons)), args.outdir, args.cmap)
 
     elif args.action == "NOP":
         assert args.bamfile, "bam file is missing"

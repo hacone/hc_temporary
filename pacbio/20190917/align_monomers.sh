@@ -3,10 +3,14 @@
 export HC=/work2/hacone/2018/human_centromeres
 
 # General Settings
+
 #export MONOMER_DB=${HC}/cluster.s14.SRR3189741.fa
-export MONOMER_DB=${HC}/resource/monomers/d0.fasta
-export READ_DIR=${HC}/pacbio/Centro_Fasta_143Cells
-export TMP_DIR=${HC}/pacbio/blast/tmp/
+export MONOMER_DB=${HC}/resource/monomers/Hum14AlpMon.fa
+
+#export READ_DIR=${HC}/pacbio/Centro_Fasta_143Cells
+export READ_DIR=${HC}/pacbio/20190917/
+
+export TMP_DIR=${HC}/pacbio/20190917/blast/tmp/
 
 # Required for `sorted`
 export SAMTOOLS=samtools
@@ -14,9 +18,11 @@ export SAMTOOLS=samtools
 # Required for `encode`
 export VENV_ACT=${HC}/venv/bin/activate
 export ENCODEPY=${HC}/EncodedRead.py
+
 #export MONLIST=${HC}/resource/monomers/s14-for-X.txt
 #export MONLIST=${HC}/resource/monomers/s14-for-32.txt
-export MONLIST=${HC}/resource/monomers/s14-for-chr17.txt
+#export MONLIST=${HC}/resource/monomers/s14-for-chr17.txt
+#export MONLIST=${HC}/resource/monomers/
 
 # in case it can't reach the correct one
 export PYTHON3=${HC}/venv/bin/python3
@@ -42,11 +48,11 @@ align() {
 
   # TODO: remove this later
   if [[ -e ${LOCAL_TMP}/$( basename $MONOMER_DB ).sam ]]; then
-    echo "exist"
+    echo "exist; $READ"
     ls -lah ${LOCAL_TMP}/$( basename $MONOMER_DB ).sam
     exit
   else
-    echo "not exist; go"
+    echo "not exist; go for $READ"
   fi
 
   ## Prepare directory and database
@@ -63,9 +69,6 @@ align() {
 
   echo "Ab. Aligned for ${READ}"
 
-  # ${SAMTOOLS} faidx ${MONOMER_DB}
-  # (temporarily abandoned) ${SAMTOOLS} faidx ${MONOMER_DB} ${MON_NAME} > queries_${TRIAL}/${MON_NAME}.fa
-
 }; export -f align
 
 sorted() {
@@ -80,10 +83,6 @@ sorted() {
   SAM=${LOCAL_TMP}/$( basename $MONOMER_DB ).sam
   SA=${SAM%%.sam}
 
-    # TODO: temporary
-		gzip ${SA}.sort.read.sam
-		echo "Bd. Done."
-    exit
 
   if [ ! -e $SAM ]; then
           echo "$SAM not exists"
@@ -93,7 +92,7 @@ sorted() {
 # Convert merged.sam to temporary bam with MD tag.
 		${SAMTOOLS} view -@ 12 -b -F 4 ${SAM} > ${SA}.bam && \
 		${SAMTOOLS} calmd -@ 12 -b ${SA}.bam ${MONOMER_DB} > ${SA}.md.bam 2> /dev/null && \
-		rm ${SA}.bam
+		# rm ${SA}.bam
 		echo "Ba. MD tags calculated for ${SAM} as *.md.bam"
 
 # Convert merged sam to bam sorted in reference, then index it.
@@ -108,7 +107,12 @@ sorted() {
 		echo "Bc. Got sam sorted by reads. ready to be parsed. deleting temp files..."
 
 # delete temp files
+
 		rm ${SA}.sort.read.bam ${SA}.md.bam
+		# rm ${SA}.sort.read.sam
+
+    # TODO: temporary
+		#gzip ${SA}.sort.read.sam
 		echo "Bd. Done."
 
 }; export -f sorted
@@ -122,8 +126,12 @@ encode() {
   RAND=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 12 | head -n 1)
 
   # echo debugging...
-	echo "python3 ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.chr17.$RAND.pickle"
-  ${PYTHON3} ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.chr17.$RAND.pickle
+	# echo "python3 ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.chr17.$RAND.pickle"
+  # ${PYTHON3} ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.chr17.$RAND.pickle
+
+  MONLIST=${READ_DIR}/10mons.lst
+  echo "aligning - $SAM"
+  ${PYTHON3} ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.10mons.$RAND.pickle
 
   echo "Done encoding."
 
@@ -132,7 +140,7 @@ encode() {
 # NOTE: HERE IS THE ENTRY POINT OF THE SCRIPT!
 
 
-#find $READ_DIR | grep .fasta.gz$ | xargs -P 24 -I % bash -c "align %"
+# find $READ_DIR | grep .fasta.gz$ | xargs -P 24 -I % bash -c "align %"
 
 #find $READ_DIR | grep .fasta.gz$ | xargs -P 12 -I % bash -c "sorted %"
 
