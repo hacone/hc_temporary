@@ -8,8 +8,7 @@ export HC=/work2/hacone/2018/human_centromeres
 export MONOMER_DB=${HC}/resource/monomers/Hum14AlpMon.fa
 
 #export READ_DIR=${HC}/pacbio/Centro_Fasta_143Cells
-export READ_DIR=${HC}/pacbio/20190917/
-
+export READ_DIR=${HC}/pacbio/20190917/reads/
 export TMP_DIR=${HC}/pacbio/20190917/blast/tmp/
 
 # Required for `sorted`
@@ -37,6 +36,13 @@ export PYTHON3=${HC}/venv/bin/python3
 # blastn: 2.4.0+
 #  Package: blast 2.4.0, build Jun  1 2016 13:39:30
 
+export WORD=8
+export QCOV=60
+export PCID=60
+export GOPEN=1
+export GEXT=1
+export PARAM=w$WORD.p$QCOV.i$PCID.go$GOPEN.ge$GEXT
+
 align() {
 
   
@@ -47,13 +53,13 @@ align() {
   REF=${LOCAL_TMP}/reads.fasta
 
   # TODO: remove this later
-  if [[ -e ${LOCAL_TMP}/$( basename $MONOMER_DB ).sam ]]; then
-    echo "exist; $READ"
-    ls -lah ${LOCAL_TMP}/$( basename $MONOMER_DB ).sam
-    exit
-  else
-    echo "not exist; go for $READ"
-  fi
+  #if [[ -e ${LOCAL_TMP}/$( basename $MONOMER_DB ).sam ]]; then
+  #  echo "exist; $READ"
+  #  ls -lah ${LOCAL_TMP}/$( basename $MONOMER_DB ).sam
+  #  exit
+  #else
+  #  echo "not exist; go for $READ"
+  #fi
 
   ## Prepare directory and database
   mkdir -p ${LOCAL_TMP}
@@ -63,9 +69,13 @@ align() {
   echo "Aa. Created reference for ${READ}"
 
   ## Align all the monomers 
-  blastn -db ${REF} -query ${MONOMER_DB} -out ${LOCAL_TMP}/$( basename $MONOMER_DB ).sam \
-		-max_target_seqs 1000000 -word_size 7 -qcov_hsp_perc 60 \
+  blastn -db ${REF} -query ${MONOMER_DB} -out ${LOCAL_TMP}/$( basename $MONOMER_DB ).$PARAM.sam \
+		-max_target_seqs 1000000 -word_size $WORD -qcov_hsp_perc $QCOV -perc_identity $PCID \
+    -gapopen $GOPEN -gapextend $GEXT \
 		-outfmt "17 SQ" -parse_deflines
+
+		#-max_target_seqs 1000000 -word_size 8 -qcov_hsp_perc 80 -perc_identity 80 \
+		#-max_target_seqs 1000000 -word_size 7 -qcov_hsp_perc 60 \
 
   echo "Ab. Aligned for ${READ}"
 
@@ -80,7 +90,8 @@ sorted() {
   READ=$1
   LOCAL_TMP=${TMP_DIR}/$( basename $READ )
   # full path, and without the extension
-  SAM=${LOCAL_TMP}/$( basename $MONOMER_DB ).sam
+
+  SAM=${LOCAL_TMP}/$( basename $MONOMER_DB ).$PARAM.sam
   SA=${SAM%%.sam}
 
 
@@ -129,7 +140,7 @@ encode() {
 	# echo "python3 ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.chr17.$RAND.pickle"
   # ${PYTHON3} ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.chr17.$RAND.pickle
 
-  MONLIST=${READ_DIR}/10mons.lst
+  MONLIST=10mons.lst
   echo "aligning - $SAM"
   ${PYTHON3} ${ENCODEPY} encode_dp --sam ${SAM} --mons ${MONLIST} --out ${SAM%%.sam.gz}.10mons.$RAND.pickle
 
@@ -139,10 +150,24 @@ encode() {
 
 # NOTE: HERE IS THE ENTRY POINT OF THE SCRIPT!
 
-
 # find $READ_DIR | grep .fasta.gz$ | xargs -P 24 -I % bash -c "align %"
 
-#find $READ_DIR | grep .fasta.gz$ | xargs -P 12 -I % bash -c "sorted %"
+# find $READ_DIR | grep .fasta.gz$ | xargs -P 12 -I % bash -c "sorted %"
 
-find $TMP_DIR | grep .sam.gz$ | xargs -P 16 -I % bash -c "encode %"
+# find $TMP_DIR | grep $PARAM | grep .sam.gz$ | xargs -P 16 -I % bash -c "encode %"
 
+# find $TMP_DIR | grep pickle | grep $PARAM > mers.pickles.$PARAM.fofn 
+./hor-encode.sh ./mers.pickles.fofn > 5cells.hers.dat
+echo "encoded 1"
+./hor-encode.sh mers.pickles.$PARAM.fofn > 5cells.$PARAM.hers.dat
+echo "encoded 2"
+
+./hor-summary.sh 5cells.hers.dat 
+./hor-summary.sh 5cells.$PARAM.hers.dat 
+
+exit
+
+for f in $(ls *.hers.dat); do
+        echo $f
+        ./hor-summary.sh $f
+done

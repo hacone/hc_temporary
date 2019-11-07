@@ -16,12 +16,7 @@ SNV = namedtuple("SNV", ("pos", "base")) # Int, char
 Monomer = namedtuple("Monomer", ("name", "snvs")) # string, list(SNV) or id: Int, list(SNV)
 # TODO: should it include blast score? orientation of assignment? aligned parts info?
 AssignedMonomer = namedtuple("AssignedMonomer", ("begin", "end", "monomer", "ori")) # Int, Int, Monomer, '+'/'-'
-#AssignedMonomer = namedtuple("AssignedMonomer", ("begin", "end", "monomer")) # Int, Int, Monomer # this definition deprecated
 EncodedRead = namedtuple("EncodedRead", ("name", "mons", "length")) # string, list(AssignedMonomer), Int
-
-# multiple alignment representation. that is a set of "cells"
-# pairwise alignment is just a malign with 2 reads
-MAlign = namedtuple("MAlign", ("reads", "alignments")) # list(str), list(tuple)
 
 def pairwise_encoded(er1, er2):
     # banded (real coord) dp
@@ -168,12 +163,13 @@ def encodeSAM_DP(samfile, usemons = None):
         The result is written out in `out`.
     """
 
+    # TODO: give up this. check if it's OK to set readlen to be 0
     def readname2len(s):
         #import re
         #a = re.sub(".*/", "", s).split("_")
         #return int(a[1]) - int(a[0])
         # NOTE: for ONT
-        return 10000
+        return 0
 
     aln = pysam.AlignmentFile(samfile)
 
@@ -260,22 +256,7 @@ def encodeSAM_DP(samfile, usemons = None):
         #yield EncodedRead(name = read, mons = [ r_to_m(r) for r in result ], length = readname2len(read))
         yield EncodedRead(name = read, mons = [ r_to_m(r) for r in result ], length = length)
 
-
-
-def encodeSAM(samfile):
-    """ Encode PacBio reads in SAM format (reads as query, monomers as reference)
-        The result is written out in `out`.
-    """
-
-    def readname2len(s):
-        a = re.sub(".*/", "", s).split("_")
-        return int(a[1]) - int(a[0])
-    aln = pysam.AlignmentFile(samfile)
-    for read, mons in groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name):
-        yield EncodedRead(name = read, mons = list(parse_sam_records(aln, mons)), length = readname2len(read))
-
 def correct(reads, variants):
-
     def correct_read(read, variants):
         return EncodedRead(
                name = read.name,
@@ -342,8 +323,6 @@ def kmonomers_stats(ers):
         res = [ c for c in counter.most_common(500) if c[1] > 0 ]
         print(*res, sep="\n")
 
-
-
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Monomer-encoding of reads.')
@@ -372,17 +351,6 @@ if __name__ == "__main__":
         ers = encodeSAM_DP(args.samfile, usemons)
         with open(args.outfile, "wb") as f:
             pickle.dump(list(ers), f)
-
-    ## NOTE: deprecated.
-    elif args.action == "encode":
-        assert args.samfile, "SAM file is not specified. aborting."
-        assert args.outfile, "output file is not specified. aborting."
-
-        ers = encodeSAM(args.samfile)
-        with open(args.outfile, "wb") as f:
-            pickle.dump(list(ers), f)
-
-        # encoding_stats(ers)
 
     elif args.action == "correct":
         assert args.readfile, "file of encoded reads is not specified. aborting."
