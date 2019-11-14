@@ -1,74 +1,83 @@
 #!/bin/bash
 
 export SEQKIT=/home/hacone/local/bin/seqkit
+export FORMATTER="${SEQKIT} seq -t dna"
 
-# This output raw read sequence which is assigned as a specified HOR unit
-function extract-horseq() {
+#  Remove \n => sed ':a;N;$!ba;s/\n//g'
 
-        FORMATTER="$SEQKIT seq -t dna"
-
-        TAB=$1; READS=$2; HOR=$3
-
-        echo "$( grep -e "$HOR" $TAB | wc -l ) $HOR seqs found." >&2
-        while read line; do
-                set $line; R=$1; B=$2; E=$3
-                if [[ $B -lt $E ]]; then
-                        RB=$(( $B - 10 ))
-                        RE=$(( $E + 10 ))
-                        samtools faidx ${READS} $R:$RB-$RE | $FORMATTER
-                else
-                        # TODO: revcomp version seems to produce slightly wrong seq?
-                        RL=$( grep $R $READS.fai | cut -f2 )
-                        RB=$(( $RL - (10000 - $E) - 10 ))
-                        RE=$(( $RL - (10000 - $B) + 10 ))
-                        samtools faidx ${READS} $R:$RB-$RE \
-                        | $FORMATTER --reverse --complement | sed -e "/^>/s/$/_RC/"
-                fi
-        done < <(grep -e "$HOR" $TAB)
-}
-
-## 
 # iter-consed in.fa out.fa seqname
-function iter-consed() {
-        #  Remove \n => sed ':a;N;$!ba;s/\n//g'
+function iter_consed() {
 
         IN_FA=$1
-        OUT_FA=${2:-$IN_FA.cons.fa}
-        SEQNAME=${3:-cons}
+        IN_FA_BN=$( basename $IN_FA )
+        OUT_FA=${2:-${IN_FA_BN%%.fa}}
+        SEQNAME=${3:-${IN_FA_BN%%.fa}_consed}
 
-        # echo "seed: $(head -n 1 $IN_FA | sed -e 's/>//')"
-        # $FORMATTER -m 1 -w 0 -s $IN_FA > .seqs.$IN_FA
+        $SEQKIT sort -l $IN_FA | $FORMATTER -m 1 -w 0 -s > .tmp.all
 
-        $FORMATTER -m 1 -w 0 -s $IN_FA > .tmp.seqs
-        rm .cons.$IN_FA
+        NSEQ=$( cat .tmp.all | wc -l )
+        if [[ $NSEQ -gt 6250 ]]; then
+                MINI=$( echo "($NSEQ / 2) - 2500" | bc )
+        else
+                MINI=$( echo "$NSEQ / 10" | bc )
+        fi
+        MAXI=$( echo "$NSEQ - $MINI" | bc )
+        HALF=$( echo "($MINI + $MAXI) / 2" | bc )
 
-        for N in {0..100}; do
+        echo "nseq, mini, half, maxi = $NSEQ, $MINI, $HALF, $MAXI"
 
-        gawk 'NR>'$N .tmp.seqs > .seqs.$IN_FA
-        head -n $N .tmp.seqs >> .seqs.$IN_FA
-        consed .seqs.$IN_FA | grep "^[acgt]" | tr "acgt" "ACGT" \
-                | sed ':a;N;$!ba;s/\n//g' >> .cons.$IN_FA
+        gawk "$MINI<NR&&NR<$MAXI" .tmp.all > .tmp.80p
 
-        cat .cons.$IN_FA .seqs.$IN_FA > .cons.seqs.$IN_FA
+        rm ${OUT_FA}.single.fa 2> /dev/null
+        rm ${OUT_FA}.double.fa 2> /dev/null
 
-        echo ">$SEQNAME" > .cons2.$IN_FA
-        consed .cons.seqs.$IN_FA | grep "^[acgt]" | tr "acgt" "ACGT" \
-                | sed ':a;N;$!ba;s/\n//g' >> .cons2.$IN_FA
+        for OF in {0..19}; do
+                gawk "NR==($OF+$HALF)" .tmp.80p > .tmp.cs
+                gawk "NR!=($OF+$HALF)" .tmp.80p >> .tmp.cs
 
-        $FORMATTER .cons2.$IN_FA > $OUT_FA
-        rm .seqs.$IN_FA .cons.$IN_FA .cons.seqs.$IN_FA .cons2.$IN_FA
+                echo ">${SEQNAME}_s_${OF}" >> ${OUT_FA}.single.fa
+                consed .tmp.cs | grep "^[acgt]" | tr "acgt" "ACGT" \
+                        | sed ':a;N;$!ba;s/\n//g' >> ${OUT_FA}.single.fa
+                echo -n $OF"."
 
+                tail -n 1 ${OUT_FA}.single.fa > .tmp.cs2
+                gawk "NR!=($OF+$HALF)" .tmp.80p >> .tmp.cs2
+
+                echo ">${SEQNAME}_d_${OF}" >> ${OUT_FA}.double.fa
+                consed .tmp.cs2 | grep "^[acgt]" | tr "acgt" "ACGT" \
+                        | sed ':a;N;$!ba;s/\n//g' >> ${OUT_FA}.double.fa
+                echo -n $OF"*"
         done
 
-}
+        # stats 20 single-round seqs
+        $FORMATTER -m 1 -w 0 -s ${OUT_FA}.single.fa > .tmp.cs
+        consed -V -t.04 .tmp.cs > ${IN_FA_BN%%.fa}.consed.log
 
-TAB=$1; READS=$2; HOR=$3
-FORMATTER="seqkit seq -t dna"
-if [[ $TAB == "-h" ]]; then
-        echo "horseq.sh TABLE READS HOR"; exit
-fi
-extract-horseq $TAB $READS $HOR > $HOR.fa
-echo "extracted $HOR"
+        # stats 20 double-round seqs
+        $FORMATTER -m 1 -w 0 -s ${OUT_FA}.double.fa > .tmp.cs
+        consed -V -t.04 .tmp.cs >> ${IN_FA_BN%%.fa}.consed.log
 
-#iter-consed $HOR.fa $HOR.cons.fa
-#echo "got consensus"
+        # wrap @ 60
+        $FORMATTER -w 60 ${OUT_FA}.single.fa > .tmp.fa
+        mv .tmp.fa ${OUT_FA}.single.fa
+
+        $FORMATTER -w 60 ${OUT_FA}.double.fa > .tmp.fa
+        mv .tmp.fa ${OUT_FA}.double.fa
+
+        rm .tmp.{all,80p,cs,cs2,fa} 2> /dev/null
+        echo -e "\ndone for ${IN_FA_BN}"
+
+}; export -f iter_consed;
+
+mkdir -p HOR-consensi
+for s in $( ls /glusterfs/hacone/blast-tmp/ | grep -v Ashkenazi ); do
+        for h in 11mW 5mW2 16mW 12mW2; do
+                echo "iter_consed ./HOR-subseqs/$s.$h.fa $s.$h.cons ${s}_${h}"
+                iter_consed ./HOR-subseqs/$s.$h.fa $s.$h.cons ${s}_${h}
+                mv *.consed.log HOR-consensi/
+                mv ${s}.${h}.double.fa HOR-consensi/
+                mv ${s}.${h}.single.fa HOR-consensi/
+        done
+        echo "done for $s"
+done
+echo "all done"
