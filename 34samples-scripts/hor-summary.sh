@@ -1,19 +1,17 @@
 #/bin/bash
 
 TAB=$1
+DEF=$2
 
-# synopsis: ./hor-summary.sh
+# synopsis: ./hor-summary.sh <TAB> <DEF>
 
 #nreads=$( grep -v readname $TAB | grep -v ^$ | LC_ALL=C sort | uniq | wc -l )
-nreads=$( grep -v readname $TAB | gawk '{ s+=$5 } END{ print s }' )
-echo $nreads
+nmons=$( grep -v readname $TAB | gawk '{ s+=$5 } END{ print s }' )
 
-exit
+echo -e "unit\tsize\tocc\tmons"
+echo -e "MONS\t1\t${nmons}\t${nmons}"
 
 tot_pat=0
-
-echo -e "n_reads\t${nreads}"
-echo -e "unit\tsize\tocc\tmons"
 
 while read line; do
 
@@ -24,4 +22,4 @@ while read line; do
 	tot_pat=$(( $tot_pat + ( $us * $npat ) ))
 	echo -e "${pat}\t${us}\t${npat}\t$(( $us * $npat ))"
 
-done < <( cat HOR-pentamers.def | grep -v ^$ | grep -v \# )
+done < <( cat ${DEF} | grep -v ^$ | grep -v \# )
