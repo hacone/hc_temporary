@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# DNA color scheme @ http://biomodel.uah.es/en/model4/dna/atgc.htm
+
+PH=${1}
+
+if [[ $PH ]]; then
+    A=`printf "\033[44m$PH\033[0m"`
+    C=`printf "\033[43m$PH\033[0m"`
+    G=`printf "\033[42m$PH\033[0m"`
+    T=`printf "\033[41m$PH\033[0m"`
+else
+    A=`printf "\033[44mA\033[0m"`
+    C=`printf "\033[43mC\033[0m"`
+    G=`printf "\033[42mG\033[0m"`
+    T=`printf "\033[41mT\033[0m"`
+fi
+
+if [ -p /dev/stdin ]; then 
+  sed -e "s/A/$A/g;s/C/$C/g;s/G/$G/g;s/T/$T/g" /dev/stdin
+fi

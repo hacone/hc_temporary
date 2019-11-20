@@ -163,27 +163,19 @@ def encodeSAM_DP(samfile, usemons = None):
         The result is written out in `out`.
     """
 
-    # TODO: give up this. check if it's OK to set readlen to be 0
-    def readname2len(s):
-        #import re
-        #a = re.sub(".*/", "", s).split("_")
-        #return int(a[1]) - int(a[0])
-        # NOTE: for ONT
-        return 0
+    bl_min = 50
 
     aln = pysam.AlignmentFile(samfile)
-
     usemon_ids = [ i for i, n in enumerate(aln.references) if n in usemons ] if usemons else []
 
     for read, mons in groupby(aln.fetch(until_eof=True), key=lambda x: x.query_name):
-        #yield EncodedRead(name = read, mons = list(parse_sam_records(aln, mons)), length = readname2len(read))
-        length = readname2len(read)
+
         mons_f = []
 
         #if usemons:
         #    mons = [ m for m in mons if aln.references[m.reference_id] in usemons ]
 
-        for mon in [ m for m in mons if (not m.is_secondary) and m.has_tag("MD") and m.get_tag("BS") > 50 ]:
+        for mon in [ m for m in mons if (not m.is_secondary) and m.has_tag("MD") and m.get_tag("BS") > bl_min ]:
 
             if usemon_ids and mon.reference_id not in usemon_ids:
                 continue
@@ -191,7 +183,7 @@ def encodeSAM_DP(samfile, usemons = None):
             rs, re = get_read_range(mon)
             rs_full, re_full = rs - mon.reference_start, re + aln.lengths[mon.reference_id] - mon.reference_end
             if mon.is_reverse:
-                re_full, rs_full = length - rs_full, length - re_full
+                re_full, rs_full = (-1 * rs_full),  (-1 * re_full)
             score = mon.get_tag("BS")
             mons_f += [(mon, rs_full, re_full, score, not mon.is_reverse)]
 
@@ -207,9 +199,10 @@ def encodeSAM_DP(samfile, usemons = None):
         dp_s = np.zeros(len(mons_f))
         dp_t = [ () for i in range(len(mons_f)) ] # empty traceback
 
+
         if False: # NOTE: pure DP. BS threshold 50. overlap penalty 2 / bp
             for i in range(len(mons_f)):
-                cand = [ (dp_s[j] + (mons_f[i][3] - 50) +  min([0, mons_f[i][1] - mons_f[j][2]]) * 2, j) for j in range(i) ] + [(mons_f[i][3] - 50, -1)]
+                cand = [ (dp_s[j] + (mons_f[i][3] - bl_min) +  min([0, mons_f[i][1] - mons_f[j][2]]) * 2, j) for j in range(i) ] + [(mons_f[i][3] - bl_min, -1)]
                 # TODO: I may need suboptimal ones too...
                 # TODO: these 3 lines can be one?
                 max_s, max_j = max(cand)
@@ -225,9 +218,9 @@ def encodeSAM_DP(samfile, usemons = None):
             else:
                 max_past = max( [ (dp_s[j], j) for j in cand if mons_f[j][2] <= mons_f[i][1] ] + [(-1, -1)] )[1]
             cand = [ j for j in cand if mons_f[j][2] > mons_f[i][1] ]
-            max_s, max_j = dp_s[max_past] + (mons_f[i][3] - 50), max_past
+            max_s, max_j = dp_s[max_past] + (mons_f[i][3] - bl_min), max_past
             for j in cand:
-                s = dp_s[j] + (mons_f[i][3] - 50) + min([0, mons_f[i][1] - mons_f[j][2]]) * 2
+                s = dp_s[j] + (mons_f[i][3] - bl_min) + min([0, mons_f[i][1] - mons_f[j][2]]) * 2
                 if s > max_s:
                     max_s, max_j = s, j
             dp_s[i], dp_t[i] = max_s, max_j
@@ -253,8 +246,7 @@ def encodeSAM_DP(samfile, usemons = None):
             monomer = Monomer(name = aln.references[r.reference_id], snvs = snvs)
             return AssignedMonomer(begin = r_cmp[1], end = r_cmp[2], monomer = monomer, ori = '+' if r_cmp[4] else '-')
 
-        #yield EncodedRead(name = read, mons = [ r_to_m(r) for r in result ], length = readname2len(read))
-        yield EncodedRead(name = read, mons = [ r_to_m(r) for r in result ], length = length)
+        yield EncodedRead(name = read, mons = [ r_to_m(r) for r in result ], length = 0)
 
 def correct(reads, variants):
     def correct_read(read, variants):
