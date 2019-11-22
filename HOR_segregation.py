@@ -370,10 +370,18 @@ def cenpb_vars(rd, h, summary = False):
 # NOTE: this option is currently only for X
 def print_HOR_read(r, show_cenpbbxx = False):
     """ exposed for later use. """
-    for _idx, _size, elem in r.hors:
+
+    hor_list = [ (n, h) for n, h in enumerate(r.hors) if h[2][0:2] != "M=" ]
+    if not hor_list:
+        hor_start = -1 
+        hor_end = -1 
+    else:
+        hor_start = hor_list[0][0]
+        hor_end = hor_list[-1][0]
+
+    for n, (_idx, _size, elem) in enumerate(r.hors):
 
         idx, size = int(_idx), int(_size)
-
         if r.ori == '+':
             b, e = r.mons[idx].begin, r.mons[idx + size - 1].end
             gap = 0 if idx == 0 else r.mons[idx].begin - r.mons[idx-1].end # gap before me.
@@ -382,13 +390,15 @@ def print_HOR_read(r, show_cenpbbxx = False):
             gap = 0 if idx == 0 else -(r.mons[idx].end - r.mons[idx-1].begin)
 
         nvars = sum([ len(m.monomer.snvs) for m in r.mons[idx:idx+size] ])
+        is_inside = (hor_start <= n) and (n <= hor_end)
 
-        if show_cenpbbxx:
-            cbb_sites, cbb_motifs = cenpb_vars(r, idx, summary = True) if elem == "~" else (-1, -1)
-            print(f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t" +\
-                  f"{gap}\t{nvars}\t{cbb_sites}\t{cbb_motifs}")
-        else:
-            print( f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t{gap}\t{nvars}")
+        print( f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t" +\
+               f"{gap}\t{nvars}\t{100.0*nvars/abs(e-b):.2f}\t" + ("i" if is_inside else "x"))
+
+        #if show_cenpbbxx:
+        #    cbb_sites, cbb_motifs = cenpb_vars(r, idx, summary = True) if elem == "~" else (-1, -1)
+        #    print(f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t" +\
+        #          f"{gap}\t{nvars}\t{cbb_sites}\t{cbb_motifs}")
     print("")
 
 def print_HOR(pkl, show_cenpbbxx = False):
@@ -415,10 +425,12 @@ def HOR_encoding(pkl, path_merged, path_patterns):
     patterns = load_patterns(path_patterns)
     pat_size = { len(p) for p in patterns.keys() }
 
-    def ren(s): # rename
+    def ren(s, rc = False): # rename
         s = re.sub("horID_", "", s)
         s = re.sub(".mon_", "-", s)
-        return s if not s in merged else merged[s]
+        if s in merged:
+            s = merged[s]
+        return s + "_RC" if rc else s
 
     def hor_encode_read(er):
 
@@ -427,11 +439,13 @@ def HOR_encoding(pkl, path_merged, path_patterns):
             mons = er.mons
         # list large gap position (gap after me)
             gaps = [ mons[i+1].begin - mons[i].end for i in range(len(mons)-1) ] + [0]
+        # renamed monomers in the read
+            ren_mons = [ ren(m.monomer.name, True if m.ori == "-" else False) for m in mons ]
         else:
             mons = list(reversed(er.mons))
             gaps = [ mons[i].begin - mons[i+1].end for i in range(len(mons)-1) ] + [0]
-        # renamed monomers in the read
-        ren_mons = [ ren(m.monomer.name) for m in mons ]
+            ren_mons = [ ren(m.monomer.name, True if m.ori == "+" else False) for m in mons ]
+
 
         # find patterns : NOTE: this can be a bit faster
         found = []
@@ -451,7 +465,7 @@ def HOR_encoding(pkl, path_merged, path_patterns):
         for i in range(len(mons)):
             # TODO: this is naive impl
             found = [ f for f in found if not f[1] <= i  ]
-            s[i], b[i], t[i] = max( [ (s[f[0]-1] + 2 * (f[1] - f[0]) - 1, f[0]-1, f) for f in found if f[1]-1 == i ] + [(s[i-1] - 1, i-1, f"M={ren(mons[i].monomer.name)}")] )
+            s[i], b[i], t[i] = max( [ (s[f[0]-1] + 2 * (f[1] - f[0]) - 1, f[0]-1, f) for f in found if f[1]-1 == i ] + [(s[i-1] - 1, i-1, f"M={ren_mons[i]}")] )
 
         # report.
         result = []
