@@ -22,16 +22,25 @@ function monomer_encode() {
 function hor_encode() {
 
   hor=$1 ; sample=$2
+
   SAM=/data/hacone/filtered_alignments/${sample}.58mons.${hor}.sam.gz
   FOFN=${SAM%%.sam.gz}.pkl.tmp.fofn
+
   HER_DAT=${SAM%%.sam.gz}.her.dat
   DEF=${3:-Monomers/HOR-pentamers-chromspec.def}
 
+  echo ${SAM%%.sam.gz}.pickle > ${FOFN}
+
   echo "h-encoding for $hor : $sample"
-  ./hor-encode.sh ${FOFN} ${DEF} > ${HER_DAT}
+
+  if [[ $4 == "print" ]]; then
+          ./hor-encode.sh ${FOFN} > ${HER_DAT}
+  else
+          ./hor-encode.sh ${FOFN} ${DEF} > ${HER_DAT}
+  fi
   echo "done h-encoding for $hor : $sample"
 
-  ./hor-summary.sh ${HER_DAT} ${DEF} > ${HER_DAT%%.dat}.summary
+  ./hor-summary.sh ${HER_DAT} ${DEF} | column -t > ${HER_DAT%%.dat}.summary
   echo "done hor-summary for $hor : $sample"
 
 }; export -f hor_encode;
@@ -61,12 +70,21 @@ if [[ 1 == 0 ]]; then
 #find $TMP_DIR | grep .sam.gz$ | grep ${MONREF} \
 #        | xargs -P 16 -I % bash -c "encode % ${MONLIST}"
 
-for sample in Ashkenazi CHM13Hifi Dai Esan Finnish Gujarati HG005 Maasai Mende NA12878Hifi Peruvian PuertoRican Toscani CHM13CLR; do
-        for hor in 5m 11m 12m 16m; do
-                hor_encode ${hor} ${sample} "Monomers/HOR-${hor}.def"
-        done
+fi # NOTE: entry
+
+# TODO: next 5m, 11m, 16m for all samples
+#for sample in Ashkenazi; do
+#for hor in 12m 16m 11m 5m; do
+for hor in 12m 16m; do
+for sample in Esan CHM13CLR Ashkenazi CHM13Hifi Dai Finnish Gujarati HG005 Maasai Mende NA12878Hifi Peruvian PuertoRican Toscani; do
+#        for hor in 5m 11m 12m 16m; do
+                hor_encode ${hor} ${sample} "Monomers/HOR-${hor}.def" "print" &
+                # "print"
+done
+sleep 30
 done
 
+exit
 
 for sample in Ashkenazi CHM13Hifi Dai Esan Finnish Gujarati HG005 Maasai Mende NA12878Hifi Peruvian PuertoRican Toscani CHM13CLR; do
         print_var 12m ${sample} "X-12mW" "12mW" &
@@ -76,7 +94,6 @@ for sample in Ashkenazi CHM13Hifi Dai Esan Finnish Gujarati HG005 Maasai Mende N
         sleep 30
 done 
 
-
 mkdir -p HOR_SNVs/
 for hor in 5m 11m 12m 16m; do
         for sample in Ashkenazi CHM13Hifi Dai Esan Finnish Gujarati HG005 Maasai Mende NA12878Hifi Peruvian PuertoRican Toscani CHM13CLR; do
@@ -85,22 +102,20 @@ for hor in 5m 11m 12m 16m; do
         done | LC_ALL=C sort -k2,2n -k3,3n -k4,4 | column -t > HOR_SNVs/all.${hor}.${hor}W.vars
 done 
 
-fi # NOTE: entry
-
 cd HOR_SNVs/
-#${PYTHON3} variants.py
+${PYTHON3} variants.py
 
 for hor in 5m 11m 12m 16m; do
 
         mv ${hor}.vars.tab ${hor}.vars.tab.tmp
 
         cat <( head -n 1 ${hor}.vars.tab.tmp ) \
-            <( sort -k18,18nr ${hor}.vars.tab.tmp | sed -e "s/\t0\.00/\t-/g" ) \
-        | column -t > ${hor}.vars.tabp
+            <( sort -k39,39nr ${hor}.vars.tab.tmp | sed -e "s/\t0\.00/\t-/g" ) \
+        | column -t > ${hor}.vars.tabp.p0
 
         cat <( head -n 1 ${hor}.vars.tab.tmp ) \
-            <( sort -k18,18nr ${hor}.vars.tab.tmp ) \
-        | column -t > ${hor}.vars.tab
+            <( sort -k39,39nr ${hor}.vars.tab.tmp ) \
+        | column -t > ${hor}.vars.tab.p0
 
         rm ${hor}.vars.tab.tmp
 done

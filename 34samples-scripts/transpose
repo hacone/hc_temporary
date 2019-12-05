@@ -1,0 +1,3 @@
+#!/bin/bash
+I=$1 ; if [ -p /dev/stdin ]; then I=/dev/stdin ; fi
+cat $I | perl -anF'\t|\n' -e'$n=@F-1if!$n;for(0..$n){push@{$$m[$_]},$F[$_]}''END{print map{join"\t",@$_,"\n"}@$m}'

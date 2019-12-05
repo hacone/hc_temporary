@@ -5,6 +5,7 @@ import numpy as np
 import os
 import pickle
 import re
+import functools
 
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
@@ -367,20 +368,14 @@ def cenpb_vars(rd, h, summary = False):
     else:
         return res
 
-# NOTE: this option is currently only for X
+# NOTE: CENP-B option is currently only for X
+# NOTE: returns candidates tracts of novel HOR variant
 def print_HOR_read(r, show_cenpbbxx = False):
     """ exposed for later use. """
 
-    hor_list = [ (n, h) for n, h in enumerate(r.hors) if h[2][0:2] != "M=" ]
-    if not hor_list:
-        hor_start = -1 
-        hor_end = -1 
-    else:
-        hor_start = hor_list[0][0]
-        hor_end = hor_list[-1][0]
+    coords = [ 0 for i in range(len(r.hors)) ]
 
     for n, (_idx, _size, elem) in enumerate(r.hors):
-
         idx, size = int(_idx), int(_size)
         if r.ori == '+':
             b, e = r.mons[idx].begin, r.mons[idx + size - 1].end
@@ -389,25 +384,43 @@ def print_HOR_read(r, show_cenpbbxx = False):
             b, e = r.mons[idx].end, r.mons[idx + size - 1].begin
             gap = 0 if idx == 0 else -(r.mons[idx].end - r.mons[idx-1].begin)
 
+        coords[n] = (b, e, gap, elem[:2] == "M=" or elem[:3] == "Rev")
+
+    # search variant HOR candidates
+    hv_str = "".join([ f"{'m' if is_m else 'h'}" if g < 100 else
+                       f"{'M' if is_m else 'H'}" for b, e, g, is_m in coords ])
+
+    hv_new_idx = functools.reduce(lambda x, y: x | y,
+            [ set(range(mt.start()+1, mt.end()-1)) for mt in re.finditer("[hH]m+h", hv_str) ], set())
+
+    hv_idx = functools.reduce(lambda x, y: x | y,
+            [ set(range(mt.start()+1, mt.end()-1)) for mt in re.finditer("[hH]h+h", hv_str) ], set())
+
+    for n, (_idx, _size, elem) in enumerate(r.hors):
+        b, e, gap, is_m = coords[n]
+        idx, size = int(_idx), int(_size)
         nvars = sum([ len(m.monomer.snvs) for m in r.mons[idx:idx+size] ])
-        is_inside = (hor_start <= n) and (n <= hor_end)
-
         print( f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t" +\
-               f"{gap}\t{nvars}\t{100.0*nvars/abs(e-b):.2f}\t" + ("i" if is_inside else "x"))
-
-        #if show_cenpbbxx:
-        #    cbb_sites, cbb_motifs = cenpb_vars(r, idx, summary = True) if elem == "~" else (-1, -1)
-        #    print(f"{r.name}\t{b}\t{e}\t{idx}\t{size}\t{elem}\t" +\
-        #          f"{gap}\t{nvars}\t{cbb_sites}\t{cbb_motifs}")
+               f"{gap}\t{nvars}\t{100.0*nvars/abs(e-b):.2f}\t" +\
+               ("OK\t" if n in hv_idx else ".\t") +\
+               ("*new*" if n in hv_new_idx else "."))
     print("")
+
+    return [ tuple([ r.hors[i][2] for i in range(mt.start()+1, mt.end()-1) ]) for mt in re.finditer("[hH]m+h", hv_str) ]
 
 def print_HOR(pkl, show_cenpbbxx = False):
     """ taking a pickled HOR encoded reads, outputs HOR structure of the reads. """
 
     hors = pickle.load(open(pkl, "rb"))
-    print("readname\tbegin\tend\tidx\tsize\telem\tgap\tvars")
+    print("#readname\tbegin\tend\tidx\tsize\telem\tgap\tvars")
+    candidates = Counter()
+
     for r in sorted(hors, key=lambda x: -len(x.mons)):
-        print_HOR_read(r, show_cenpbbxx)
+        cand = print_HOR_read(r, show_cenpbbxx)
+        candidates.update(cand)
+
+    print("##########")
+    print("\n".join([ f"#\t{c}\t{len(p)}\t" + "\t".join(p) for p, c in candidates.most_common()  if c >= 2 ]))
 
 
 def HOR_encoding(pkl, path_merged, path_patterns):
@@ -423,11 +436,12 @@ def HOR_encoding(pkl, path_merged, path_patterns):
 
     merged = load_dict(path_merged)
     patterns = load_patterns(path_patterns)
+    pat_str = { c : "#".join(p) for p, c in patterns.items() }
     pat_size = { len(p) for p in patterns.keys() }
 
     def ren(s, rc = False): # rename
-        s = re.sub("horID_", "", s)
-        s = re.sub(".mon_", "-", s)
+        #s = re.sub("horID_", "", s)
+        #s = re.sub(".mon_", "-", s)
         if s in merged:
             s = merged[s]
         return s + "_RC" if rc else s
@@ -446,16 +460,14 @@ def HOR_encoding(pkl, path_merged, path_patterns):
             gaps = [ mons[i].begin - mons[i+1].end for i in range(len(mons)-1) ] + [0]
             ren_mons = [ ren(m.monomer.name, True if m.ori == "+" else False) for m in mons ]
 
-
         # find patterns : NOTE: this can be a bit faster
+
         found = []
         for ps in pat_size:
-            for p, c in patterns.items():
-                if len(p) == ps:
-                    pat_str = "#".join([f"{s}" for s in p])
-                    for i in range(len(mons)-ps+1):
-                        if all([ gaps[j] < 100 for j in range(i,i+ps-1) ]) and "#".join([f"{s}" for s in ren_mons[i:i+ps]]) == pat_str:
-                            found += [(i, i+ps, c)]
+            for i in range(len(mons)-ps+1):
+                if all([ gaps[j] < 100 for j in range(i,i+ps-1) ]):
+                    rd_str = "#".join(ren_mons[i:i+ps])
+                    found += [ (i, i+ps, c) for p, c in patterns.items() if len(p) == ps and rd_str == pat_str[c] ]
 
         # find best layout of patterns
         s = [ 0 for i in range(len(mons) + 1) ]
@@ -574,5 +586,4 @@ if __name__ == '__main__':
     elif args.action == "NOP":
         assert args.bamfile, "bam file is missing"
         #absolute_frequency_distribution(args.bamfile)
-
 
