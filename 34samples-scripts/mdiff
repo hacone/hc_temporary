@@ -1,0 +1,9 @@
+#!/bin/bash
+diff \
+   --unchanged-group-format='%=' \
+   --old-group-format='' \
+   --new-group-format='%>' \
+   --changed-group-format='<<<<<<<LEFT
+%<=======
+%>>>>>>>>RIGHT
+' ${1} ${2}
