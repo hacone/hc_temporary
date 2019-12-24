@@ -1,0 +1,29 @@
+5m             M1  M2  M3  M4  M5                  
+
+#(5mx2)        M1  M2  M3  M4  M5  M1  M2  M3  M4  M5
+*9m4-1         M1  M2  M3  M4      M1  M2  M3  M4  M5  
+*9m5-2         M1  M2  M3  M4  M5      M2  M3  M4  M5  
+
+*8m3-1         M1  M2  M3          M1  M2  M3  M4  M5      
+*8m4-2         M1  M2  M3  M4          M2  M3  M4  M5      
+*8m5-3         M1  M2  M3  M4  M5          M3  M4  M5      
+
+*7m2-1         M1  M2              M1  M2  M3  M4  M5          
+*7m3-2         M1  M2  M3              M2  M3  M4  M5          
+*7m4-3         M1  M2  M3  M4              M3  M4  M5          
+*7m5-4         M1  M2  M3  M4  M5              M4  M5          
+*7m6-5         M1  M2  M3  M4  M5  M1              M5          
+
+*7m1x3         M1              M1  M1  M2  M3  M4  M5          
+*6m1           M1                  M1  M2  M3  M4  M5              
+*6m2           M1  M2                  M2  M3  M4  M5              
+*6m3           M1  M2  M3                  M3  M4  M5              
+*6m4           M1  M2  M3  M4                  M4  M5              
+*6m5           M1  M2  M3  M4  M5                  M5              
+
+#5m            M1  M2  M3  M4  M5                  
+*4m2           M1      M3  M4  M5                      
+*3m1-4         M1          M4  M5                          
+*4m3           M1  M2      M4  M5                      
+*3m2-5         M1  M2          M5                          
+*4m4           M1  M2  M3      M5                      

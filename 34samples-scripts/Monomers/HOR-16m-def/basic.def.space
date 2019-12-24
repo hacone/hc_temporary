@@ -1,0 +1,142 @@
+# Basic blocks
+##5M     M1  M2  M3  M4  M5
+##7M     M1  M2  M3  M4  M3  M4  M5
+##(3)    M1  M1  M1  M5
+# 5M + 7M = 12M
+##12M    M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5
+# i.e., the canonical 16-mer = 12M(3)
+
+*PRE-5m                M1  M2  M3  M4  M5
+*POST-9m-7M(1)         M1  M2  M3  M4  M3  M4  M5  M1  M5
+*POST-10m-7M(2)        M1  M2  M3  M4  M3  M4  M5  M1  M1  M5
+*POST-11m-7M(3)        M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5
+*POST-12m-7M(4)        M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M1  M5
+
+# X (n)
+*7m-5M(1)              M1  M2  M3  M4  M5  M1  M5
+*8m-5M(2)              M1  M2  M3  M4  M5  M1  M1  M5
+*9m-5M(3)              M1  M2  M3  M4  M5  M1  M1  M1  M5
+*10m-5M(4)             M1  M2  M3  M4  M5  M1  M1  M1  M1  M5
+*14m-5M(2)(2)(2)       M1  M2  M3  M4  M5  M1  M1  M5  M1  M1  M5  M1  M1  M5
+*17m-5M(2)(2)(2)(2)    M1  M2  M3  M4  M5  M1  M1  M5  M1  M1  M5  M1  M1  M5  M1  M1  M5
+
+# X (n) X (n)
+*17m-5M(3)345(3)       M1  M2  M3  M4  M5  M1  M1  M1  M1  M5  M3  M4  M5  M1  M1  M1  M5
+
+# X 7 (n)
+*14m(1)                M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M5
+*15m(2)                M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M5
+16m                    M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5
+*16m-1(2)          M1  M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M5
+*17m(4)                M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M1  M5
+*18m(5)                M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M1  M1  M5
+*18m(2)(2)             M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M5  M1  M1  M5
+*19m(2)(3)             M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M5  M1  M1  M1  M5
+*18m(3)(1)             M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5  M1  M5
+*19m(3)(2)             M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5  M1  M1  M5
+*20m(3)(3)             M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5  M1  M1  M1  M5
+
+# single deletion from X X (n)
+*14m2-5                M1  M2          M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5
+*15m3-5                M1  M2  M3      M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5
+*12m3-7(2)             M1  M2  M3              M2  M3  M4  M3  M4  M5  M1  M1  M5
+*12m3-8                M1  M2  M3                  M3  M4  M3  M4  M5  M1  M1  M1  M5
+
+*13m5(1)               M1  M2  M3  M4      M1  M2  M3  M4  M3  M4  M5  M1  M5
+*12m4-7(1)             M1  M2  M3  M4          M2  M3  M4  M3  M4  M5  M1  M5
+*13m4-7(2)             M1  M2  M3  M4          M2  M3  M4  M3  M4  M5  M1  M1  M5
+*14m4-7                M1  M2  M3  M4          M2  M3  M4  M3  M4  M5  M1  M1  M1  M5
+*15m4-7(4)             M1  M2  M3  M4          M2  M3  M4  M3  M4  M5  M1  M1  M1  M1  M5
+*15m4-7(2)(1)          M1  M2  M3  M4          M2  M3  M4  M3  M4  M5  M1  M1  M5  M1  M5
+*16m4-7(2)(2)          M1  M2  M3  M4          M2  M3  M4  M3  M4  M5  M1  M1  M5  M1  M1  M5
+*19m4-7(2)(2)(2)       M1  M2  M3  M4          M2  M3  M4  M3  M4  M5  M1  M1  M5  M1  M1  M5  M1  M1  M5
+*11m4-8(1)             M1  M2  M3  M4              M3  M4  M3  M4  M5  M1  M5
+*13m4-8                M1  M2  M3  M4              M3  M4  M3  M4  M5  M1  M1  M1  M5
+*12m4-9                M1  M2  M3  M4                  M4  M3  M4  M5  M1  M1  M1  M5
+*15m6                  M1  M2  M3  M4  M5      M2  M3  M4  M3  M4  M5  M1  M1  M1  M5
+*14m5-8                M1  M2  M3  M4  M5          M3  M4  M3  M4  M5  M1  M1  M1  M5
+*12m5-10               M1  M2  M3  M4  M5                  M3  M4  M5  M1  M1  M1  M5
+
+*15m7                  M1  M2  M3  M4  M5  M1      M3  M4  M3  M4  M5  M1  M1  M1  M5
+*14m6-9                M1  M2  M3  M4  M5  M1          M4  M3  M4  M5  M1  M1  M1  M5
+*12m6-10(2)            M1  M2  M3  M4  M5  M1              M3  M4  M5  M1  M1  M5
+*11m7-11(1)            M1  M2  M3  M4  M5  M1  M2              M4  M5  M1  M5
+*13m7-11               M1  M2  M3  M4  M5  M1  M2              M4  M5  M1  M1  M1  M5
+*11m7-13(3)            M1  M2  M3  M4  M5  M1  M2                      M1  M1  M1  M5
+*10m7-13(2)            M1  M2  M3  M4  M5  M1  M2                      M1  M1  M5
+
+*15m9                  M1  M2  M3  M4  M5  M1  M2  M3      M3  M4  M5  M1  M1  M1  M5
+*13m10(1)              M1  M2  M3  M4  M5  M1  M2  M3  M4      M4  M5  M1  M5
+*14m10(2)              M1  M2  M3  M4  M5  M1  M2  M3  M4      M4  M5  M1  M1  M5
+*15m10                 M1  M2  M3  M4  M5  M1  M2  M3  M4      M4  M5  M1  M1  M1  M5
+*12m9-12(1)            M1  M2  M3  M4  M5  M1  M2  M3  M4          M5  M1  M5
+*13m9-12(2)            M1  M2  M3  M4  M5  M1  M2  M3  M4          M5  M1  M1  M5
+*14m9-12(3)            M1  M2  M3  M4  M5  M1  M2  M3  M4          M5  M1  M1  M1  M5
+
+*11m9-13(1)            M1  M2  M3  M4  M5  M1  M2  M3  M4              M1  M5
+*12m9-13(2)            M1  M2  M3  M4  M5  M1  M2  M3  M4              M1  M1  M5
+*13m9-13               M1  M2  M3  M4  M5  M1  M2  M3  M4              M1  M1  M1  M5
+*14m9-13(4)            M1  M2  M3  M4  M5  M1  M2  M3  M4              M1  M1  M1  M1  M5
+*17m9-13(3)(2)         M1  M2  M3  M4  M5  M1  M2  M3  M4              M1  M1  M1  M5  M1  M1  M5
+*17m9-13(3)(3)         M1  M2  M3  M4  M5  M1  M2  M3  M4              M1  M1  M1  M5  M1  M1  M1  M5
+*13m10-13(2)           M1  M2  M3  M4  M5  M1  M2  M3  M4  M3          M1  M1  M5
+*14m11-13(2)           M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4      M1  M1  M5
+
+# double breaks
+*11mW5-8,9-13(3)       M1  M2  M3  M4  M5          M3  M4              M1  M1  M1  M5
+*11mW6-9,9-13(3)       M1  M2  M3  M4  M5  M1          M4              M1  M1  M1  M5
+
+*17m6                  M1  M2  M3  M4  M5  M1  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5
+*17m10                 M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M3  M4  M5  M1  M1  M1  M5
+*17m11                 M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M4  M5  M1  M1  M1  M5
+
+# => Four nodes family
+
+# 5M 7M 7M (n)
+*21mL(1)               M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M5
+*22mL(2)               M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M5
+*23mL                  M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5
+*24mL13                M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5
+
+
+*19mL6-12(4)           M1  M2  M3  M4  M5  M1                      M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M1  M5
+*19mL7-12              M1  M2  M3  M4  M5  M1  M2                  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5
+*17mL8-13(1)           M1  M2  M3  M4  M5  M1  M2  M3                  M1  M2  M3  M4  M3  M4  M5  M1  M5
+*20mL9-12M(2)          M1  M2  M3  M4  M5  M1  M2  M3  M4          M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M5
+*21mL9-12M             M1  M2  M3  M4  M5  M1  M2  M3  M4          M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5
+#*22mL9-12M(4)         M1  M2  M3  M4  M5  M1  M2  M3  M4          M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M1  M5
+
+*18mL9-14(2)           M1  M2  M3  M4  M5  M1  M2  M3  M4                  M2  M3  M4  M3  M4  M5  M1  M1  M5
+*17mL6,9-14(2)         M1  M2  M3  M4  M5      M2  M3  M4                  M2  M3  M4  M3  M4  M5  M1  M1  M5
+*21mL10(2)             M1  M2  M3  M4  M5  M1  M2  M3  M4  M3      M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M5
+*21mL12(2)             M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4      M1  M2  M3  M4  M3  M4  M5  M1  M1  M5
+*18mL11-17             M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4                      M3  M4  M5  M1  M1  M1  M5
+*19mL12-17             M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5                  M3  M4  M5  M1  M1  M1  M5
+*23mL14(4)             M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1      M3  M4  M3  M4  M5  M1  M1  M1  M1  M5
+
+# => Five nodes family
+# 5 7 5 7 (n)
+*26m12-1(1)            M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M5
+*27m12-1(2)            M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M5
+*28m12-1               M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5
+*24m9-1(2)             M1  M2  M3  M4  M5  M1  M2  M3  M4              M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M5
+*25m12-1,9-13          M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M2  M3  M4  M5  M1  M2  M3  M4              M1  M1  M1  M5
+*21m5-12,12-1(2)       M1  M2  M3  M4  M5                          M5  M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M5
+
+*27m13-1(1)            M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M5
+*28m13-1(2)            M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M5
+*29m13-1               M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5
+*30m13-1(4)            M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M1  M5
+
+*32m13-6,13-6          M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M2  M3  M4  M3  M4  M5  M1  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M5
+
+# 5 7 (n) 7 (n)
+#*14m(1)7(1)            M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1                  M5  M1  M2  M3  M4  M3  M4  M5  M1  M5
+#*15m(2)7(1)            M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1              M5  M1  M2  M3  M4  M3  M4  M5  M1  M5
+#16m7(1)                M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1          M5  M1  M2  M3  M4  M3  M4  M5  M1  M5
+#*17m(4)7(1)            M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M1  M1      M5  M1  M2  M3  M4  M3  M4  M5  M1  M5
+
+# => Seven nodes family
+# 5 7 5 7 5 7 (n)
+*39mW12-1,12-1(2)      M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M2  M3  M4  M5  M1  M2  M3  M4  M3  M4  M5  M1  M1  M5
+
