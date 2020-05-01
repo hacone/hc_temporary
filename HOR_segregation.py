@@ -6,6 +6,7 @@ import os
 import pickle
 import re
 import functools
+from more_itertools import windowed
 
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
@@ -19,7 +20,6 @@ import matplotlib.pyplot as plt
 # NOTE: here's data structure for HOR encoded reads (cf. EncodedRead.py for other lower-level representation)
 # hors := (index, size, symbol)
 HOR_Read = namedtuple("HOR_Read", ("name", "mons", "hors", "length", "ori"))
-
 
 def load_encoded_reads(pickles, n_max_reads = None):
     reads = []
@@ -194,141 +194,101 @@ def extract_kmonomers(pkl, k):
     for i, n in c.items():
         print(f"{n}\t{i}")
 
-# TODO; write up
-def draw_HOR(hers, path, cmap, with_unit = None):
+def draw_HOR(hers_list, path, cmap, with_unit = None):
 
     # load color map
-    cmap = { k:v for k,v in [ l.strip("\n").split('\t')
-            for l in open(cmap, "r").readlines() if (len(l) > 1) and (l[0] != "#") ] }
-
-    if with_unit:
-        hers = [ h for h in hers if with_unit in [ t for i, s, t in h.hors ] ]
-
-    if not hers:
-        return 
+    cmap = { k:v for k,v in [ l.strip("\n").split('\t') for l in open(cmap, "r").readlines() if (len(l) > 1) and (l[0] != "#") ] }
 
     import hashlib
     def m2c(n):
-        return cmap[n] if n in cmap \
-            else f"#{hashlib.md5(n.encode()).hexdigest()[:6]}"
-
-    xs, ys = 0.1, 50
-    chunk, elm_written = 0, 0
-    last_i = 0
-    dwg = svgwrite.drawing.Drawing(path + f"reads-{chunk}.svg")
-
-    #for chunk in range(1 + int((len(hers)-1) / 200)):
-        #dwg = svgwrite.drawing.Drawing(path + f"reads-{chunk}.svg")
-        #for i, her in enumerate(hers[200*chunk:200*(chunk+1)]):
-
-    for i, her in enumerate(hers):
-        read = dwg.g(id=her.name,
-            style="font-size:20;font-family:Arial;font-weight:bold;")
-
-        # NOTE: for drawing monomers?
-        # for mi, mon in enumerate(her.mons):
-
-        if her.ori == '+':
-            goff = -1 * min([m.begin for m in her.mons])
+        if n in cmap:
+            return cmap[n]
+        elif n[:3] == "M=M":
+            return "#aaaaaa"
         else:
-            goff = max([m.end for m in her.mons])
+            return f"#{hashlib.md5(n.encode()).hexdigest()[:6]}"
 
-        for hi, (_mix, _size, elm) in enumerate(her.hors):
-            mix, size = int(_mix), int(_size)
-            if her.ori == '+':
-                b, e = goff + her.mons[mix].begin, goff + her.mons[mix + size -1].end
-            else:
-                b, e = goff + -1 * her.mons[mix].end, goff + -1 * her.mons[mix + size -1].begin
-            read.add(dwg.rect(
-                insert=((b+5) * xs, (i-last_i+0.2) * ys), size=((e-b-10) * xs, ys * 0.7),
-                fill = m2c(elm), fill_opacity = 0.5))
+    if with_unit:
+        sample_hers = [ (s, [ h for h in sh if with_unit in [ t for i, s, t in h.hors ] ][:80]) for s, sh in hers_list ]
 
-            if elm[0:2] == "M=":
-                # read.add(dwg.text(f"{elm[2:]}", insert = ((b+10) * xs, (i+0.4) * ys)))
-                read.add(dwg.text(".", insert = ((b+10) * xs, (i-last_i+0.4) * ys)))
-            else:
-                read.add(dwg.text(f"{elm}", insert = ((b+10) * xs, (i-last_i+0.4) * ys)))
-            elm_written += 1
+    def leftmost_target(her): 
+        if her.ori == "+":
+            return min([ her.mons[int(_mix)].begin
+                for _mix, s, elm in her.hors if elm == with_unit ])
+        else:
+            return min([ -1 * her.mons[int(_mix)].end
+                for _mix, s, elm in her.hors if elm == with_unit ])
 
-        dwg.add(read)
-        print("", end = ".")
+    def rightmost(her): 
+        if her.ori == '+':
+            return max([ her.mons[int(_mix) + s -1].end for _mix, s, e in her.hors ])
+        else:
+            return max([ -1 * her.mons[int(_mix) + s -1].begin for _mix, s, e in her.hors ])
 
-        if elm_written > 3000:
-            dwg.save()
-            print(f"done chunk {chunk}")
-            chunk += 1
-            last_i = i
-            elm_written = 0
-            dwg = svgwrite.drawing.Drawing(path + f"reads-{chunk}.svg")
+    xs, ys = 0.05, 25 # scale
+    max_lm = max([0] + [ leftmost_target(her) for s, hers in sample_hers for her in hers ])
 
-    dwg.save()
-    return 
+    read_seen = 0
+    next_reads = [ her for s, hers in sample_hers for her in hers ][read_seen:read_seen + 500]
+    max_x = xs * max([0] + [ rightmost(her) + max_lm - leftmost_target(her) for her in next_reads ])
+    max_y = ys * len(next_reads)
 
-    def show_svg_HOR(dwg, ers, hors):
-        """
-        write out encoded reads with HOR detected to SVG.
-        """
-        import hashlib
-        m2c = lambda n: f"#{hashlib.md5(n.encode()).hexdigest()[:6]}"
-        b2c = dict(A = "#F8766D", C = "#7CAE00", G = "#00BFC4", T = "#C77CFF")
+    dwg = svgwrite.drawing.Drawing(
+            path + f"-0.svg",
+            size = (max_x + 10, max_y + 40 * ys),
+            style="font-size:10;font-family:Arial;")
 
-        def add_read(dwg, er, hor, offsets, thickness = 8):
-            """
-            (from show-reads.py)
-            er: an encoded read
-            hor: detected hor units ( [begin, end, type] for now )
-            offsets: tuple as (xoff, yoff)
-            """
+    chunk = 0
+    y_acc = 0 # n of rows
 
-            read = dwg.g(id=er.name)
-            # TODO: clean up here
-            gaps = [ er.mons[i+1].begin - er.mons[i].end for i in range(len(er.mons)-1) ] + [0] # gap after i
-            gaps_inserted = []
+    for sample, hers in sample_hers:
 
-            for i, m in enumerate(er.mons):
-                #read.add(dwg.rect(insert=(b, y_offset), size=(e-b, thickness), fill=f"#{name_to_color(name)}"))
-                mx, my = offsets[0] + 100 * (i+len(gaps_inserted)), offsets[1]
+        y_acc += 1
+        dwg.add(dwg.text(f"{sample}", insert = (max_lm * xs, (y_acc + 0.6) * ys), style="font-size:15;font-family:Arial;font-weight:bold;"))
+
+        for i, her in enumerate(hers):
+            y_acc += 1
+            read_seen += 1
+            read = dwg.g(id=her.name) 
+            lmt = leftmost_target(her)
+
+            for hi, (_mix, _size, elm) in enumerate(her.hors):
+                mix, size = int(_mix), int(_size)
+                if her.ori == '+':
+                    b, e = her.mons[mix].begin, her.mons[mix + size -1].end
+                else:
+                    b, e = -1 * her.mons[mix].end, -1 * her.mons[mix + size -1].begin
+                b += max_lm - lmt
+                e += max_lm - lmt
                 read.add(dwg.rect(
-                    insert=(mx, my), size=(100*0.9, thickness),
-                    fill = m2c(ren(m.monomer.name)), fill_opacity = 0.5)) # backbone
-                read.add(dwg.text(f"{ren(m.monomer.name)}", insert = (mx+10, my-4)))
+                    insert=((b + 5) * xs, (y_acc + 0.2) * ys), size=((e-b-10) * xs, 0.7 * ys),
+                    fill = m2c(elm), fill_opacity = 0.5))
+                #if elm[0:3] == "M=M":
+                #    read.add(dwg.text(".", insert = ((b+10) * xs, (y_acc + 0.4) * ys)))
+                if elm[0:2] == "M=":
+                    read.add(dwg.text(".", insert = ((b + 10) * xs, (y_acc + 0.4) * ys)))
+                else:
+                    read.add(dwg.text(f"{elm}", insert = ((b + 10) * xs, (y_acc + 0.4) * ys)))
 
-                for snv in m.monomer.snvs: # SNVs
-                    #read_shape.add(dwg.line(
-                    read.add(dwg.circle(center = (mx + 90 * snv.pos / 180 , my), r = 2,  fill = b2c[snv.base]))
+            dwg.add(read)
+            print("", end = ".")
 
-                if gaps[i] > 50:
-                    read.add(dwg.text(f"{gaps[i]}", insert = (mx+90, my)))
-                    gaps_inserted += [ i for j in range(round((gaps[i]-60)/180)) ]
+            if y_acc > 500:
+                dwg.save()
+                print(f"done chunk {chunk}")
+                chunk += 1
+                y_acc = 0
+                # new chunk
+                next_reads = [ her for s, hers in sample_hers for her in hers ][read_seen:read_seen + 500]
+                max_x = xs * max([0] + [ rightmost(her) + max_lm - leftmost_target(her)
+                    for her in next_reads ])
+                max_y = ys * len(next_reads)
+                dwg = svgwrite.drawing.Drawing(path + f"-{chunk}.svg",
+                        size = (max_x + 10, max_y + 40 * ys),
+                        style="font-size:10;font-family:Arial;")
 
-            for b, e, t in hor: # HOR structure
-                gi = len([i for i in gaps_inserted if i<b])
-                
-                mx0, mx1, my = offsets[0] + 100 * (b+gi), offsets[0] + 100 * (e+gi), offsets[1]
-                read.add(dwg.rect(insert = (mx0+10, my+8), size = (mx1-mx0+80, 3), fill = m2c(f"{t}")))
-                read.add(dwg.text(f"{t},{b}-{e}:{gi}", insert = (mx0, my+20)))
-
-            return dwg.add(read)
-
-        # TODO: clean up
-        x, y = 10, 10
-        max_off = max( [ min( [a[0] for a in hors[er.name] if a[2] == "D39"] ) for er in ers ] ) + 80
-        for er in ers:
-            #add_read(dwg, er, hor, (x, y))
-            xoff = min ( [ a[0] for a in hors[er.name] if a[2] == "D39" ] )
-            gaps = [ er.mons[i+1].begin - er.mons[i].end for i in range(len(er.mons)-1) ] + [0] # gap after i
-            ng = sum([ round(gaps[i]-60)/180 for i in range(xoff) if gaps[i] > 60 ])
-            print(f"xoff = {xoff}")
-            add_read(dwg, er, hors[er.name], ((x + (max_off - xoff - ng) * 100), y))
-            y += 45
-
-    YFP = "D39"
-    # hor_show[r.name] = [ (res[0], res[0]+res[1]-1, res[2]) for res in sorted(result) if not res[2][0] == "M" ]
-
-    # show HOR in SVG
-    dwg = svgwrite.drawing.Drawing("./hors.svg")
-    show_svg_HOR(dwg, ers_show, hor_show)
     dwg.save()
+
 
 # NOTE: for X only; TODO move to the impl of print-hor
 def cenpb_vars(rd, h, summary = False):
@@ -448,6 +408,17 @@ def print_HOR(pkl, show_cenpbbxx = False):
     print("##########")
     print("\n".join([ "%" + f"{hash(p):x}"[-8:] + f"\t{c}\t" + "\t".join(p) for p, c in hor_kmer.most_common()  if c >= 2 and c < 100 ]))
 
+
+def count_HOR_kmer(pkl):
+    """ taking a pickled HOR encoded reads, outputs HOR k-mer counter. """
+    counter = Counter()
+    hors = pickle.load(open(pkl, "rb"))
+    for r in sorted(hors, key=lambda x: -len(x.mons)):
+        fourmers = list(windowed([elem for _idx, _size, elem in r.hors], 5, fillvalue="."))
+        fourmers = [ fm for fm in fourmers if not any([ ("M=" in f) for f in list(fm) ]) ]
+        counter.update(fourmers)
+    for t, c in counter.most_common(n=500):
+        print(f"{c}\t" + "\t".join([ f"{e}" for e in t ]))
 
 def HOR_encoding(pkl, path_merged, path_patterns):
 
@@ -594,17 +565,28 @@ if __name__ == '__main__':
         print_HOR(args.hors, show_cenpbbxx = args.cenpbbxx)
         # print_HOR(args.hors)
 
+    elif args.action == "count-hor":
+        assert args.hors, "specify path to HOR encoded read"
+        count_HOR_kmer(args.hors)
+
     elif args.action == "draw-hor":
         # write the structure of the reads to svg
         assert args.hors, "specify path to HOR encoded read"
         assert args.outdir, "output path is not specified"
         assert args.cmap, "specify path to cmap (even if it's empty)"
 
-        hor_reads = pickle.load(open(args.hors, "rb"))
+        hers_path = [ l.strip("\n").split('\t') for l in open(args.hors, "r").readlines() if (len(l) > 1) and (l[0] != "#") ]
+        hers_list = [ (s, sorted(pickle.load(open(h, "rb")), key = lambda x: -len(x.mons))) for s, h in hers_path ]
+
+        # hor_reads = pickle.load(open(args.hors, "rb"))
         if args.with_unit:
-            draw_HOR(sorted(hor_reads, key = lambda x: -len(x.mons)), args.outdir, args.cmap, with_unit = args.with_unit)
-        else:
-            draw_HOR(sorted(hor_reads, key = lambda x: -len(x.mons)), args.outdir, args.cmap)
+            ulist = [ l.strip("\n").split('\t')[0] for l in open(args.with_unit, "r").readlines() if len(l) ]
+            print(ulist)
+            for u in ulist:
+                draw_HOR(hers_list, args.outdir + f"v{u[1:]}", args.cmap, with_unit = u)
+
+        #else:
+        #    draw_HOR(sorted(hor_reads, key = lambda x: -len(x.mons)), args.outdir, args.cmap)
 
     elif args.action == "NOP":
         assert args.bamfile, "bam file is missing"
