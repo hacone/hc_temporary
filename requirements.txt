@@ -4,7 +4,7 @@ decorator==4.3.0
 kiwisolver==1.0.1
 matplotlib==2.2.2
 networkx==2.1
-numpy==1.14.2
+numpy==1.22.0
 pandas==0.23.3
 Pillow==5.1.0
 pyparsing==2.2.0
